@@ -149,8 +149,11 @@ pub mod environment {
         fn consensus_data(&self) -> (Self::Out, Self::In) {
             self.network.consensus_data()
         }
-    }
 
+        fn hashing(&self) -> Box<dyn Fn(&[u8]) -> <E as Environment>::Hash> {
+            Box::new(|x: &[u8]| -> <E as Environment>::Hash  {x.hash})
+        }
+    }
     #[derive(Copy, Clone, Debug)]
     pub(crate) struct Block {
         number: usize,

@@ -1,7 +1,7 @@
 use crate::{
     nodes::{NodeCount, NodeIndex, NodeMap},
     skeleton::{Receiver, Sender, Unit},
-    traits::Environment,
+    traits::{Environment},
 };
 
 // a process responsible for creating new units
@@ -54,7 +54,7 @@ impl<E: Environment> Creator<E> {
         self.current_round
     }
 
-    fn create_unit(&mut self) {
+    fn create_unit(&mut self, hashing: Box<dyn Fn(&[u8]) -> <E as Environment>::Hash>) {
         let round = self.current_round;
         let parents = {
             if round == 0 {
@@ -69,6 +69,7 @@ impl<E: Environment> Creator<E> {
             self.epoch_id,
             parents,
             (self.best_block)(),
+            hashing,
         );
         let _ = self.new_units_tx.send(new_unit);
         self.current_round += 1;
@@ -100,12 +101,12 @@ impl<E: Environment> Creator<E> {
     }
 
     pub(crate) async fn create(&mut self) {
-        self.create_unit();
+        self.create_unit(Box::new(Environment::hashing));
         loop {
             while let Some(u) = self.parents_rx.recv().await {
                 self.add_unit(u.round() as usize, u.creator(), u.hash());
                 if self.check_ready() {
-                    self.create_unit();
+                    self.create_unit(Box::new(Environment::hashing));
                 }
             }
         }

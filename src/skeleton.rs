@@ -2,6 +2,8 @@ use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use std::hash::Hash;
+use codec::Encode;
 
 use crate::{
     creator::Creator,
@@ -151,7 +153,7 @@ impl<E: Environment> Consensus<E> {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Hash)]
 pub struct ControlHash<H: HashT> {
     pub parents: NodeMap<bool>,
     pub hash: H,
@@ -175,7 +177,7 @@ impl<H: HashT> ControlHash<H> {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Encode)]
 pub struct Unit<B: HashT, H: HashT> {
     pub(crate) creator: NodeIndex,
     pub(crate) round: u32,
@@ -196,18 +198,19 @@ impl<B: HashT, H: HashT> Unit<B, H> {
         self.round
     }
 
-    pub(crate) fn compute_hash(
-        creator: NodeIndex,
-        round: u32,
-        _epoch_id: u32,
-        control_hash: &ControlHash<H>,
-    ) -> H {
+
+    //pub(crate) fn compute_hash(
+    //    creator: NodeIndex,
+    //    round: u32,
+    //    _epoch_id: u32,
+    //    control_hash: &ControlHash<H>,
+    //) -> H {
         //TODO: need to write actual hashing here
 
-        let n_parents = control_hash.n_parents().0;
+    //    let n_parents = control_hash.n_parents().0;
 
-        (round * n_parents + creator.0).into()
-    }
+    //    (round * n_parents + creator.0).into()
+    //}
 
     pub(crate) fn new_from_parents(
         creator: NodeIndex,
@@ -215,14 +218,20 @@ impl<B: HashT, H: HashT> Unit<B, H> {
         epoch_id: u32,
         parents: NodeMap<Option<H>>,
         best_block: B,
+        hashing: Box<dyn Fn(&[u8]) -> H>,
     ) -> Self {
-        let control_hash = ControlHash::new(parents);
+        let mut v = vec![];
+        v.extend(&creator.encode());
+        v.extend(&round.encode());
+        v.extend(&epoch_id.encode());
+        v.extend(&parents.encode());
+        v.extend(&best_block.encode());
         Unit {
             creator,
             round,
             epoch_id,
-            hash: Self::compute_hash(creator, round, epoch_id, &control_hash),
-            control_hash,
+            hash: hashing(&v),
+            control_hash: ControlHash::new(parents),
             best_block,
         }
     }
