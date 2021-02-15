@@ -1,7 +1,7 @@
 use crate::{
     nodes::{NodeCount, NodeIndex, NodeMap},
     skeleton::{Receiver, Sender, Unit},
-    traits::{Environment},
+    traits::Environment,
 };
 
 // a process responsible for creating new units

@@ -1,9 +1,9 @@
+use codec::Encode;
 use futures::{SinkExt, StreamExt};
 use parking_lot::Mutex;
+use std::hash::Hash;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use std::hash::Hash;
-use codec::Encode;
 
 use crate::{
     creator::Creator,
@@ -197,7 +197,6 @@ impl<B: HashT, H: HashT> Unit<B, H> {
     pub(crate) fn round(&self) -> u32 {
         self.round
     }
-
 
     //pub(crate) fn compute_hash(
     //    creator: NodeIndex,
