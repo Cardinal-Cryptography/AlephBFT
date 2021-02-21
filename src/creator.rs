@@ -17,9 +17,10 @@ pub(crate) struct Creator<E: Environment> {
     candidates_by_round: Vec<NodeMap<Option<E::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>,
     best_block: Box<dyn Fn() -> E::BlockHash + Send + Sync + 'static>,
+    hashing: E::Hashing,
 }
 
-impl<E: Environment> Creator<E> {
+impl<'a, E: Environment + 'static> Creator<E> {
     pub(crate) fn new(
         parents_rx: Receiver<Unit<E::BlockHash, E::Hash>>,
         new_units_tx: Sender<Unit<E::BlockHash, E::Hash>>,
@@ -27,6 +28,7 @@ impl<E: Environment> Creator<E> {
         pid: NodeIndex,
         n_members: NodeCount,
         best_block: Box<dyn Fn() -> E::BlockHash + Send + Sync + 'static>,
+        hashing: E::Hashing,
     ) -> Self {
         Creator {
             parents_rx,
@@ -38,6 +40,7 @@ impl<E: Environment> Creator<E> {
             candidates_by_round: vec![NodeMap::new_with_len(n_members)],
             n_candidates_by_round: vec![NodeCount(0)],
             best_block,
+            hashing,
         }
     }
 
@@ -54,7 +57,8 @@ impl<E: Environment> Creator<E> {
         self.current_round
     }
 
-    fn create_unit(&mut self, hashing: Box<dyn Fn(&[u8]) -> <E as Environment>::Hash>) {
+    fn create_unit(&mut self) {
+        //, hashing: Box<dyn Fn(&[u8]) -> E::Hash>) {
         let round = self.current_round;
         let parents = {
             if round == 0 {
@@ -69,7 +73,7 @@ impl<E: Environment> Creator<E> {
             self.epoch_id,
             parents,
             (self.best_block)(),
-            hashing,
+            Box::new(self.hashing),
         );
         let _ = self.new_units_tx.send(new_unit);
         self.current_round += 1;
@@ -101,12 +105,12 @@ impl<E: Environment> Creator<E> {
     }
 
     pub(crate) async fn create(&mut self) {
-        self.create_unit(Box::new(Environment::hashing));
+        self.create_unit(); //Box::new(Environment::hashing));
         loop {
             while let Some(u) = self.parents_rx.recv().await {
                 self.add_unit(u.round() as usize, u.creator(), u.hash());
                 if self.check_ready() {
-                    self.create_unit(Box::new(Environment::hashing));
+                    self.create_unit(); //Box::new(Environment::hashing));
                 }
             }
         }

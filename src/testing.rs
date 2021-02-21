@@ -151,7 +151,7 @@ pub mod environment {
         }
 
         fn hashing(&self) -> Box<dyn Fn(&[u8]) -> <E as Environment>::Hash> {
-            Box::new(|x: &[u8]| -> <E as Environment>::Hash  {x.hash})
+            Box::new(|x: &[u8]| -> <E as Environment>::Hash { x.hash })
         }
     }
     #[derive(Copy, Clone, Debug)]

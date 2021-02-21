@@ -85,6 +85,7 @@ impl<E: Environment + Send + Sync + 'static> Consensus<E> {
 
         let e = env.clone();
         let best_block = Box::new(move || e.lock().best_block());
+        let hashing = env.lock().hashing();
         let creator = Some(Creator::<E>::new(
             parents_rx,
             created_units_tx,
@@ -92,6 +93,7 @@ impl<E: Environment + Send + Sync + 'static> Consensus<E> {
             my_ix,
             n_members,
             best_block,
+            hashing,
         ));
 
         let e = env.clone();
@@ -137,7 +139,10 @@ impl<E: Environment + Send + Sync + 'static> Consensus<E> {
 
 // This is to be called from within substrate
 impl<E: Environment> Consensus<E> {
-    pub async fn run(mut self) {
+    pub async fn run(mut self)
+    where
+        <E as Environment>::Hashing: std::marker::Send,
+    {
         let mut creator = self.creator.take().unwrap();
         let _creator_handle = tokio::spawn(async move { creator.create().await });
         let mut terminal = self.terminal.take().unwrap();
@@ -204,7 +209,7 @@ impl<B: HashT, H: HashT> Unit<B, H> {
     //    _epoch_id: u32,
     //    control_hash: &ControlHash<H>,
     //) -> H {
-        //TODO: need to write actual hashing here
+    //TODO: need to write actual hashing here
 
     //    let n_parents = control_hash.n_parents().0;
 
