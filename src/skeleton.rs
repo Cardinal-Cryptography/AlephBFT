@@ -85,7 +85,7 @@ impl<E: Environment + Send + Sync + 'static> Consensus<E> {
 
         let e = env.clone();
         let best_block = Box::new(move || e.lock().best_block());
-        let hashing = env.lock().hashing();
+        let hashing = std::boxed::Box::new(env.lock().hashing());
         let creator = Some(Creator::<E>::new(
             parents_rx,
             created_units_tx,
@@ -158,7 +158,7 @@ impl<E: Environment> Consensus<E> {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Hash, Encode)]
 pub struct ControlHash<H: HashT> {
     pub parents: NodeMap<bool>,
     pub hash: H,

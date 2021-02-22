@@ -1,5 +1,7 @@
 #[cfg(test)]
 pub mod environment {
+    use codec::Encode;
+    use std::collections::hash_map::DefaultHasher;
     use crate::skeleton::Message;
     use derive_more::Display;
     use futures::{Sink, Stream};
@@ -10,6 +12,7 @@ pub mod environment {
         pin::Pin,
         sync::Arc,
         task::{Context, Poll},
+        hash::Hasher,
     };
     use tokio::sync::mpsc::*;
 
@@ -31,6 +34,7 @@ pub mod environment {
         PartialOrd,
         Serialize,
         Deserialize,
+        Encode,
     )]
     pub struct Hash(pub u32);
 
@@ -53,6 +57,7 @@ pub mod environment {
         PartialOrd,
         Serialize,
         Deserialize,
+        Encode,
     )]
     pub struct BlockHash(pub u32);
 
@@ -150,8 +155,12 @@ pub mod environment {
             self.network.consensus_data()
         }
 
-        fn hashing(&self) -> Box<dyn Fn(&[u8]) -> <E as Environment>::Hash> {
-            Box::new(|x: &[u8]| -> <E as Environment>::Hash { x.hash })
+        fn hashing(&self) -> Box<dyn Fn(&[u8]) -> Self::Hash> {
+            Box::new(|x: &[u8]| -> Self::Hash { 
+                let mut hasher = DefaultHasher::new();
+                for i in x{hasher.write_u8(*i);}
+                Hash(hasher.finish() as u32)
+                })
         }
     }
     #[derive(Copy, Clone, Debug)]

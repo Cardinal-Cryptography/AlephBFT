@@ -17,10 +17,10 @@ pub(crate) struct Creator<E: Environment> {
     candidates_by_round: Vec<NodeMap<Option<E::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>,
     best_block: Box<dyn Fn() -> E::BlockHash + Send + Sync + 'static>,
-    hashing: E::Hashing,
+    hashing: Box<E::Hashing>,
 }
 
-impl<'a, E: Environment + 'static> Creator<E> {
+impl<E: Environment + 'static> Creator<E> {
     pub(crate) fn new(
         parents_rx: Receiver<Unit<E::BlockHash, E::Hash>>,
         new_units_tx: Sender<Unit<E::BlockHash, E::Hash>>,
@@ -28,7 +28,7 @@ impl<'a, E: Environment + 'static> Creator<E> {
         pid: NodeIndex,
         n_members: NodeCount,
         best_block: Box<dyn Fn() -> E::BlockHash + Send + Sync + 'static>,
-        hashing: E::Hashing,
+        hashing: Box<E::Hashing>,
     ) -> Self {
         Creator {
             parents_rx,
@@ -58,7 +58,6 @@ impl<'a, E: Environment + 'static> Creator<E> {
     }
 
     fn create_unit(&mut self) {
-        //, hashing: Box<dyn Fn(&[u8]) -> E::Hash>) {
         let round = self.current_round;
         let parents = {
             if round == 0 {
@@ -73,7 +72,7 @@ impl<'a, E: Environment + 'static> Creator<E> {
             self.epoch_id,
             parents,
             (self.best_block)(),
-            Box::new(self.hashing),
+            self.hashing,
         );
         let _ = self.new_units_tx.send(new_unit);
         self.current_round += 1;
@@ -105,12 +104,12 @@ impl<'a, E: Environment + 'static> Creator<E> {
     }
 
     pub(crate) async fn create(&mut self) {
-        self.create_unit(); //Box::new(Environment::hashing));
+        self.create_unit();
         loop {
             while let Some(u) = self.parents_rx.recv().await {
                 self.add_unit(u.round() as usize, u.creator(), u.hash());
                 if self.check_ready() {
-                    self.create_unit(); //Box::new(Environment::hashing));
+                    self.create_unit();
                 }
             }
         }
