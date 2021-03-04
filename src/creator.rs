@@ -59,7 +59,7 @@ impl<E: Environment> Creator<E> {
 
     // initializes the vectors corresponding to the given round (and all between if not there)
     fn init_round(&mut self, round: Round) {
-        while self.candidates_by_round.len() <= round {
+        while self.candidates_by_round.len() <= round.into() {
             self.candidates_by_round
                 .push(NodeMap::new_with_len(self.n_members));
             self.n_candidates_by_round.push(NodeCount(0));
