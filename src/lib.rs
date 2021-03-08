@@ -104,7 +104,7 @@ pub struct EpochId(pub u64);
 
 /// Type used in NotificationOut::MissingUnits to give additional info about the missing units that might
 /// help the Environment to fetch them (currently this is the node_ix of the unit whose parents are missing).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct RequestAuxData {
     child_creator: NodeIndex,
 }
