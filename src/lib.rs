@@ -2,8 +2,7 @@
 //! requires access to an [Environment] object which black-boxes the network layer and gives
 //! appropriate access to the set of available blocks that we need to make consensus on.
 
-use codec::{Codec, Decode, Encode, Output};
-use derive_more::{Add, AddAssign, Display, From, Into, Rem, Sub, SubAssign, Sum};
+use codec::{Codec, Decode, Encode};
 use futures::{Sink, Stream};
 use log::{debug, error};
 use parking_lot::Mutex;
@@ -342,16 +341,18 @@ impl<B: HashT, H: HashT> Unit<B, H> {
         best_block: B,
         hashing: &Hashing,
     ) -> Self {
-        let mut v = vec![];
-        v.extend(creator.0.to_le_bytes().to_vec());
-        v.extend(round.to_le_bytes().to_vec());
-        v.extend(epoch_id.0.to_le_bytes().to_vec());
-        v.extend(parents.encode());
-        v.extend(best_block.encode());
-        let control_hash = ControlHash::new(parents);
+        let control_hash = ControlHash::new(&parents, &hashing);
+        let hash = (
+            creator.0 as u64,
+            round as u64,
+            epoch_id.0 as u64,
+            parents,
+            best_block,
+        )
+            .using_encoded(hashing);
         Unit {
             creator,
-            round: round as UnitRound,
+            round: round as u64,
             epoch_id,
             hash,
             control_hash,
