@@ -358,7 +358,7 @@ impl<B: HashT, H: HashT> Unit<B, H> {
         }
     }
 
-    pub(crate) fn _new(
+    pub fn new(
         creator: NodeIndex,
         round: Round,
         epoch_id: EpochId,
