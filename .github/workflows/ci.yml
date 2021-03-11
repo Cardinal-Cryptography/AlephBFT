@@ -3,10 +3,10 @@ name: CI
 on:
   push:
     branches:
-      - "*"
+      - main
   pull_request:
     branches:
-      - "*"
+      - main
 
 env:
   CARGO_TERM_COLOR: always
@@ -45,7 +45,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-  master:
+  main:
     name: push
     if: "github.event_name == 'push'"
     strategy:
