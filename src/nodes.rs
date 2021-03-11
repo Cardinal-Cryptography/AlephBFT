@@ -1,4 +1,4 @@
-use codec::{Decode, Encode};
+use codec::{Decode, Encode, Output, Input, Error as CodecError};
 use derive_more::{Add, AddAssign, Display, From, Into, Sub, SubAssign, Sum};
 use std::{
     iter::FromIterator,
@@ -8,9 +8,26 @@ use std::{
 
 /// The index of a node
 #[derive(
-    Copy, Clone, Debug, Display, Default, Eq, PartialEq, Hash, Ord, PartialOrd, From, Encode, Decode,
+    Copy, Clone, Debug, Display, Default, Eq, PartialEq, Hash, Ord, PartialOrd, From
 )]
-pub struct NodeIndex(pub u64);
+pub struct NodeIndex(pub usize);
+
+impl Encode for NodeIndex {
+    fn encode_to<T: Output>(&self, dest: &mut T) {
+        let val = self.0 as u64;
+        let bytes = val.to_le_bytes().to_vec();
+        Encode::encode_to(&bytes, dest)
+    }
+}
+
+impl Decode for NodeIndex {
+    fn decode<I: Input>(value: &mut I) -> Result<Self, CodecError> {
+        let mut arr = [0u8; 8];
+        value.read(&mut arr)?;
+        let val: u64 = u64::from_le_bytes(arr);
+        Ok(NodeIndex(val as usize))
+    }
+}
 
 /// Node count -- if necessary this can be then generalized to weights
 #[derive(
@@ -75,7 +92,7 @@ impl<T> NodeMap<T> {
     pub(crate) fn enumerate(&self) -> impl Iterator<Item = (NodeIndex, &T)> {
         self.iter()
             .enumerate()
-            .map(|(idx, value)| (NodeIndex(idx as u64), value))
+            .map(|(idx, value)| (NodeIndex(idx), value))
     }
 }
 

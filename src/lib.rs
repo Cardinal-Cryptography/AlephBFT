@@ -2,8 +2,8 @@
 //! requires access to an [Environment] object which black-boxes the network layer and gives
 //! appropriate access to the set of available blocks that we need to make consensus on.
 
-use codec::{Codec, Decode, Encode};
-use futures::{Sink, Stream};
+use codec::{Decode, Encode};
+use futures::{Sink, Stream, Future};
 use log::{debug, error};
 use parking_lot::Mutex;
 use std::{
@@ -33,18 +33,18 @@ mod testing;
 pub trait MyIndex {
     fn my_index(&self) -> Option<NodeIndex>;
 }
-pub trait NodeIdT: Clone + Display + Debug + Send + Eq + Hash + Codec + MyIndex + 'static {}
+pub trait NodeIdT: Clone + Display + Debug + Send + Eq + Hash + Encode + Decode + MyIndex + 'static {}
 
-impl<I> NodeIdT for I where I: Clone + Display + Debug + Send + Eq + Hash + Codec + MyIndex + 'static
-{}
-
-/// A hash, as an identifier for a block or unit.
-pub trait HashT:
-    Eq + Ord + Copy + Clone + Default + Send + Sync + Debug + Hash + Encode + Decode
+impl<I> NodeIdT for I where
+    I: Clone + Display + Debug + Send + Eq + Hash + Encode + Decode + MyIndex + 'static
 {
 }
 
-impl<H> HashT for H where H: Eq + Ord + Copy + Clone + Send + Sync + Default + Debug + Hash + Codec {}
+/// A hash, as an identifier for a block or unit.
+pub trait HashT:
+    Eq + Ord + Copy + Clone + Send + Sync + Debug + Display + Hash + Encode + Decode {}
+
+impl<H> HashT for H where H: Eq + Ord + Copy + Clone + Send + Sync + Debug + Display + Hash + Encode + Decode {}
 
 /// A trait that describes the interaction of the [Consensus] component with the external world.
 pub trait Environment {

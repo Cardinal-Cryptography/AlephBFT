@@ -329,7 +329,7 @@ impl<E: Environment + 'static> Terminal<E> {
                                 debug!(target: "rush-terminal", "{} Error while sending BlockAvailable notification {}", node_id, e);
                             }
                         } else {
-                            debug!(target: "rush-terminal", "{} Error while checking block availability for unit {}", node_id, u_hash);
+                            debug!(target: "rush-terminal", "{} Error while checking block availability for unit {:?}", node_id, u_hash);
                         }
                     });
                 }
