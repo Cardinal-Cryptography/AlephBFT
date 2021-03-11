@@ -445,7 +445,12 @@ mod tests {
                 node_chain.clone(),
             );
             finalized_blocks_rxs.push(rx);
-            let conf = Config::new(node_ix.into(), n_nodes.into(), 0, Duration::from_millis(15));
+            let conf = Config::new(
+                node_ix.into(),
+                n_nodes.into(),
+                EpochId(0),
+                Duration::from_millis(15),
+            );
             handles.push(tokio::spawn(Consensus::new(conf, env).run()));
         }
         let mut blocks_per_node = Vec::new();
