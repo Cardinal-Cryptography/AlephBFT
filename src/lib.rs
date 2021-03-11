@@ -3,7 +3,7 @@
 //! appropriate access to the set of available blocks that we need to make consensus on.
 
 use codec::{Decode, Encode};
-use futures::{Sink, Stream, Future};
+use futures::{Future, Sink, Stream};
 use log::{debug, error};
 use parking_lot::Mutex;
 use std::{
@@ -33,7 +33,10 @@ mod testing;
 pub trait MyIndex {
     fn my_index(&self) -> Option<NodeIndex>;
 }
-pub trait NodeIdT: Clone + Display + Debug + Send + Eq + Hash + Encode + Decode + MyIndex + 'static {}
+pub trait NodeIdT:
+    Clone + Display + Debug + Send + Eq + Hash + Encode + Decode + MyIndex + 'static
+{
+}
 
 impl<I> NodeIdT for I where
     I: Clone + Display + Debug + Send + Eq + Hash + Encode + Decode + MyIndex + 'static
@@ -42,9 +45,14 @@ impl<I> NodeIdT for I where
 
 /// A hash, as an identifier for a block or unit.
 pub trait HashT:
-    Eq + Ord + Copy + Clone + Send + Sync + Debug + Display + Hash + Encode + Decode {}
+    Eq + Ord + Copy + Clone + Send + Sync + Debug + Display + Hash + Encode + Decode
+{
+}
 
-impl<H> HashT for H where H: Eq + Ord + Copy + Clone + Send + Sync + Debug + Display + Hash + Encode + Decode {}
+impl<H> HashT for H where
+    H: Eq + Ord + Copy + Clone + Send + Sync + Debug + Display + Hash + Encode + Decode
+{
+}
 
 /// A trait that describes the interaction of the [Consensus] component with the external world.
 pub trait Environment {
@@ -403,7 +411,12 @@ mod tests {
             let (mut env, rx) = environment::Environment::new(NodeId(node_ix), net.clone());
             finalized_blocks_rxs.push(rx);
             env.gen_chain(vec![(0.into(), vec![1.into()])]);
-            let conf = Config::new(node_ix.into(), n_nodes.into(), EpochId(0), Duration::from_millis(10));
+            let conf = Config::new(
+                node_ix.into(),
+                n_nodes.into(),
+                EpochId(0),
+                Duration::from_millis(10),
+            );
             handles.push(tokio::spawn(Consensus::new(conf, env).run()));
         }
 

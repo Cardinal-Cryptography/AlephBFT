@@ -1,7 +1,7 @@
 #[cfg(test)]
 pub mod environment {
     use crate::{MyIndex, NodeIndex, NotificationIn, NotificationOut, Round, Unit};
-    use codec::{Encode, Decode, Output, Input, Error as CodecError};
+    use codec::{Decode, Encode, Error as CodecError, Input, Output};
     use derive_more::{Display, From, Into};
     use futures::{Future, Sink, Stream};
     use log::debug;
@@ -54,7 +54,7 @@ pub mod environment {
     }
 
     #[derive(
-        Hash, Debug, Default, Display, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Encode, Decode
+        Hash, Debug, Default, Display, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Encode, Decode,
     )]
     pub struct Hash(pub u32);
 
@@ -65,7 +65,7 @@ pub mod environment {
     }
 
     #[derive(
-        Hash, Debug, Default, Display, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Encode, Decode
+        Hash, Debug, Default, Display, Clone, Copy, PartialEq, Eq, Ord, PartialOrd, Encode, Decode,
     )]
     pub struct BlockHash(pub u32);
 

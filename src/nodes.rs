@@ -1,4 +1,4 @@
-use codec::{Decode, Encode, Output, Input, Error as CodecError};
+use codec::{Decode, Encode, Error as CodecError, Input, Output};
 use derive_more::{Add, AddAssign, Display, From, Into, Sub, SubAssign, Sum};
 use std::{
     iter::FromIterator,
@@ -7,9 +7,7 @@ use std::{
 };
 
 /// The index of a node
-#[derive(
-    Copy, Clone, Debug, Display, Default, Eq, PartialEq, Hash, Ord, PartialOrd, From
-)]
+#[derive(Copy, Clone, Debug, Display, Default, Eq, PartialEq, Hash, Ord, PartialOrd, From)]
 pub struct NodeIndex(pub usize);
 
 impl Encode for NodeIndex {
@@ -71,8 +69,8 @@ pub struct NodeMap<T>(Vec<T>);
 impl<T> NodeMap<T> {
     /// Constructs a new node map with a given length.
     pub fn new_with_len(len: NodeCount) -> Self
-        where
-            T: Default + Clone,
+    where
+        T: Default + Clone,
     {
         let v: Vec<T> = vec![T::default(); len.into()];
         NodeMap(v)
