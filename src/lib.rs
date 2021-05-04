@@ -147,10 +147,6 @@ impl<NI: NodeIdT> Config<NI> {
             create_lag,
         }
     }
-
-    pub fn node_id(&self) -> NI {
-        self.node_id.clone()
-    }
 }
 
 pub trait SpawnHandle {
@@ -325,7 +321,7 @@ impl<H: HashT> PreUnit<H> {
         self.round as Round
     }
 
-    pub fn new_from_parents(
+    pub(crate) fn new_from_parents(
         creator: NodeIndex,
         round: Round,
         parents: NodeMap<Option<H>>,
@@ -345,6 +341,14 @@ impl<H: HashT> PreUnit<H> {
             round: round as UnitRound,
             control_hash,
         }
+    }
+
+    pub fn n_parents(&self) -> NodeCount {
+        self.control_hash.n_parents()
+    }
+
+    pub fn n_members(&self) -> NodeCount {
+        self.control_hash.n_members()
     }
 }
 
