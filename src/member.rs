@@ -14,6 +14,7 @@ use crate::{
     NodeIndex, NodeMap, OrderedBatch, RequestAuxData, SessionId, SpawnHandle,
 };
 
+use crate::{signed::Signed, units::UncheckedSignedUnit};
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
@@ -32,15 +33,15 @@ const MAX_UNITS_ALERT: usize = 200;
 #[derive(Debug, Encode, Decode)]
 pub(crate) enum ConsensusMessage<H: Hasher, D: Data, Signature: Debug + Clone + Encode + Decode> {
     /// Fo disseminating newly created units.
-    NewUnit(SignedUnit<H, D, Signature>),
+    NewUnit(UncheckedSignedUnit<H, D, Signature>),
     /// Request for a unit by its coord.
     RequestCoord(UnitCoord),
     /// Response to a request by coord.
-    ResponseCoord(SignedUnit<H, D, Signature>),
+    ResponseCoord(UncheckedSignedUnit<H, D, Signature>),
     /// Request for the full list of parents of a unit.
     RequestParents(H::Hash),
     /// Response to a request for a full list of parents.
-    ResponseParents(H::Hash, Vec<SignedUnit<H, D, Signature>>),
+    ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, Signature>>),
     /// Alert regarding forks,
     ForkAlert(Alert<H, D, Signature>),
 }
@@ -115,6 +116,7 @@ pub struct Config<NI: NodeIdT> {
 }
 
 pub struct Member<
+    'a,
     H: Hasher,
     D: Data,
     Signature: Debug + Clone + Encode + Decode,
@@ -126,14 +128,14 @@ pub struct Member<
     config: Config<NI>,
     tx_consensus: Option<futures::channel::mpsc::UnboundedSender<NotificationIn<H>>>,
     data_io: DP,
-    keybox: KB,
+    keybox: &'a KB,
     network: N,
-    store: UnitStore<H, D, Signature>,
+    store: UnitStore<'a, H, D, Signature, KB>,
     requests: BinaryHeap<ScheduledTask<H>>,
     threshold: NodeCount,
 }
 
-impl<H, D, Signature, DP, KB, N, NI> Member<H, D, Signature, DP, KB, N, NI>
+impl<'a, H, D, Signature, DP, KB, N, NI> Member<'a, H, D, Signature, DP, KB, N, NI>
 where
     H: Hasher,
     D: Data,
@@ -143,7 +145,7 @@ where
     N: Network,
     NI: NodeIdT,
 {
-    pub fn new(data_io: DP, keybox: KB, network: N, config: Config<NI>) -> Self {
+    pub fn new(data_io: DP, keybox: &'a KB, network: N, config: Config<NI>) -> Self {
         let n_members = config.n_members;
         let threshold = (n_members * 2) / 3 + NodeCount(1);
         Member {
@@ -177,10 +179,10 @@ where
             data,
             session_id: self.config.session_id,
         };
+        let hash = full_unit.hash();
         // TODO: beware: sign_unit blocks and is quite slow!
-        let signed_unit = SignedUnit::sign(&self.keybox, full_unit);
+        let signed_unit = Signed::sign(self.keybox, full_unit);
         debug!(target: "rush-member", "On create notification post sign_unit.");
-        let hash = signed_unit.hash();
         self.store.add_unit(signed_unit, false);
         let curr_time = time::Instant::now();
         let task = ScheduledTask::new(
@@ -256,8 +258,9 @@ where
         let signed_unit = self
             .store
             .unit_by_hash(&hash)
+            .cloned()
             .expect("Our units are in store.");
-        let message = ConsensusMessage::NewUnit(signed_unit.clone());
+        let message = ConsensusMessage::NewUnit(UncheckedSignedUnit::from(signed_unit));
         let command = NetworkCommand::SendToAll(message.encode());
         debug!(target: "rush-member", "Sending a unit {:?} over network after delay {:?}.", hash, interval);
         self.send_network_command(command);
@@ -314,15 +317,16 @@ where
         }
     }
 
-    fn validate_unit_parents(&self, su: &SignedUnit<H, D, Signature>) -> bool {
+    fn validate_unit_parents(&self, su: &SignedUnit<'a, H, D, Signature, KB>) -> bool {
         // NOTE: at this point we cannot validate correctness of the control hash, in principle it could be
         // just a random hash, but we still would not be able to deduce that by looking at the unit only.
-        if su.n_members() != self.config.n_members {
+        let pre_unit = &su.signed().inner;
+        if pre_unit.n_members() != self.config.n_members {
             debug!(target: "rush-member", "Unit with wrong length of parents map.");
             return false;
         }
-        let round = su.round();
-        let n_parents = su.n_parents();
+        let round = pre_unit.round();
+        let n_parents = pre_unit.n_parents();
         if round == 0 && n_parents > NodeCount(0) {
             debug!(target: "rush-member", "Unit of round zero with non-zero number of parents.");
             return false;
@@ -332,69 +336,72 @@ where
             debug!(target: "rush-member", "Unit of non-zero round with only {:?} parents while at least {:?} are required.", n_parents, threshold);
             return false;
         }
-        let control_hash = &su.unit.inner.control_hash;
-        if round > 0 && !control_hash.parents[su.creator()] {
+        let control_hash = &pre_unit.control_hash;
+        if round > 0 && !control_hash.parents[pre_unit.creator()] {
             debug!(target: "rush-member", "Unit does not have its creator's previous unit as parent.");
             return false;
         }
         true
     }
 
-    fn validate_unit(&self, su: &SignedUnit<H, D, Signature>) -> bool {
+    fn validate_unit(&self, su: &SignedUnit<'a, H, D, Signature, KB>) -> bool {
         // TODO: make sure we check all that is necessary for unit correctness
         // TODO: consider moving validation logic for units and alerts to another file, note however
         // that access to the authority list is required for validation.
-        if su.unit.session_id != self.config.session_id {
+        if su.signed().session_id != self.config.session_id {
             // NOTE: this implies malicious behavior as the unit's session_id
             // is incompatible with session_id of the message it arrived in.
-            debug!(target: "rush-member", "A unit with incorrect session_id! {:?}", su);
+            debug!(target: "rush-member", "A unit with incorrect session_id! {:?}", su.unchecked);
             return false;
         }
-        if !su.verify_signature(&self.keybox) {
-            debug!(target: "rush-member", "A unit with incorrect signature! {:?}", su);
+        if !su.verify() {
+            debug!(target: "rush-member", "A unit with incorrect signature! {:?}", su.unchecked);
             return false;
         }
-        if su.round() > self.store.limit_per_node() {
-            debug!(target: "rush-member", "A unit with too high round {}! {:?}", su.round(), su);
+        if su.signed().round() > self.store.limit_per_node() {
+            debug!(target: "rush-member", "A unit with too high round {}! {:?}", su.signed().round(), su.unchecked);
             return false;
         }
-        if su.creator().0 >= self.config.n_members.0 {
-            debug!(target: "rush-member", "A unit with too high creator index {}! {:?}", su.creator(), su);
+        if su.signed().creator().0 >= self.config.n_members.0 {
+            debug!(target: "rush-member", "A unit with too high creator index {}! {:?}", su.signed().creator(), su.unchecked);
             return false;
         }
         if !self.validate_unit_parents(su) {
-            debug!(target: "rush-member", "A unit did not pass parents validation. {:?}", su);
+            debug!(target: "rush-member", "A unit did not pass parents validation. {:?}", su.unchecked);
             return false;
         }
         true
     }
 
-    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<H, D, Signature>) {
+    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<'a, H, D, Signature, KB>) {
         if let Some(sv) = self.store.is_new_fork(&su) {
-            let creator = su.creator();
+            let creator = su.signed().creator();
             if !self.store.is_forker(creator) {
                 // We need to mark the forker if it is not known yet.
-                let proof = ForkProof { u1: su, u2: sv };
+                let proof = ForkProof {
+                    u1: su.into(),
+                    u2: sv.into(),
+                };
                 self.on_new_forker_detected(creator, proof);
             }
             // We ignore this unit. If it is legit, it will arrive in some alert and we need to wait anyway.
             // There is no point in keeping this unit in any kind of buffer.
             return;
         }
-        let u_round = su.round();
+        let u_round = su.signed().round();
         let round_in_progress = self.store.get_round_in_progress();
         if u_round <= round_in_progress + ROUNDS_MARGIN {
             self.store.add_unit(su, false);
         } else {
-            debug!(target: "rush-member", "Unit {:?} ignored because of too high round {} when round in progress is {}.", su, u_round, round_in_progress);
+            debug!(target: "rush-member", "Unit {:?} ignored because of too high round {} when round in progress is {}.", su.unchecked, u_round, round_in_progress);
         }
     }
 
     fn move_units_to_consensus(&mut self) {
         let mut units = Vec::new();
         for su in self.store.yield_buffer_units() {
-            let hash = su.hash();
-            let unit = Unit::new_from_preunit(su.unit.inner.clone(), hash);
+            let hash = su.signed().hash();
+            let unit = Unit::new_from_preunit(su.signed().inner.clone(), hash);
             units.push(unit);
         }
         if !units.is_empty() {
@@ -402,7 +409,7 @@ where
         }
     }
 
-    fn on_unit_received(&mut self, su: SignedUnit<H, D, Signature>, alert: bool) {
+    fn on_unit_received(&mut self, su: SignedUnit<'a, H, D, Signature, KB>, alert: bool) {
         if alert {
             // The unit has been validated already, we add to store.
             self.store.add_unit(su, true);
@@ -417,7 +424,7 @@ where
 
         if let Some(su) = maybe_su {
             debug!(target: "rush-member", "Answering fetch request for coord {:?} from {:?}.", coord, peer_id);
-            let message = ConsensusMessage::ResponseCoord(su);
+            let message = ConsensusMessage::ResponseCoord(su.into());
             let command = NetworkCommand::SendToPeer(message.encode(), peer_id);
             self.send_network_command(command);
         } else {
@@ -440,7 +447,7 @@ where
             debug!(target: "rush-member", "Answering parents request for hash {:?} from {:?}.", u_hash, peer_id);
             let full_units = p_hashes
                 .into_iter()
-                .map(|hash| self.store.unit_by_hash(&hash).unwrap().clone())
+                .map(|hash| self.store.unit_by_hash(&hash).unwrap().clone().into())
                 .collect();
             let message = ConsensusMessage::ResponseParents(u_hash, full_units).encode();
             let command = NetworkCommand::SendToPeer(message, peer_id);
@@ -450,13 +457,17 @@ where
         }
     }
 
-    fn on_parents_response(&mut self, u_hash: H::Hash, parents: Vec<SignedUnit<H, D, Signature>>) {
+    fn on_parents_response(
+        &mut self,
+        u_hash: H::Hash,
+        parents: Vec<SignedUnit<'a, H, D, Signature, KB>>,
+    ) {
         // TODO: we *must* make sure that we have indeed sent such a request before accepting the response.
         let (u_round, u_control_hash, parent_ids) = match self.store.unit_by_hash(&u_hash) {
             Some(u) => (
-                u.round(),
-                u.unit.inner.control_hash.hash,
-                u.unit
+                u.signed().round(),
+                u.signed().inner.control_hash.hash,
+                u.signed()
                     .inner
                     .control_hash
                     .parents
@@ -477,11 +488,11 @@ where
         let mut p_hashes_node_map: NodeMap<Option<H::Hash>> =
             NodeMap::new_with_len(self.config.n_members);
         for (i, su) in parents.into_iter().enumerate() {
-            if su.round() + 1 != u_round {
+            if su.signed().round() + 1 != u_round {
                 debug!(target: "rush-member", "In received parent response received a unit with wrong round.");
                 return;
             }
-            if su.creator() != parent_ids[i] {
+            if su.signed().creator() != parent_ids[i] {
                 debug!(target: "rush-member", "In received parent response received a unit with wrong creator.");
                 return;
             }
@@ -489,7 +500,7 @@ where
                 debug!(target: "rush-member", "In received parent response received a unit that does not pass validation.");
                 return;
             }
-            let p_hash = su.hash();
+            let p_hash = su.signed().hash();
             p_hashes_node_map[NodeIndex(i)] = Some(p_hash);
             // There might be some optimization possible here to not validate twice, but overall
             // this piece of code should be executed extremely rarely.
@@ -506,15 +517,26 @@ where
     }
 
     fn validate_fork_proof(&self, forker: NodeIndex, proof: &ForkProof<H, D, Signature>) -> bool {
-        if !self.validate_unit(&proof.u1) || !self.validate_unit(&proof.u2) {
+        let (u1, u2) = {
+            let u1 = Signed::from(proof.u1.clone(), self.keybox);
+            let u2 = Signed::from(proof.u2.clone(), self.keybox);
+            match (u1, u2) {
+                (Some(u1), Some(u2)) => (u1, u2),
+                _ => {
+                    debug!(target: "rush-member", "Invalid signatures in a proof.");
+                    return false;
+                }
+            }
+        };
+        if !self.validate_unit(&u1) || !self.validate_unit(&u2) {
             debug!(target: "rush-member", "One of the units in the proof is invalid.");
             return false;
         }
-        if proof.u1.creator() != forker || proof.u2.creator() != forker {
+        if u1.signed().creator() != forker || u2.signed().creator() != forker {
             debug!(target: "rush-member", "One of the units creators in proof does not match.");
             return false;
         }
-        if proof.u1.round() != proof.u2.round() {
+        if u1.signed().round() != u2.signed().round() {
             debug!(target: "rush-member", "The rounds in proof's units do not match.");
             return false;
         }
@@ -524,7 +546,7 @@ where
     fn validate_alerted_units(
         &self,
         forker: NodeIndex,
-        units: &[SignedUnit<H, D, Signature>],
+        units: &[SignedUnit<'a, H, D, Signature, KB>],
     ) -> bool {
         // Correctness rules:
         // 1) All units must pass unit validation
@@ -537,19 +559,19 @@ where
         }
         let mut rounds: HashSet<usize> = HashSet::new();
         for u in units {
-            if u.creator() != forker {
-                debug!(target: "rush-member", "One of the units {:?} has wrong creator.", u);
+            if u.signed().creator() != forker {
+                debug!(target: "rush-member", "One of the units {:?} has wrong creator.", u.unchecked);
                 return false;
             }
             if !self.validate_unit(u) {
-                debug!(target: "rush-member", "One of the units {:?} in alert does not pass validation.", u);
+                debug!(target: "rush-member", "One of the units {:?} in alert does not pass validation.", u.unchecked);
                 return false;
             }
-            if rounds.contains(&u.round()) {
-                debug!(target: "rush-member", "Two or more alerted units have the same round {:?}.", u.round());
+            if rounds.contains(&u.signed().round()) {
+                debug!(target: "rush-member", "Two or more alerted units have the same round {:?}.", u.signed().round());
                 return false;
             }
-            rounds.insert(u.round());
+            rounds.insert(u.signed().round());
         }
         true
     }
@@ -569,7 +591,16 @@ where
             debug!(target: "rush-member", "Alert has incorrect fork proof.");
             return false;
         }
-        if !self.validate_alerted_units(alert.forker, &alert.legit_units) {
+        let legit_units: Vec<_> = alert
+            .legit_units
+            .iter()
+            .filter_map(|unchecked| Signed::from(unchecked.clone(), self.keybox))
+            .collect();
+        if legit_units.len() != alert.legit_units.len() {
+            debug!(target: "rush-member", "Alert has incorrect unit/s.");
+            return false;
+        }
+        if !self.validate_alerted_units(alert.forker, &legit_units[..]) {
             debug!(target: "rush-member", "Alert has incorrect unit/s.");
             return false;
         }
@@ -580,7 +611,7 @@ where
         &self,
         forker: NodeIndex,
         proof: ForkProof<H, D, Signature>,
-        units: Vec<SignedUnit<H, D, Signature>>,
+        units: Vec<SignedUnit<'a, H, D, Signature, KB>>,
     ) -> Alert<H, D, Signature> {
         Alert {
             sender: self
@@ -590,7 +621,7 @@ where
                 .expect("Consensus is run only by validators"),
             forker,
             proof,
-            legit_units: units,
+            legit_units: units.into_iter().map(|signed| signed.into()).collect(),
         }
     }
 
@@ -615,8 +646,10 @@ where
                 // We learn about this forker for the first time, need to send our own alert
                 self.on_new_forker_detected(forker, alert.proof);
             }
-            for su in alert.legit_units {
-                self.on_unit_received(su, true);
+            for unchecked in alert.legit_units {
+                if let Some(su) = Signed::from(unchecked, self.keybox) {
+                    self.on_unit_received(su, true);
+                }
             }
         } else {
             debug!(
@@ -633,16 +666,21 @@ where
     ) {
         use ConsensusMessage::*;
         match message {
-            NewUnit(signed_unit) => {
-                debug!(target: "rush-member", "New unit received {:?}.", signed_unit);
-                self.on_unit_received(signed_unit, false);
+            NewUnit(unchecked) => {
+                debug!(target: "rush-member", "New unit received {:?}.", unchecked);
+                if let Some(su) = Signed::from(unchecked, self.keybox) {
+                    self.on_unit_received(su, false);
+                }
             }
             RequestCoord(coord) => {
                 self.on_request_coord(peer_id, coord);
             }
-            ResponseCoord(signed_unit) => {
-                debug!(target: "rush-member", "Fetch response received {:?}.", signed_unit);
-                self.on_unit_received(signed_unit, false);
+            ResponseCoord(unchecked) => {
+                debug!(target: "rush-member", "Fetch response received {:?}.", unchecked);
+
+                if let Some(su) = Signed::from(unchecked, self.keybox) {
+                    self.on_unit_received(su, false);
+                }
             }
             RequestParents(u_hash) => {
                 debug!(target: "rush-member", "Parents request received {:?}.", u_hash);
@@ -653,6 +691,10 @@ where
                 // TODO: these responses are quite heavy, we should at some point add
                 // checks to make sure we are not processing responses to request we did not make.
                 // TODO: we need to check if the response (and alert) does not exceed some max message size in network.
+                let parents = parents
+                    .into_iter()
+                    .filter_map(|unchecked| Signed::from(unchecked, self.keybox))
+                    .collect();
                 self.on_parents_response(u_hash, parents);
             }
             ForkAlert(alert) => {
@@ -669,7 +711,7 @@ where
                 self.store
                     .unit_by_hash(h)
                     .expect("Ordered units must be in store")
-                    .unit
+                    .signed()
                     .data
             })
             .collect::<OrderedBatch<D>>();
@@ -694,7 +736,7 @@ where
     }
 
     pub async fn run_session(
-        mut self,
+        &'a mut self,
         spawn_handle: impl SpawnHandle,
         exit: oneshot::Receiver<()>,
     ) {

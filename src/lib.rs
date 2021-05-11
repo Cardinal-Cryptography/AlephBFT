@@ -20,6 +20,7 @@ mod creator;
 mod extender;
 mod member;
 pub mod nodes;
+pub mod signed;
 mod syncer;
 mod terminal;
 mod testing;
