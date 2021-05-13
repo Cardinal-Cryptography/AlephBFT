@@ -12,12 +12,12 @@ pub struct UncheckedSigned<T: Signable + Index, S> {
 }
 
 #[derive(Debug)]
-pub struct Signed<'a, T: Signable + Index, S, KB: KeyBox<S>> {
-    pub unchecked: UncheckedSigned<T, S>,
+pub struct Signed<'a, T: Signable + Index, KB: KeyBox> {
+    pub unchecked: UncheckedSigned<T, KB::Signature>,
     pub key_box: &'a KB,
 }
 
-impl<'a, T: Signable + Index + Clone, S: Clone, KB: KeyBox<S>> Clone for Signed<'a, T, S, KB> {
+impl<'a, T: Signable + Index + Clone, KB: KeyBox> Clone for Signed<'a, T, KB> {
     fn clone(&self) -> Self {
         Signed {
             unchecked: self.unchecked.clone(),
@@ -26,7 +26,7 @@ impl<'a, T: Signable + Index + Clone, S: Clone, KB: KeyBox<S>> Clone for Signed<
     }
 }
 
-impl<'a, T: Signable + Index, S, KB: KeyBox<S>> Signed<'a, T, S, KB> {
+impl<'a, T: Signable + Index, KB: KeyBox> Signed<'a, T, KB> {
     pub fn sign(key_box: &'a KB, signable: T) -> Self {
         let signature = key_box.sign(&signable.bytes_to_sign());
         let signed = signable;
@@ -39,7 +39,7 @@ impl<'a, T: Signable + Index, S, KB: KeyBox<S>> Signed<'a, T, S, KB> {
         }
     }
 
-    pub fn from(unchecked: UncheckedSigned<T, S>, key_box: &'a KB) -> Option<Self> {
+    pub fn from(unchecked: UncheckedSigned<T, KB::Signature>, key_box: &'a KB) -> Option<Self> {
         let signed = Signed { unchecked, key_box };
         if !signed.verify() {
             return None;
@@ -59,10 +59,10 @@ impl<'a, T: Signable + Index, S, KB: KeyBox<S>> Signed<'a, T, S, KB> {
     }
 }
 
-impl<'a, T: Signable + Index, S, KB: KeyBox<S> + 'a> From<Signed<'a, T, S, KB>>
-    for UncheckedSigned<T, S>
+impl<'a, T: Signable + Index, KB: KeyBox + 'a> From<Signed<'a, T, KB>>
+    for UncheckedSigned<T, KB::Signature>
 {
-    fn from(signed: Signed<'a, T, S, KB>) -> Self {
+    fn from(signed: Signed<'a, T, KB>) -> Self {
         signed.unchecked
     }
 }

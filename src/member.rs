@@ -115,33 +115,23 @@ pub struct Config<NI: NodeIdT> {
     pub create_lag: Duration,
 }
 
-pub struct Member<
-    'a,
-    H: Hasher,
-    D: Data,
-    Signature: Debug + Clone + Encode + Decode,
-    DP: DataIO<D>,
-    KB: KeyBox<Signature>,
-    N: Network,
-    NI: NodeIdT,
-> {
+pub struct Member<'a, H: Hasher, D: Data, DP: DataIO<D>, KB: KeyBox, N: Network, NI: NodeIdT> {
     config: Config<NI>,
     tx_consensus: Option<futures::channel::mpsc::UnboundedSender<NotificationIn<H>>>,
     data_io: DP,
     keybox: &'a KB,
     network: N,
-    store: UnitStore<'a, H, D, Signature, KB>,
+    store: UnitStore<'a, H, D, KB>,
     requests: BinaryHeap<ScheduledTask<H>>,
     threshold: NodeCount,
 }
 
-impl<'a, H, D, Signature, DP, KB, N, NI> Member<'a, H, D, Signature, DP, KB, N, NI>
+impl<'a, H, D, DP, KB, N, NI> Member<'a, H, D, DP, KB, N, NI>
 where
     H: Hasher,
     D: Data,
-    Signature: Debug + Clone + Encode + Decode,
     DP: DataIO<D>,
-    KB: KeyBox<Signature>,
+    KB: KeyBox,
     N: Network,
     NI: NodeIdT,
 {
@@ -218,7 +208,7 @@ where
 
     fn schedule_parents_request(&mut self, u_hash: H::Hash, curr_time: time::Instant) {
         if self.store.get_parents(u_hash).is_none() {
-            let message = ConsensusMessage::<H, D, Signature>::RequestParents(u_hash);
+            let message = ConsensusMessage::<H, D, KB::Signature>::RequestParents(u_hash);
             let command = NetworkCommand::SendToRandPeer(message.encode());
             self.send_network_command(command);
             debug!(target: "rush-member", "Fetch parents for {:?} sent.", u_hash);
@@ -239,7 +229,7 @@ where
             debug!(target: "rush-member", "Request dropped as the unit is in store already {:?}", coord);
             return;
         }
-        let message = ConsensusMessage::<H, D, Signature>::RequestCoord(coord);
+        let message = ConsensusMessage::<H, D, KB::Signature>::RequestCoord(coord);
         let command = NetworkCommand::SendToRandPeer(message.encode());
         self.send_network_command(command);
         debug!(target: "rush-member", "Fetch request for {:?} sent.", coord);
@@ -317,7 +307,7 @@ where
         }
     }
 
-    fn validate_unit_parents(&self, su: &SignedUnit<'a, H, D, Signature, KB>) -> bool {
+    fn validate_unit_parents(&self, su: &SignedUnit<'a, H, D, KB>) -> bool {
         // NOTE: at this point we cannot validate correctness of the control hash, in principle it could be
         // just a random hash, but we still would not be able to deduce that by looking at the unit only.
         let pre_unit = &su.signed().inner;
@@ -344,7 +334,7 @@ where
         true
     }
 
-    fn validate_unit(&self, su: &SignedUnit<'a, H, D, Signature, KB>) -> bool {
+    fn validate_unit(&self, su: &SignedUnit<'a, H, D, KB>) -> bool {
         // TODO: make sure we check all that is necessary for unit correctness
         // TODO: consider moving validation logic for units and alerts to another file, note however
         // that access to the authority list is required for validation.
@@ -373,7 +363,7 @@ where
         true
     }
 
-    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<'a, H, D, Signature, KB>) {
+    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<'a, H, D, KB>) {
         if let Some(sv) = self.store.is_new_fork(&su) {
             let creator = su.signed().creator();
             if !self.store.is_forker(creator) {
@@ -409,7 +399,7 @@ where
         }
     }
 
-    fn on_unit_received(&mut self, su: SignedUnit<'a, H, D, Signature, KB>, alert: bool) {
+    fn on_unit_received(&mut self, su: SignedUnit<'a, H, D, KB>, alert: bool) {
         if alert {
             // The unit has been validated already, we add to store.
             self.store.add_unit(su, true);
@@ -457,11 +447,7 @@ where
         }
     }
 
-    fn on_parents_response(
-        &mut self,
-        u_hash: H::Hash,
-        parents: Vec<SignedUnit<'a, H, D, Signature, KB>>,
-    ) {
+    fn on_parents_response(&mut self, u_hash: H::Hash, parents: Vec<SignedUnit<'a, H, D, KB>>) {
         // TODO: we *must* make sure that we have indeed sent such a request before accepting the response.
         let (u_round, u_control_hash, parent_ids) = match self.store.unit_by_hash(&u_hash) {
             Some(u) => (
@@ -516,7 +502,11 @@ where
         self.send_consensus_notification(NotificationIn::UnitParents(u_hash, p_hashes));
     }
 
-    fn validate_fork_proof(&self, forker: NodeIndex, proof: &ForkProof<H, D, Signature>) -> bool {
+    fn validate_fork_proof(
+        &self,
+        forker: NodeIndex,
+        proof: &ForkProof<H, D, KB::Signature>,
+    ) -> bool {
         let (u1, u2) = {
             let u1 = Signed::from(proof.u1.clone(), self.keybox);
             let u2 = Signed::from(proof.u2.clone(), self.keybox);
@@ -546,7 +536,7 @@ where
     fn validate_alerted_units(
         &self,
         forker: NodeIndex,
-        units: &[SignedUnit<'a, H, D, Signature, KB>],
+        units: &[SignedUnit<'a, H, D, KB>],
     ) -> bool {
         // Correctness rules:
         // 1) All units must pass unit validation
@@ -576,7 +566,7 @@ where
         true
     }
 
-    fn validate_alert(&self, alert: &Alert<H, D, Signature>) -> bool {
+    fn validate_alert(&self, alert: &Alert<H, D, KB::Signature>) -> bool {
         // The correctness of forker and sender should be checked in RBC, but no harm
         // to have a check here as well for now.
         if alert.forker.0 >= self.config.n_members.0 {
@@ -610,9 +600,9 @@ where
     fn form_alert(
         &self,
         forker: NodeIndex,
-        proof: ForkProof<H, D, Signature>,
-        units: Vec<SignedUnit<'a, H, D, Signature, KB>>,
-    ) -> Alert<H, D, Signature> {
+        proof: ForkProof<H, D, KB::Signature>,
+        units: Vec<SignedUnit<'a, H, D, KB>>,
+    ) -> Alert<H, D, KB::Signature> {
         Alert {
             sender: self
                 .config
@@ -625,7 +615,7 @@ where
         }
     }
 
-    fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, Signature>) {
+    fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, KB::Signature>) {
         let mut alerted_units = self.store.mark_forker(forker);
         if alerted_units.len() > MAX_UNITS_ALERT {
             // The ordering is increasing w.r.t. rounds.
@@ -639,7 +629,7 @@ where
         self.send_network_command(command);
     }
 
-    fn on_fork_alert(&mut self, alert: Alert<H, D, Signature>) {
+    fn on_fork_alert(&mut self, alert: Alert<H, D, KB::Signature>) {
         if self.validate_alert(&alert) {
             let forker = alert.forker;
             if !self.store.is_forker(forker) {
@@ -661,7 +651,7 @@ where
 
     fn on_consensus_message(
         &mut self,
-        message: ConsensusMessage<H, D, Signature>,
+        message: ConsensusMessage<H, D, KB::Signature>,
         peer_id: Vec<u8>,
     ) {
         use ConsensusMessage::*;
