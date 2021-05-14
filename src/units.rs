@@ -41,12 +41,12 @@ impl<H: Hasher, D: Data> Signable for FullUnit<H, D> {
 }
 
 impl<H: Hasher, D: Data> Index for FullUnit<H, D> {
-    fn index(&self) -> Option<NodeIndex> {
-        Some(self.inner.creator)
+    fn index(&self) -> NodeIndex {
+        self.inner.creator
     }
 }
 
-pub(crate) type UncheckedSignedUnit<H, D, Signature> = UncheckedSigned<FullUnit<H, D>, Signature>;
+pub(crate) type UncheckedSignedUnit<H, D, S> = UncheckedSigned<FullUnit<H, D>, S>;
 
 pub(crate) type SignedUnit<'a, H, D, KB> = Signed<'a, FullUnit<H, D>, KB>;
 

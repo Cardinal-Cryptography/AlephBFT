@@ -61,7 +61,7 @@ pub enum NetworkEvent {
 pub type SessionId = u64;
 
 pub trait Index {
-    fn index(&self) -> Option<NodeIndex>;
+    fn index(&self) -> NodeIndex;
 }
 pub trait NodeIdT:
     Clone + Debug + Display + Send + Eq + StdHash + Encode + Decode + Index + 'static

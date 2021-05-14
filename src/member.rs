@@ -14,7 +14,10 @@ use crate::{
     NodeIndex, NodeMap, OrderedBatch, RequestAuxData, SessionId, SpawnHandle,
 };
 
-use crate::{signed::Signed, units::UncheckedSignedUnit};
+use crate::{
+    signed::{SignatureError, Signed},
+    units::UncheckedSignedUnit,
+};
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
@@ -31,19 +34,19 @@ const MAX_UNITS_ALERT: usize = 200;
 
 /// The kind of message that is being sent.
 #[derive(Debug, Encode, Decode)]
-pub(crate) enum ConsensusMessage<H: Hasher, D: Data, Signature: Debug + Clone + Encode + Decode> {
+pub(crate) enum ConsensusMessage<H: Hasher, D: Data, S> {
     /// Fo disseminating newly created units.
-    NewUnit(UncheckedSignedUnit<H, D, Signature>),
+    NewUnit(UncheckedSignedUnit<H, D, S>),
     /// Request for a unit by its coord.
     RequestCoord(UnitCoord),
     /// Response to a request by coord.
-    ResponseCoord(UncheckedSignedUnit<H, D, Signature>),
+    ResponseCoord(UncheckedSignedUnit<H, D, S>),
     /// Request for the full list of parents of a unit.
     RequestParents(H::Hash),
     /// Response to a request for a full list of parents.
-    ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, Signature>>),
+    ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, S>>),
     /// Alert regarding forks,
-    ForkAlert(Alert<H, D, Signature>),
+    ForkAlert(Alert<H, D, S>),
 }
 
 /// Type for incoming notifications: Member to Consensus.
@@ -250,7 +253,9 @@ where
             .unit_by_hash(&hash)
             .cloned()
             .expect("Our units are in store.");
-        let message = ConsensusMessage::NewUnit(UncheckedSignedUnit::from(signed_unit));
+        let message = ConsensusMessage::<H, D, KB::Signature>::NewUnit(UncheckedSignedUnit::from(
+            signed_unit,
+        ));
         let command = NetworkCommand::SendToAll(message.encode());
         debug!(target: "rush-member", "Sending a unit {:?} over network after delay {:?}.", hash, interval);
         self.send_network_command(command);
@@ -344,7 +349,7 @@ where
             debug!(target: "rush-member", "A unit with incorrect session_id! {:?}", su.unchecked);
             return false;
         }
-        if !su.verify() {
+        if !su.verify(su.signed().creator()) {
             debug!(target: "rush-member", "A unit with incorrect signature! {:?}", su.unchecked);
             return false;
         }
@@ -508,10 +513,10 @@ where
         proof: &ForkProof<H, D, KB::Signature>,
     ) -> bool {
         let (u1, u2) = {
-            let u1 = Signed::from(proof.u1.clone(), self.keybox);
-            let u2 = Signed::from(proof.u2.clone(), self.keybox);
+            let u1 = proof.u1.clone().check(self.keybox);
+            let u2 = proof.u2.clone().check(self.keybox);
             match (u1, u2) {
-                (Some(u1), Some(u2)) => (u1, u2),
+                (Ok(u1), Ok(u2)) => (u1, u2),
                 _ => {
                     debug!(target: "rush-member", "Invalid signatures in a proof.");
                     return false;
@@ -581,15 +586,18 @@ where
             debug!(target: "rush-member", "Alert has incorrect fork proof.");
             return false;
         }
-        let legit_units: Vec<_> = alert
+        let legit_units: Result<Vec<_>, _> = alert
             .legit_units
             .iter()
-            .filter_map(|unchecked| Signed::from(unchecked.clone(), self.keybox))
+            .map(|unchecked| unchecked.clone().check(self.keybox))
             .collect();
-        if legit_units.len() != alert.legit_units.len() {
-            debug!(target: "rush-member", "Alert has incorrect unit/s.");
-            return false;
-        }
+        let legit_units = match legit_units {
+            Ok(legit_units) => legit_units,
+            Err(e) => {
+                debug!(target: "rush-member", "Alert has a badly signed unit: {:?}.", e);
+                return false;
+            }
+        };
         if !self.validate_alerted_units(alert.forker, &legit_units[..]) {
             debug!(target: "rush-member", "Alert has incorrect unit/s.");
             return false;
@@ -604,11 +612,7 @@ where
         units: Vec<SignedUnit<'a, H, D, KB>>,
     ) -> Alert<H, D, KB::Signature> {
         Alert {
-            sender: self
-                .config
-                .node_id
-                .index()
-                .expect("Consensus is run only by validators"),
+            sender: self.config.node_id.index(),
             forker,
             proof,
             legit_units: units.into_iter().map(|signed| signed.into()).collect(),
@@ -637,9 +641,8 @@ where
                 self.on_new_forker_detected(forker, alert.proof);
             }
             for unchecked in alert.legit_units {
-                if let Some(su) = Signed::from(unchecked, self.keybox) {
-                    self.on_unit_received(su, true);
-                }
+                let su = unchecked.check(self.keybox).expect("alert is valid; qed.");
+                self.on_unit_received(su, true);
             }
         } else {
             debug!(
@@ -658,7 +661,7 @@ where
         match message {
             NewUnit(unchecked) => {
                 debug!(target: "rush-member", "New unit received {:?}.", unchecked);
-                if let Some(su) = Signed::from(unchecked, self.keybox) {
+                if let Ok(su) = unchecked.check(self.keybox) {
                     self.on_unit_received(su, false);
                 }
             }
@@ -668,7 +671,7 @@ where
             ResponseCoord(unchecked) => {
                 debug!(target: "rush-member", "Fetch response received {:?}.", unchecked);
 
-                if let Some(su) = Signed::from(unchecked, self.keybox) {
+                if let Ok(su) = unchecked.check(self.keybox) {
                     self.on_unit_received(su, false);
                 }
             }
@@ -681,11 +684,14 @@ where
                 // TODO: these responses are quite heavy, we should at some point add
                 // checks to make sure we are not processing responses to request we did not make.
                 // TODO: we need to check if the response (and alert) does not exceed some max message size in network.
-                let parents = parents
+                let parents: Result<Vec<_>, SignatureError<_, _>> = parents
                     .into_iter()
-                    .filter_map(|unchecked| Signed::from(unchecked, self.keybox))
+                    .map(|unchecked| unchecked.check(self.keybox))
                     .collect();
-                self.on_parents_response(u_hash, parents);
+                match parents {
+                    Ok(parents) => self.on_parents_response(u_hash, parents),
+                    Err(err) => debug!(target: "rush-member", "Bad signature received {:?}.", err),
+                }
             }
             ForkAlert(alert) => {
                 debug!(target: "rush-member", "Fork alert received {:?}.", alert);
@@ -726,7 +732,7 @@ where
     }
 
     pub async fn run_session(
-        &'a mut self,
+        mut self,
         spawn_handle: impl SpawnHandle,
         exit: oneshot::Receiver<()>,
     ) {

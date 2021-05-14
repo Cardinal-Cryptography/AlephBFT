@@ -47,8 +47,8 @@ pub mod mock {
     }
 
     impl Index for NodeId {
-        fn index(&self) -> Option<NodeIndex> {
-            Some(NodeIndex(self.0))
+        fn index(&self) -> NodeIndex {
+            NodeIndex(self.0)
         }
     }
 
