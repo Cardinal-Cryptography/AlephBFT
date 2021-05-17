@@ -259,11 +259,11 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         su: &SignedUnit<'a, H, D, KB>,
     ) -> Option<SignedUnit<'a, H, D, KB>> {
         // TODO: optimize so that unit's hash is computed once only, after it is received
-        let hash = su.signed().hash();
+        let hash = su.as_signable().hash();
         if self.contains_hash(&hash) {
             return None;
         }
-        let coord = su.signed().coord();
+        let coord = su.as_signable().coord();
         self.unit_by_coord(coord).cloned()
     }
 
@@ -295,7 +295,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
                 // it arrives in an alert for the *first* time.
                 // If we didn't do that, then there would be some awkward issues with duplicates.
                 self.by_coord.remove(&coord);
-                let hash = su.signed().hash();
+                let hash = su.as_signable().hash();
                 self.by_hash.remove(&hash);
                 self.parents.remove(&hash);
                 // Now we are in a state as if the unit never arrived.
@@ -306,9 +306,9 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
 
     pub(crate) fn add_unit(&mut self, su: SignedUnit<'a, H, D, KB>, alert: bool) {
         // TODO: optimize so that unit's hash is computed once only, after it is received
-        let hash = su.signed().hash();
-        let round = su.signed().round();
-        let creator = su.signed().creator();
+        let hash = su.as_signable().hash();
+        let round = su.as_signable().round();
+        let creator = su.as_signable().creator();
         if alert {
             assert!(
                 self.is_forker[creator],
@@ -320,7 +320,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             return;
         }
         self.by_hash.insert(hash, su.clone());
-        let coord = su.signed().coord();
+        let coord = su.as_signable().coord();
         // We do not store multiple forks of a unit by coord, as there is never a need to
         // fetch all units corresponding to a particular coord.
         if self.by_coord.insert(coord, su.clone()).is_none() {

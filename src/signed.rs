@@ -5,6 +5,11 @@ pub trait Signable {
     fn bytes_to_sign(&self) -> Vec<u8>;
 }
 
+/// A pair consisting of an instance of the `Signable` trait and an (arbitrary) signature.
+///
+/// The methods `[UncheckedSigned::check_with_index]` and `[UncheckedSigned::check]` can be used
+/// to upgrade this `struct` to `[CheckedSigned<T, S>]` which ensures that the signature matches the
+/// signed object.
 #[derive(Clone, Debug, Decode, Encode)]
 pub struct UncheckedSigned<T: Signable, S> {
     signable: T,
@@ -17,6 +22,7 @@ pub(crate) struct SignatureError<T: Signable, S> {
 }
 
 impl<T: Signable, S> UncheckedSigned<T, S> {
+    /// Verifies whether the signature matches the key with the given index.
     pub(crate) fn check_with_index<KB: KeyBox<Signature = S>>(
         self,
         key_box: &KB,
@@ -33,6 +39,7 @@ impl<T: Signable, S> UncheckedSigned<T, S> {
 }
 
 impl<T: Signable + Index, S> UncheckedSigned<T, S> {
+    /// Verifies, whether the signature matches the key with the index of the signed object.
     pub(crate) fn check<KB: KeyBox<Signature = S>>(
         self,
         key_box: &KB,
@@ -42,9 +49,16 @@ impl<T: Signable + Index, S> UncheckedSigned<T, S> {
     }
 }
 
+/// A pair consisting of an object and a matching signature
+///
+/// An instance of `Signed<'a, T, KB>` stores an object `t: T`, a signature `s: KB::Signature`,
+/// and a reference `kb: &'a KB`, with the requirement that there exists some node index
+/// `i: NodeIndex` such that `kb.verify(&t.bytes_to_sign(), s, i)` return true. The index
+/// `i` is not stored explicitly, but usually, either it is a part of the signed object `t`,
+/// or is known from the context.
 #[derive(Debug)]
 pub struct Signed<'a, T: Signable, KB: KeyBox> {
-    pub(crate) unchecked: UncheckedSigned<T, KB::Signature>,
+    unchecked: UncheckedSigned<T, KB::Signature>,
     key_box: &'a KB,
 }
 
@@ -60,31 +74,30 @@ impl<'a, T: Signable + Clone, KB: KeyBox> Clone for Signed<'a, T, KB> {
 impl<'a, T: Signable, KB: KeyBox> Signed<'a, T, KB> {
     pub fn sign(key_box: &'a KB, signable: T) -> Self {
         let signature = key_box.sign(&signable.bytes_to_sign());
-        let signed = signable;
         Signed {
             unchecked: UncheckedSigned {
-                signable: signed,
+                signable,
                 signature,
             },
             key_box,
         }
     }
 
-    pub(crate) fn verify(&self, index: NodeIndex) -> bool {
-        let signed = &self.unchecked.signable;
-        self.key_box
-            .verify(&signed.bytes_to_sign(), &self.unchecked.signature, index)
+    pub(crate) fn as_unchecked(&self) -> &UncheckedSigned<T, KB::Signature> {
+        &self.unchecked
     }
 
-    pub(crate) fn signed(&self) -> &T {
+    pub(crate) fn into_unchecked(self) -> UncheckedSigned<T, KB::Signature> {
+        self.unchecked
+    }
+
+    pub(crate) fn as_signable(&self) -> &T {
         &self.unchecked.signable
     }
 }
 
-impl<'a, T: Signable, KB: KeyBox + 'a> From<Signed<'a, T, KB>>
-    for UncheckedSigned<T, KB::Signature>
-{
+impl<'a, T: Signable, KB: KeyBox> From<Signed<'a, T, KB>> for UncheckedSigned<T, KB::Signature> {
     fn from(signed: Signed<'a, T, KB>) -> Self {
-        signed.unchecked
+        signed.into_unchecked()
     }
 }
