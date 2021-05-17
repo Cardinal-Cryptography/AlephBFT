@@ -58,12 +58,12 @@ pub mod mock {
     pub struct Hasher64;
 
     impl Hasher for Hasher64 {
-        type Hash = u64;
+        type Hash = [u8; 8];
 
         fn hash(x: &[u8]) -> Self::Hash {
             let mut hasher = DefaultHasher::new();
             hasher.write(x);
-            hasher.finish()
+            hasher.finish().to_ne_bytes()
         }
     }
 

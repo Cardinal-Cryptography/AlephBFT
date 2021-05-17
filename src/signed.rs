@@ -2,7 +2,8 @@ use crate::{nodes::NodeIndex, Index, KeyBox};
 use codec::{Decode, Encode};
 
 pub trait Signable {
-    fn bytes_to_sign(&self) -> Vec<u8>;
+    type Hash: AsRef<[u8]>;
+    fn hash(&self) -> Self::Hash;
 }
 
 /// A pair consisting of an instance of the `Signable` trait and an (arbitrary) signature.
@@ -28,7 +29,7 @@ impl<T: Signable, S> UncheckedSigned<T, S> {
         key_box: &KB,
         index: NodeIndex,
     ) -> Result<Signed<T, KB>, SignatureError<T, KB::Signature>> {
-        if !key_box.verify(&self.signable.bytes_to_sign(), &self.signature, index) {
+        if !key_box.verify(self.signable.hash().as_ref(), &self.signature, index) {
             return Err(SignatureError { unchecked: self });
         }
         Ok(Signed {
@@ -73,7 +74,7 @@ impl<'a, T: Signable + Clone, KB: KeyBox> Clone for Signed<'a, T, KB> {
 
 impl<'a, T: Signable, KB: KeyBox> Signed<'a, T, KB> {
     pub fn sign(key_box: &'a KB, signable: T) -> Self {
-        let signature = key_box.sign(&signable.bytes_to_sign());
+        let signature = key_box.sign(&signable.hash().as_ref());
         Signed {
             unchecked: UncheckedSigned {
                 signable,

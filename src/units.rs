@@ -35,8 +35,9 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
 }
 
 impl<H: Hasher, D: Data> Signable for FullUnit<H, D> {
-    fn bytes_to_sign(&self) -> Vec<u8> {
-        self.encode()
+    type Hash = H::Hash;
+    fn hash(&self) -> H::Hash {
+        self.using_encoded(H::hash)
     }
 }
 
