@@ -4,7 +4,7 @@ use crate::{
 };
 use codec::{Decode, Encode, Error, Input, Output};
 use log::error;
-use std::{collections::HashMap, hash::Hash as StdHash};
+use std::{cell::RefCell, collections::HashMap, hash::Hash as StdHash};
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Encode, Decode, StdHash)]
 pub(crate) struct UnitCoord {
@@ -132,19 +132,17 @@ pub(crate) struct FullUnit<H: Hasher, D: Data> {
     data: D,
     session_id: SessionId,
     #[codec(skip)]
-    hash: H::Hash,
+    hash: RefCell<Option<H::Hash>>,
 }
 
 impl<H: Hasher, D: Data> FullUnit<H, D> {
     pub(crate) fn new(pre_unit: PreUnit<H>, data: D, session_id: SessionId) -> Self {
-        let mut full_unit = FullUnit {
+        FullUnit {
             pre_unit,
             data,
             session_id,
-            hash: Default::default(),
-        };
-        full_unit.hash = full_unit.using_encoded(H::hash);
-        full_unit
+            hash: RefCell::new(Default::default()),
+        }
     }
     pub(crate) fn as_pre_unit(&self) -> &PreUnit<H> {
         &self.pre_unit
@@ -168,10 +166,17 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
         self.session_id
     }
     pub(crate) fn hash(&self) -> H::Hash {
-        self.hash
+        match *self.hash.borrow() {
+            Some(hash) => hash,
+            None => {
+                let hash = self.using_encoded(H::hash);
+                *self.hash.borrow_mut() = Some(hash);
+                hash
+            }
+        }
     }
     pub(crate) fn unit(&self) -> Unit<H> {
-        Unit::new(self.pre_unit.clone(), self.hash)
+        Unit::new(self.pre_unit.clone(), self.hash())
     }
 }
 
@@ -227,7 +232,7 @@ mod tests {
         units::{ControlHash, FullUnit, PreUnit},
         Hasher,
     };
-    use codec::{Encode, Decode};
+    use codec::{Decode, Encode};
 
     #[test]
     fn test_full_unit_hash_is_correct() {
@@ -235,7 +240,7 @@ mod tests {
         let pre_unit = PreUnit::new(NodeIndex(5), 6, ch);
         let full_unit = FullUnit::new(pre_unit, 7, 8);
         let hash = full_unit.using_encoded(Hasher64::hash);
-        assert_eq!(full_unit.hash, hash);
+        assert_eq!(full_unit.hash(), hash);
     }
 
     #[test]
@@ -244,7 +249,6 @@ mod tests {
         let pre_unit = PreUnit::new(NodeIndex(5), 6, ch);
         let full_unit = FullUnit::new(pre_unit, 7, 8);
         let encoded = full_unit.encode();
-        assert_eq!(encoded.len(), 35);
         let decoded = FullUnit::decode(&mut encoded.as_slice()).expect("should decode correctly");
         assert_eq!(decoded, full_unit);
     }
