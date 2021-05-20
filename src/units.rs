@@ -166,7 +166,8 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
         self.session_id
     }
     pub(crate) fn hash(&self) -> H::Hash {
-        match *self.hash.borrow() {
+        let hash = *self.hash.borrow();
+        match hash {
             Some(hash) => hash,
             None => {
                 let hash = self.using_encoded(H::hash);
