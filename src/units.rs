@@ -126,13 +126,21 @@ impl<H: Hasher> PreUnit<H> {
 }
 
 ///
-#[derive(Debug, Default, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Default, Clone, Encode, Decode)]
 pub(crate) struct FullUnit<H: Hasher, D: Data> {
     pre_unit: PreUnit<H>,
     data: D,
     session_id: SessionId,
     #[codec(skip)]
     hash: RefCell<Option<H::Hash>>,
+}
+
+impl<H: Hasher, D: Data> PartialEq for FullUnit<H, D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.pre_unit == other.pre_unit
+            && self.data == other.data
+            && self.session_id == other.session_id
+    }
 }
 
 impl<H: Hasher, D: Data> FullUnit<H, D> {
@@ -258,6 +266,7 @@ mod tests {
         let ch = ControlHash::<Hasher64>::new(&vec![].into());
         let pre_unit = PreUnit::new(NodeIndex(5), 6, ch);
         let full_unit = FullUnit::new(pre_unit, 7, 8);
+        full_unit.hash();
         let encoded = full_unit.encode();
         let decoded = FullUnit::decode(&mut encoded.as_slice()).expect("should decode correctly");
         assert_eq!(decoded, full_unit);
