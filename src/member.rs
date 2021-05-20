@@ -447,15 +447,11 @@ where
         let (u_round, u_control_hash, parent_ids) = match self.store.unit_by_hash(&u_hash) {
             Some(su) => {
                 let full_unit = su.as_signable();
-                let parents = &full_unit.control_hash().parents_mask;
-                let parents = (0..parents.len()).into_iter().map(|i| parents[i]);
+                let parents: Vec<_> = full_unit.control_hash().parents().collect();
                 (
                     full_unit.round(),
-                    full_unit.control_hash().hash,
-                    parents
-                        .enumerate()
-                        .filter_map(|(i, b)| if b { Some(i.into()) } else { None })
-                        .collect::<Vec<NodeIndex>>(),
+                    full_unit.control_hash().combined_hash,
+                    parents,
                 )
             }
             None => {

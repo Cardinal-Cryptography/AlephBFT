@@ -78,7 +78,7 @@ impl<H: Hasher> TerminalUnit<H> {
     pub(crate) fn verify_control_hash(&self) -> bool {
         // this will be called only after all parents have been reconstructed
 
-        self.unit.control_hash().hash == ControlHash::<H>::combine_hashes(&self.parents)
+        self.unit.control_hash().combined_hash == ControlHash::<H>::combine_hashes(&self.parents)
     }
 }
 

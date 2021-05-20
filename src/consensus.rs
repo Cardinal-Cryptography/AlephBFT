@@ -199,11 +199,11 @@ mod tests {
         let bad_pu = PreUnit::<Hasher64>::new(1.into(), 0, control_hash);
         let bad_control_hash: <Hasher64 as Hasher>::Hash = [0, 1, 0, 1, 0, 1, 0, 1];
         assert!(
-            bad_control_hash != bad_pu.control_hash().hash,
+            bad_control_hash != bad_pu.control_hash().combined_hash,
             "Bad control hash cannot be the correct one."
         );
         let mut control_hash = bad_pu.control_hash().clone();
-        control_hash.hash = bad_control_hash;
+        control_hash.combined_hash = bad_control_hash;
         let bad_pu = PreUnit::new(bad_pu.creator(), bad_pu.round(), control_hash);
         let bad_hash: <Hasher64 as Hasher>::Hash = [0, 1, 0, 1, 0, 1, 0, 1];
         let bad_unit = Unit::new(bad_pu, bad_hash);

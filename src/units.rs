@@ -34,7 +34,7 @@ impl UnitCoord {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct ControlHash<H: Hasher> {
     pub(crate) parents_mask: bit_vec::BitVec<u32>,
-    pub(crate) hash: H::Hash,
+    pub(crate) combined_hash: H::Hash,
 }
 
 impl<H: Hasher> ControlHash<H> {
@@ -44,7 +44,7 @@ impl<H: Hasher> ControlHash<H> {
 
         ControlHash {
             parents_mask: parents,
-            hash,
+            combined_hash: hash,
         }
     }
 
@@ -73,7 +73,7 @@ impl<H: Hasher> Encode for ControlHash<H> {
     fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
         (self.parents_mask.len() as u32).encode_to(dest);
         self.parents_mask.to_bytes().encode_to(dest);
-        self.hash.encode_to(dest);
+        self.combined_hash.encode_to(dest);
     }
 }
 
@@ -86,17 +86,15 @@ impl<H: Hasher> Decode for ControlHash<H> {
         let hash = H::Hash::decode(input)?;
         Ok(ControlHash {
             parents_mask: parents,
-            hash,
+            combined_hash: hash,
         })
     }
 }
 
-/// The simplest type representing a unit, consisting
+/// The simplest type representing a unit, consisting of coordinates and a control hash
 #[derive(Clone, Debug, Default, PartialEq, Encode, Decode)]
 pub(crate) struct PreUnit<H: Hasher> {
     coord: UnitCoord,
-    // round is stored as `u16` not `Round = usize` for efficiency. Also, `usize` does not implement
-    // Encode + Decode.
     control_hash: ControlHash<H>,
 }
 
@@ -128,7 +126,7 @@ impl<H: Hasher> PreUnit<H> {
 }
 
 ///
-#[derive(Debug, Default, Clone, Encode, Decode)]
+#[derive(Debug, Default, Clone, PartialEq, Encode, Decode)]
 pub(crate) struct FullUnit<H: Hasher, D: Data> {
     pre_unit: PreUnit<H>,
     data: D,
@@ -229,14 +227,25 @@ mod tests {
         units::{ControlHash, FullUnit, PreUnit},
         Hasher,
     };
-    use codec::Encode;
+    use codec::{Encode, Decode};
 
     #[test]
-    fn test_full_unit_hash() {
+    fn test_full_unit_hash_is_correct() {
         let ch = ControlHash::<Hasher64>::new(&vec![].into());
         let pre_unit = PreUnit::new(NodeIndex(5), 6, ch);
         let full_unit = FullUnit::new(pre_unit, 7, 8);
         let hash = full_unit.using_encoded(Hasher64::hash);
         assert_eq!(full_unit.hash, hash);
+    }
+
+    #[test]
+    fn test_full_unit_codec() {
+        let ch = ControlHash::<Hasher64>::new(&vec![].into());
+        let pre_unit = PreUnit::new(NodeIndex(5), 6, ch);
+        let full_unit = FullUnit::new(pre_unit, 7, 8);
+        let encoded = full_unit.encode();
+        assert_eq!(encoded.len(), 35);
+        let decoded = FullUnit::decode(&mut encoded.as_slice()).expect("should decode correctly");
+        assert_eq!(decoded, full_unit);
     }
 }
