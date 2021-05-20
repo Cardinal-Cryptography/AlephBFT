@@ -245,6 +245,15 @@ mod tests {
     }
 
     #[test]
+    fn test_control_hash_codec() {
+        let ch = ControlHash::<Hasher64>::new(&vec![Some([0; 8]), None, Some([1; 8])].into());
+        let encoded = ch.encode();
+        let decoded =
+            ControlHash::decode(&mut encoded.as_slice()).expect("should decode correctly");
+        assert_eq!(decoded, ch);
+    }
+
+    #[test]
     fn test_full_unit_codec() {
         let ch = ControlHash::<Hasher64>::new(&vec![].into());
         let pre_unit = PreUnit::new(NodeIndex(5), 6, ch);
