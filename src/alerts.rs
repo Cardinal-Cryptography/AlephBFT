@@ -5,7 +5,7 @@ use crate::{
     rmc::{DoublingDelayScheduler, ReliableMulticast},
     signed::{Multisigned, PartialMultisignature, Signable, Signature, Signed, UncheckedSigned},
     units::UncheckedSignedUnit,
-    Data, Hasher, Index, MultiKeychain, NodeIndex, Receiver, Sender,
+    Data, Hasher, Index, MultiKeychain, NodeIndex, Receiver, Sender, SessionId,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -94,6 +94,7 @@ pub(crate) enum ForkingNotification<H: Hasher, D: Data, S: Signature> {
 }
 
 struct Alerter<'a, H: Hasher, D: Data, MK: MultiKeychain> {
+    session_id: SessionId,
     keychain: &'a MK,
     messages_for_network: Sender<(
         AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
@@ -117,6 +118,7 @@ struct Alerter<'a, H: Hasher, D: Data, MK: MultiKeychain> {
 pub(crate) struct AlertConfig {
     pub max_units_per_alert: usize,
     pub n_members: NodeCount,
+    pub session_id: SessionId,
 }
 
 impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
@@ -136,6 +138,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         let (messages_for_rmc, messages_from_us) = mpsc::unbounded();
         let (messages_for_us, messages_from_rmc) = mpsc::unbounded();
         Self {
+            session_id: config.session_id,
             keychain,
             messages_for_network,
             messages_from_network,
@@ -227,6 +230,11 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         };
         let full_unit1 = u1.as_signable();
         let full_unit2 = u2.as_signable();
+        if full_unit1.session_id() != self.session_id || full_unit2.session_id() != self.session_id
+        {
+            debug!(target: "alerter", "{:?} Alert from different session.", self.index());
+            return None;
+        }
         if full_unit1 == full_unit2 {
             debug!(target: "alerter", "{:?} Two copies of the same unit do not constitute a fork.", self.index());
             return None;

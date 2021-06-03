@@ -684,6 +684,7 @@ where
         let (alerter_exit, exit_stream) = oneshot::channel();
         let keybox_for_alerter = self.keybox.clone();
         let alert_config = AlertConfig {
+            session_id: self.config.session_id,
             max_units_per_alert: self.config.max_units_per_alert,
             n_members: self.n_members,
         };
