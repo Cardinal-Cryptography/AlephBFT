@@ -54,6 +54,12 @@ impl<H: Hasher, D: Data, S: Signature> Alert<H, D, S> {
             }
         }
     }
+
+    // Simplified forker check, should only be called for alerts that have already been checked to
+    // contain valid proofs.
+    fn forker(&self) -> NodeIndex {
+        self.proof.0.as_signable().creator()
+    }
 }
 
 impl<H: Hasher, D: Data, S: Signature> Index for Alert<H, D, S> {
@@ -245,7 +251,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     }
 
     fn on_own_alert(&mut self, alert: Alert<H, D, MK::Signature>) {
-        let forker = alert.proof.0.as_signable().creator();
+        let forker = alert.forker();
         self.known_forkers.insert(forker, alert.proof.clone());
         let alert = Signed::sign(alert, self.keychain);
         if let Err(e) = self.messages_for_network.unbounded_send((
@@ -272,6 +278,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         if let Some(forker) = self.who_is_forking(&contents.proof) {
             if self.known_rmcs.contains_key(&(contents.sender, forker)) {
                 debug!(target: "alerter","{:?} We already know about an alert by {:?} about {:?}.", self.index(), alert.as_signable().sender, forker);
+                self.known_alerts.insert(contents.hash(), alert);
                 return;
             }
             if !self.is_forker(forker) {
@@ -306,9 +313,12 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         message: rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
         let hash = message.hash();
-        if self.known_alerts.contains_key(hash) {
-            if let Err(e) = self.messages_for_rmc.unbounded_send(message) {
-                debug!(target: "alerter", "{:?} Error when forwarding RMC message to RMC: {:?}.", self.index(), e);
+        if let Some(alert) = self.known_alerts.get(hash) {
+            let alert_id = (alert.as_signable().sender, alert.as_signable().forker());
+            if self.known_rmcs.get(&alert_id) == Some(hash) || message.is_complete() {
+                if let Err(e) = self.messages_for_rmc.unbounded_send(message) {
+                    debug!(target: "alerter", "{:?} Error when forwarding RMC message to RMC: {:?}.", self.index(), e);
+                }
             }
         } else if let Err(e) = self.messages_for_network.unbounded_send((
             AlertMessage::AlertRequest(self.index(), *hash),
@@ -342,6 +352,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
             }
         };
         let forker = alert.proof.0.as_signable().creator();
+        self.known_rmcs.insert((alert.sender, forker), alert.hash());
         if !self.correct_commitment(forker, &alert.legit_units) {
             debug!(target: "alerter","{:?} We have received an incorrect unit commitment from {:?}.", self.index(), alert.sender);
             return;

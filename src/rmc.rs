@@ -32,6 +32,9 @@ impl<H: Signable, S: Signature, M: PartialMultisignature> Message<H, S, M> {
             Message::MultisignedHash(unchecked) => unchecked.as_signable(),
         }
     }
+    pub fn is_complete(&self) -> bool {
+        matches!(self, Message::MultisignedHash(_))
+    }
 }
 
 #[derive(Clone)]
