@@ -8,7 +8,7 @@ use crate::{
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::error;
-use std::fmt::Debug;
+use std::{fmt::Debug, hash::Hash};
 
 /// Network represents an interface for sending and receiving NetworkData.
 ///
@@ -79,6 +79,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> Decode
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Recipient {
     Everyone,
     Node(NodeIndex),
@@ -186,7 +187,7 @@ mod tests {
         nodes::BoolNodeMap,
         testing::mock::{self, Data, Hasher64, PartialMultisignature, Signature},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
-        Round, Signable, UncheckedSigned,
+        Round, UncheckedSigned,
     };
 
     fn test_unchecked_unit(
@@ -196,7 +197,7 @@ mod tests {
     ) -> UncheckedSignedUnit<Hasher64, Data, Signature> {
         let control_hash = ControlHash {
             parents_mask: BoolNodeMap::with_capacity(7.into()),
-            combined_hash: 0.using_encoded(Hasher64::hash),
+            combined_hash: 0.using_encoded(<Hasher64 as Hasher>::hash),
         };
         let pu = PreUnit::new(creator, round, control_hash);
         let data = Data::new(UnitCoord::new(7, 13.into()), variant);
@@ -264,7 +265,7 @@ mod tests {
         use UnitMessage::RequestParents;
 
         let ni = 7.into();
-        let h = 43.using_encoded(Hasher64::hash);
+        let h = 43.using_encoded(<Hasher64 as Hasher>::hash);
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
             RequestParents(ni, h),
         ));
@@ -280,7 +281,7 @@ mod tests {
         use NetworkDataInner::Units;
         use UnitMessage::ResponseParents;
 
-        let h = 43.using_encoded(Hasher64::hash);
+        let h = 43.using_encoded(<Hasher64 as Hasher>::hash);
         let p1 = test_unchecked_unit(5.into(), 43, 1729);
         let p2 = test_unchecked_unit(13.into(), 43, 1729);
         let p3 = test_unchecked_unit(17.into(), 43, 1729);
@@ -325,8 +326,8 @@ mod tests {
         assert!(decoded.is_ok(), "Bug in dencode/decode for Units(NewUnit)");
         if let Alert(ForkAlert(unchecked_alert)) = decoded.unwrap().0 {
             assert!(
-                alert.hash() == unchecked_alert.as_signable().hash(),
-                "decoded should equel encodee"
+                &alert == unchecked_alert.as_signable(),
+                "decoded should equal encoded"
             )
         }
     }

@@ -5,7 +5,10 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use log::{debug, error};
-use std::{collections::HashMap, hash::Hash as StdHash};
+use std::{
+    collections::HashMap,
+    hash::{Hash as StdHash, Hasher as StdHasher},
+};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Encode, Decode, StdHash)]
 pub(crate) struct UnitCoord {
@@ -32,7 +35,7 @@ impl UnitCoord {
 
 /// Combined hashes of the parents of a unit together with the set of indices of creators of the
 /// parents
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, StdHash, Encode, Decode)]
 pub(crate) struct ControlHash<H: Hasher> {
     pub(crate) parents_mask: BoolNodeMap,
     pub(crate) combined_hash: H::Hash,
@@ -67,7 +70,7 @@ impl<H: Hasher> ControlHash<H> {
 }
 
 /// The simplest type representing a unit, consisting of coordinates and a control hash
-#[derive(Clone, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, StdHash, Encode, Decode)]
 pub(crate) struct PreUnit<H: Hasher> {
     coord: UnitCoord,
     control_hash: ControlHash<H>,
@@ -126,9 +129,15 @@ impl<H: Hasher, D: Data> Clone for FullUnit<H, D> {
 
 impl<H: Hasher, D: Data> PartialEq for FullUnit<H, D> {
     fn eq(&self, other: &Self) -> bool {
-        self.pre_unit == other.pre_unit
-            && self.data == other.data
-            && self.session_id == other.session_id
+        self.key() == other.key()
+    }
+}
+
+impl<H: Hasher, D: Data> Eq for FullUnit<H, D> {}
+
+impl<H: Hasher + StdHash, D: Data> StdHash for FullUnit<H, D> {
+    fn hash<R: StdHasher>(&self, state: &mut R) {
+        StdHash::hash(&self.key(), state);
     }
 }
 
@@ -161,6 +170,9 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
     }
     pub(crate) fn session_id(&self) -> SessionId {
         self.session_id
+    }
+    fn key(&self) -> (&PreUnit<H>, &D, &SessionId) {
+        (&self.pre_unit, &self.data, &self.session_id)
     }
     pub(crate) fn hash(&self) -> H::Hash {
         let hash = *self.hash.read();
