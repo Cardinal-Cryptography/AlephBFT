@@ -19,11 +19,10 @@ description = """
     behavior, making it an excellent fit for blockchain-related applications.
     """
 
-
 [dependencies]
 bit-vec = "0.6"
 futures = "0.3"
-futures-timer = "3.0.2"
+futures-timer = "3.0"
 derive_more = "0.99"
 log = "0.4"
 rand = "0.8"
@@ -31,7 +30,7 @@ async-trait = "0.1"
 codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
-libp2p = { version ="0", features = ["mdns", "tcp-tokio"]}
 tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
+libp2p = { version ="0.38", features = ["mdns", "tcp-tokio"]}
 parking_lot = "0.11"
 env_logger = "0.8"
