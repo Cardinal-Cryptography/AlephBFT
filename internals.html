@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Rush Internals - Rush - Aleph in Rust</title>
+        <title>AlephBFT Internals - AlephBFT</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_rush.html"><strong aria-hidden="true">1.</strong> What is Rush?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="rush_api.html"><strong aria-hidden="true">3.</strong> API of Rush</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and Rush</a></li><li class="chapter-item expanded "><a href="internals.html" class="active"><strong aria-hidden="true">5.</strong> Rush Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html" class="active"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -127,7 +127,7 @@
                         
                     </div>
 
-                    <h1 class="menu-title">Rush - Aleph in Rust</h1>
+                    <h1 class="menu-title">AlephBFT</h1>
 
                     <div class="right-buttons">
                         
@@ -165,8 +165,8 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h2 id="5-rush-internals"><a class="header" href="#5-rush-internals">5 Rush Internals</a></h2>
-<p>To explain the inner workings of Rush it is instructive to follow the path of a unit: from the very start when it is created to the moment when its round is decided and it's data is placed in one of the output batches. Here we give a brief overview and subsequently go more into details of specific components in dedicated subsections.</p>
+                        <h2 id="5-alephbft-internals"><a class="header" href="#5-alephbft-internals">5 AlephBFT Internals</a></h2>
+<p>To explain the inner workings of AlephBFT it is instructive to follow the path of a unit: from the very start when it is created to the moment when its round is decided and it's data is placed in one of the output batches. Here we give a brief overview and subsequently go more into details of specific components in dedicated subsections.</p>
 <ol>
 <li>The unit is created by one of the node's <code>Creator</code> component -- implemented in <code>src/creator.rs</code>. Creator sends a notification to an outer component.</li>
 <li>The newly created unit is filled with data, session information and a signature. This is done in <code>src/member.rs</code>. Subsequently a recurring task of broadcasting this unit is put in the task queue. The unit will be broadcast to all other nodes a few times (with some delays in between).</li>
@@ -182,14 +182,14 @@
 <p>The creator produces units according to the Aleph protocol rules. It will wait until the prespecified delay has passed and attempt to create a unit using a maximal number of parents. If it is not possible yet, it will wait till the first moment enough parents are available. After creating the last unit, the creator stops producing new ones, although this is never expected to happen during correct execution.</p>
 <p>Since the creator does not have access to the <code>DataIO</code> object and to the <code>KeyBox</code> it is not able to create the unit &quot;fully&quot;, for this reason it only chooses parents, the rest is filled by the <code>Member</code>.</p>
 <h3 id="52-unit-store-in-member"><a class="header" href="#52-unit-store-in-member">5.2 Unit Store in Member</a></h3>
-<p>As mentioned, the idea is that this stores only legit units and passes them to the <code>Terminal</code> at an &quot;appropriate&quot; moment. In more detail it means that it internally keeps a <code>round_in_progress</code> which is the highest round for which the previous one has at least <code>floor(2N/3)+1</code> units from different creators. Units that are beyond <code>round_in_progress</code> are not moved to  the <code>Terminal</code> yet for efficiency (either we are falling behind, or there is something off with these units, better to move slowly).</p>
+<p>As mentioned, the idea is that this stores only legit units and passes them to the <code>Terminal</code> at an &quot;appropriate&quot; moment. In more detail it means that it internally keeps a <code>round_in_progress</code> which is the highest round for which the previous one has at least <code>floor(2N/3)+1</code> units from different creators. Units that are beyond <code>round_in_progress</code> are not moved to the <code>Terminal</code> yet for efficiency (either we are falling behind, or there is something off with these units, better to move slowly).</p>
 <p>A slight detail here is that units from beyond <code>round_in_progress</code> are not consider <strong>legit</strong> yet. And thus after a fork is detected by a node <code>i</code>, all <code>i</code>'s units beyond <code>round_in_progress</code> are removed from the store and forgotten. In particular only units in the store of round <code>&lt;=round_in_progress</code> are attached to the alert.</p>
 <h3 id="53-terminal"><a class="header" href="#53-terminal">5.3 Terminal</a></h3>
 <p>The <code>Terminal</code> receives legit units, yet there might be two issues with such units that would not allow them to be added to Dag:</p>
 <ol>
 <li>A unit <code>U</code> might have a &quot;wrong&quot; control hash. From the perspective of the <code>Terminal</code> this means that naively picking <code>U</code>'s parents as units from previous round determined by <code>U.parent_map</code> results in a failed control hash check. Note that in case <code>U.creator</code> is honest and there are no forkers among <code>U</code> parents creators then this cannot happen and the control hash check always succeeds. Fail can happen because:
 a) either <code>U</code>'s one or multiple parents are forks and the <code>Terminal</code> either does not have the correct variants yet, or just has them but performed the naive check on different variants (note that guessing the correct variants might require exponential time so there is no point for the terminal to even try it),
-b) or <code>U</code>'s  creator is dishonest and just put a control hash in the unit that does not &quot;unhash&quot; to anything meaningful.
+b) or <code>U</code>'s creator is dishonest and just put a control hash in the unit that does not &quot;unhash&quot; to anything meaningful.
 In any case the terminal triggers a request to <code>Member</code> to download the full list of <code>U</code>'s parent hashes, so that the ambiguity is resolved. Once a correct reponse is received by <code>Member</code> then it is passed back to the terminal so that it can &quot;decode&quot; the parents and proceed.</li>
 <li>A unit <code>U</code> might have parents that are not legit. Before adding a unit <code>U</code> to the Dag, the terminal waits for all parents of <code>U</code> to be added to the Dag first.</li>
 </ol>

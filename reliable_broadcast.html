@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Reliable Broadcast - Rush - Aleph in Rust</title>
+        <title>Reliable Broadcast - AlephBFT</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_rush.html"><strong aria-hidden="true">1.</strong> What is Rush?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="rush_api.html"><strong aria-hidden="true">3.</strong> API of Rush</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and Rush</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> Rush Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html" class="active"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html" class="active"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -127,7 +127,7 @@
                         
                     </div>
 
-                    <h1 class="menu-title">Rush - Aleph in Rust</h1>
+                    <h1 class="menu-title">AlephBFT</h1>
 
                     <div class="right-buttons">
                         
@@ -173,7 +173,7 @@
 </ol>
 <p>So, roughly speaking, we want a broadcast primitive that is consistent even if a malicious node is the sender. There is the possibility that a malicious broadcast will not terminate, but it is not hard to see that this is the best we can hope for.</p>
 <h3 id="61-consistent-broadcast-using-multisignatures----rmc"><a class="header" href="#61-consistent-broadcast-using-multisignatures----rmc">6.1 Consistent Broadcast using multisignatures -- RMC</a></h3>
-<p>The main idea behind the reliable broadcast implementation in Rush is the use of multisignatures. Without going too much into details, think of a multisignature over a message <code>m</code> as a list of <code>N-f</code> signatures by <code>N-f</code> different committee nodes over the same message <code>m</code> (more efficient ways to achieve such a functionality are possible, like threshold signatures or signature aggregates, but they are beyond the scope of this section). Someone holding a multisignature over <code>m</code> can be sure that a large fraction of nodes &quot;agree&quot; (with the meaning of &quot;agree&quot; depending on the particular application) on <code>m</code>.</p>
+<p>The main idea behind the reliable broadcast implementation in AlephBFT is the use of multisignatures. Without going too much into details, think of a multisignature over a message <code>m</code> as a list of <code>N-f</code> signatures by <code>N-f</code> different committee nodes over the same message <code>m</code> (more efficient ways to achieve such a functionality are possible, like threshold signatures or signature aggregates, but they are beyond the scope of this section). Someone holding a multisignature over <code>m</code> can be sure that a large fraction of nodes &quot;agree&quot; (with the meaning of &quot;agree&quot; depending on the particular application) on <code>m</code>.</p>
 <p>The RMC (Reliable MultiCast) protocol is a way to reliably disseminate a single hash <code>h</code> among all nodes (in the next section we explain how to extend it to disseminating arbitrary data and not only a hash). The idea is as follows:</p>
 <ol>
 <li>Whenever a node <code>i</code> wishes to disseminate a hash <code>h</code> it initiates a reliable multicast instance by signing <code>h</code> and sending such a signed hash <code>SIG(h, i, sig_i)</code> to all other nodes.</li>
@@ -184,7 +184,7 @@
 <p>The moment when a node receives <code>MULTISIG(h, msig)</code> is considered as the completion of the multicast for this node (and even though the node still keeps resubmitting messages) this instance of RMC is considered as successful. If a RMC succeeds for some honest node then it is guaranteed to succeed for all honest nodes (but maybe with some delay). We refer to the file <code>/src/rmc.rs</code> for a thorough documentation of this component.</p>
 <h3 id="61-reliable-broadcast-based-on-rmc"><a class="header" href="#61-reliable-broadcast-based-on-rmc">6.1 Reliable Broadcast based on RMC</a></h3>
 <p>Having the idea of RMC, one can modify it quite easily to achieve reliable broadcast. A naive way to do so would be to let the sender node hash the message <code>m</code> it intends to reliably broadcast into <code>h=hash(m)</code> and use RMC on the hash <code>h</code>. This almost works, except for the data availability problem -- a malicious sender might simply send a random meaningless hash <code>h</code> and then the honest nodes would never be able to recover the underlying data.</p>
-<p>To circumvent the data availability problem we instruct the sender to send data <code>m</code> to all the nodes and only then to initiate RMC on <code>h = hash(m)</code>, if we make sure that no honest node proceeds with RMC before it receives the data <code>m</code>, then a successful RMC has the guarantee that most of the honest nodes hold the data <code>m</code>. This is the basic idea behind the protocol implemented for fork alerts in Rush, we refer to <code>/src/alerts.rs</code> for details.</p>
+<p>To circumvent the data availability problem we instruct the sender to send data <code>m</code> to all the nodes and only then to initiate RMC on <code>h = hash(m)</code>, if we make sure that no honest node proceeds with RMC before it receives the data <code>m</code>, then a successful RMC has the guarantee that most of the honest nodes hold the data <code>m</code>. This is the basic idea behind the protocol implemented for fork alerts in AlephBFT, we refer to <code>/src/alerts.rs</code> for details.</p>
 
                     </main>
 
