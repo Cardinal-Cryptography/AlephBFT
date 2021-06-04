@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Chapter 2 - Rush - Aleph in Rust</title>
+        <title>What is Rush? - Rush - Aleph in Rust</title>
         
         
 
@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="chapter_1.html"><strong aria-hidden="true">1.</strong> Chapter 1</a></li><li class="chapter-item expanded "><a href="chapter_2.html" class="active"><strong aria-hidden="true">2.</strong> Chapter 2</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_rush.html" class="active"><strong aria-hidden="true">1.</strong> What is Rush?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="rush_api.html"><strong aria-hidden="true">3.</strong> API of Rush</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and Rush</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> Rush Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -165,19 +165,37 @@
 
                 <div id="content" class="content">
                     <main>
-                        <h1 id="chapter-1"><a class="header" href="#chapter-1">Chapter 1</a></h1>
-<p>Rush implementation details</p>
+                        <h2 id="1-what-is-rush"><a class="header" href="#1-what-is-rush">1. What is Rush?</a></h2>
+<p>Rush is a Rust implementation of the <a href="https://arxiv.org/abs/1908.05156">Aleph Consensus Protocol</a> that offers a convenient API allowing it to be easily applied to various problems. The prime application of Rush is to be the consensus engine (sometimes called the &quot;finality gadget&quot;) of the <a href="https://alephzero.org/">Aleph Zero blockchain</a>.</p>
+<h3 id="11-high-level-idea-of-what-rush-does"><a class="header" href="#11-high-level-idea-of-what-rush-does">1.1 High level idea of what Rush does.</a></h3>
+<p>From the high level perspective Rush allows a set of <code>N</code> prespecified nodes to agree on an ordering of items arriving in some unreliable streams of data that these nodes locally observe. An illustrative example to have in mind here is when these nodes all observe a growing blockchain that does not have a built-in notion of finality, and would like to finalize blocks. Then the above mentioned &quot;streams of data&quot; are simply the advancing sequences of blockchain &quot;tips&quot; that each of the nodes sees. Note that in this (and in all the interesting examples), because of possible forks, or network delays, the data streams of individual nodes might not be consistent.
+The goal of a consensus protocol, is to ensure consistency of the decisions, even though relying on an unreliable data source. Consequently, what Rush produces is a single stream of data that &quot;combines&quot; all the individual streams of the <code>N</code> nodes and importantly <strong>is consistent</strong> among the nodes. Thus, in the example above, all the nodes would produce a unique sequence of <strong>finalized</strong> blocks (see also the <a href="rush_api.html">Rush API section</a> for a more detailed description on how to use Rush as a finality gadget for a blockchain).</p>
+<h3 id="12-high-level-idea-of-rush-requirements"><a class="header" href="#12-high-level-idea-of-rush-requirements">1.2 High level idea of Rush requirements.</a></h3>
+<p>Let us index the nodes taking part in the protocol as <code>i = 0, 1, ..., N-1</code> and call them &quot;the committee&quot;, below we list some high-level requirements to be able to run Rush among this nodes:</p>
+<ol>
+<li>The nodes are connected via a network (that is not assumed to be 100% reliable) allowing them to send arbitrary messages to each other,</li>
+<li>Each node knows the identities of all other nodes (via their public keys) and holds a private key allowing it to sign messages.</li>
+<li>Each node <code>i</code> holds a data source object (to be explained in detail in the <a href="rush_api.html">Rush API section</a> -- see <code>DataIO</code>) that allows it 1) to receive fresh pieces of data (we refer to it as the input stream <code>in_i</code>), and 2) to check that a piece of data received from another node is &quot;available&quot;. The availability is best understood when thinking about the blockchain example and data being block hashes. Then the availability question for a blockhash is essentially whether we locally hold a block with such a hash.</li>
+<li>At most <code>(N-1)/3</code> of the nodes can be malicious (act with the intent to break the protocol guarantees).</li>
+</ol>
+<h3 id="13-high-level-idea-of-rush-guarantees"><a class="header" href="#13-high-level-idea-of-rush-guarantees">1.3 High level idea of Rush guarantees.</a></h3>
+<p>Rush guarantees (as long as at most <code>(N-1)/3</code> nodes act maliciously) that each node <code>i</code> running the protocol produces a stream of data <code>out_i</code> such that:</p>
+<ol>
+<li>The output streams of any two nodes <code>out_i</code> and <code>out_j</code> are consistent, in the sense that at any given time one is a prefix of another. Moreover, none of the streams gets &quot;stuck&quot;, they keep producing items until the protocol is shut down. So, intuitively, all the streams produce the same items, but just at possibly different paces.</li>
+<li>Each item in the output stream is &quot;available&quot; to at least half the honest (= not malicious) nodes in the committee.</li>
+<li>Roughly speaking, most of the data items &quot;proposed&quot; by honest nodes (i.e., data coming from <code>in</code> streams of honest nodes) eventually land in the output stream.</li>
+</ol>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="chapter_1.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
-                                <i class="fa fa-angle-left"></i>
-                            </a>
-                        
 
+                        
+                            <a rel="next" href="what_is_aleph.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
                         
 
                         <div style="clear: both"></div>
@@ -187,11 +205,11 @@
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="chapter_1.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
-                        <i class="fa fa-angle-left"></i>
-                    </a>
-                
 
+                
+                    <a rel="next" href="what_is_aleph.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
                 
             </nav>
 
