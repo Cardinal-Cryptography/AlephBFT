@@ -6,7 +6,7 @@
 
 The DataIO trait is an abstraction for a component that provides data items, checks availability of data items and allows to input ordered data items. `DataIO` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
 
-```
+```rust
 pub trait DataIO<Data> {
     type Error: Debug;
     fn get_data(&self) -> Data;
@@ -22,7 +22,7 @@ Rush internally calls `get_data()` whenever a new unit is created and data needs
 #### 3.1.2 Network.
 The Network trait defines the functionality we expect the network layer to satisfy and is quite straightforward:
 
-```
+```rust
 pub trait Network<H: Hasher, D: Data, S: Encode + Decode>: Send {
     type Error: Debug;
     fn send(&self, data: NetworkData<H, D, S>, node: NodeIndex) -> Result<(), Self::Error>;
@@ -44,7 +44,7 @@ The `send` and `broadcast` methods have straightforward semantics: sending a mes
 #### 3.1.3 KeyBox.
 
 The `KeyBox` trait is an abstraction for digitally signing arbitrary data and verifying signatures created by other nodes.
-```
+```rust
 pub trait KeyBox: Index + Clone + Send {
     type Signature: Signature;
     fn sign(&self, msg: &[u8]) -> Self::Signature;
@@ -56,7 +56,7 @@ A typical implementation of KeyBox would be a collection of `N` public keys, an 
 
 ### 3.2 Examples
 
-While the implementations of `KeyBox` and `Network` are pretty much universal, the implementation of `DataIO` depends on the specifica application. We consider two examples here.
+While the implementations of `KeyBox` and `Network` are pretty much universal, the implementation of `DataIO` depends on the specific application. We consider two examples here.
 
 #### 3.2.1 Blockchain Finality Gadget.
 
