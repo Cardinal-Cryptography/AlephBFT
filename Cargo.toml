@@ -18,6 +18,6 @@ codec = { package = "parity-scale-codec", version = "2", default-features = fals
 
 [dev-dependencies]
 libp2p = { version ="0", features = ["mdns", "tcp-tokio"]}
-tokio = { version = "0.2.21", features = ["macros", "rt-threaded", "time"] }
+tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
 parking_lot = "0.11"
 env_logger = "0.8"

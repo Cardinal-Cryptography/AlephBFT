@@ -328,7 +328,7 @@ mod tests {
         )
     }
 
-    #[tokio::test(max_threads = 3)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn finalize_rounds_01() {
         let n_members = 4;
         let rounds = 6;
