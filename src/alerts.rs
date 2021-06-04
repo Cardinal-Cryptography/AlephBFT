@@ -10,7 +10,7 @@ use crate::{
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
-    StreamExt,
+    FutureExt, StreamExt,
 };
 use log::{debug, error};
 use std::{
@@ -391,7 +391,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
 
     async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
         loop {
-            tokio::select! {
+            futures::select! {
                 message = self.messages_from_network.next() => match message {
                     Some(message) => self.on_message(message),
                     None => {
@@ -413,7 +413,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
                         break;
                     }
                 },
-                multisigned = self.rmc.next_multisigned_hash() => self.alert_confirmed(multisigned),
+                multisigned = self.rmc.next_multisigned_hash().fuse() => self.alert_confirmed(multisigned),
                 _ = &mut exit => break,
             }
         }

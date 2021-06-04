@@ -284,11 +284,13 @@ impl<H: Hasher> Extender<H> {
 
     pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>) {
         loop {
-            tokio::select! {
-                Some(v) = self.electors.next() =>{
-                    let v_hash = v.hash;
-                    self.add_unit(v);
-                    self.progress(v_hash);
+            futures::select! {
+                v = self.electors.next() => {
+                    if let Some(v) = v {
+                        let v_hash = v.hash;
+                        self.add_unit(v);
+                        self.progress(v_hash);
+                    }
                 }
                 _ = &mut exit => {
                     debug!(target: "rush-extender", "{:?} received exit signal.", self.node_id);

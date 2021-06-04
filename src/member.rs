@@ -1,7 +1,7 @@
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
-    StreamExt,
+    FutureExt, StreamExt,
 };
 use log::{debug, error};
 use rand::Rng;
@@ -706,7 +706,7 @@ where
 
         debug!(target: "rush-member", "{:?} Start routing messages from consensus to network", self.index());
         loop {
-            tokio::select! {
+            futures::select! {
                 notification = rx_consensus.next() => match notification {
                         Some(notification) => self.on_consensus_notification(notification),
                         None => {
@@ -739,7 +739,7 @@ where
                     }
                 },
 
-                _ = ticker.tick() => self.trigger_tasks(),
+                _ = ticker.tick().fuse() => self.trigger_tasks(),
                 _ = &mut exit => break,
             }
             self.move_units_to_consensus();

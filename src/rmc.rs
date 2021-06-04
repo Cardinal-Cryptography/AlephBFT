@@ -259,7 +259,7 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
 
     pub async fn next_multisigned_hash(&mut self) -> Multisigned<'a, H, MK> {
         loop {
-            tokio::select! {
+            futures::select! {
                 multisigned_hash = self.multisigned_hashes_rx.next() => {
                     return multisigned_hash.expect("We own the tx, so it is not closed");
                 }
@@ -272,7 +272,7 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
                     }
                 }
 
-                task = self.scheduler.next_task() => {
+                task = self.scheduler.next_task().fuse() => {
                     if let Some(task) = task {
                         self.do_task(task);
                     } else {
