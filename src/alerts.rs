@@ -16,8 +16,8 @@ use log::{debug, error};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    time,
 };
-use tokio::time;
 
 pub(crate) type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);
 
