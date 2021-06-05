@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html" class="active"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="how_alephbft_does_it.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html" class="active"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -195,7 +195,7 @@
 }
 <span class="boring">}
 </span></code></pre></pre>
-<p>Here <code>NetworkData</code> is a type representing possible network messages for the Aleph protocol. For the purpose of implementing the Network trait what matters the most is that they implement the <code>Encode</code> and <code>Decode</code> traits, i.e., allow for serialization/deserialization thus can be treated as byte arrays if that is more convenient. The <code>NodeIndex</code> type represents node indices, i.e., a number between <code>0</code> and <code>N-1</code>.</p>
+<p>Here <code>NetworkData</code> is a type representing possible network messages for the AlephBFT protocol. For the purpose of implementing the Network trait what matters the most is that they implement the <code>Encode</code> and <code>Decode</code> traits, i.e., allow for serialization/deserialization thus can be treated as byte arrays if that is more convenient. The <code>NodeIndex</code> type represents node indices, i.e., a number between <code>0</code> and <code>N-1</code>.</p>
 <p>The <code>send</code> and <code>broadcast</code> methods have straightforward semantics: sending a message to a single or to all the nodes. <code>next_event</code> is an asynchronous method for receiving messages from other nodes.</p>
 <p><strong>Note on Rate Control</strong>: it is assumed that Network <strong>implements a rate control mechanism</strong> guaranteeing that no node is allowed to spam messages without limits. We do not specify details yet, but in future releases we plan to publish recommended upper bounds for the amounts of bandwidth and number of messages allowed per node per a unit of time. These bounds must be carefully crafted based upon the number of nodes <code>N</code> and the configured delays between subsequent Dag rounds, so that at the same time spammers are cut off but honest nodes are able function correctly within these bounds.</p>
 <p><strong>Note on Network Reliability</strong>: it is not assumed that each message that AlephBFT orders to send reaches its intended recipient, there are some built-in reliability mechanisms within AlephBFT that will automatically detect certain failures and resend messages as needed. Clearly, the less reliable the network is, the worse the performarmence of AlephBFT will be (generally slower to produce output). Also, not surprisingly if the percentage of dropped messages is too high AlephBFT might stop making progress, but from what we observe in tests, this happens only when the reliability is extremely bad, i.e., drops below 50% (which means there is some significant issue with the network).</p>
@@ -296,7 +296,7 @@
 <li><strong>Single Session</strong> -- just run a single session to make consensus regarding some specific one-time question. In this case one can run the default configuration and just terminate the protocol once the answer is in the output stream.</li>
 <li><strong>Multiple Sessions</strong> -- a mode of execution when AlephBFT is run several times sequentially. An important motivating example is the use of AlephBFT as a finality gadget for a blockchain. Think of session <code>k</code> as being responsible for finalizing blocks at heights <code>[100k, 100(k+1)-1]</code>. There should be then an external mechanism to run a new AlephBFT session when the last block of a session gets finalized (and stop inactive sessions as well). This example gives a clear answer for why we opted for the slowdown after round <code>3000</code> as explained above: this is to make sure that no matter the variance in block-time of the block production mechanism, and no matter whether there are stalls, network issues, crashes, etc it is guaranteed that the prespecified segment of blocks is guaranteed to be finalized in a given session. Readers who are experienced with consensus engines are surely aware of how problematic it would be if at the end of a session, say, only <code>70</code> out of the intended <code>100</code> blocks would be finalized. That's why it's better to slow down consensus but make sure it achieves the intended goal.</li>
 </ol>
-<p><strong>Why are there even sessions in AlephBFT?</strong> To answer this question one would need to make a deep dive into the internal workings of Aleph, but a high level summary is: we want to make AlephBFT blazing fast, hence we need to keep everything in RAM (no disk), hence we need to have a round limit, hence we need sessions. For every &quot;hence&quot; in the previous sentence there are extensive arguments to back it, but they are perhaps beyond the scope of this document. We are aware of the inconvenience that it brings -- being forced to implement a session manager, but:</p>
+<p><strong>Why are there even sessions in AlephBFT?</strong> To answer this question one would need to make a deep dive into the internal workings of AlephBFT, but a high level summary is: we want to make AlephBFT blazing fast, hence we need to keep everything in RAM (no disk), hence we need to have a round limit, hence we need sessions. For every &quot;hence&quot; in the previous sentence there are extensive arguments to back it, but they are perhaps beyond the scope of this document. We are aware of the inconvenience that it brings -- being forced to implement a session manager, but:</p>
 <ol>
 <li>We feel that depending on the application there might be different ways to deal with sessions and its better if we leave the task of session managing to the user.</li>
 <li>In one of the future releases we plan to add an optional default session manager, but will still encourage the user to implement a custom one for a particular use-case.</li>
@@ -307,7 +307,7 @@
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
                         
-                            <a rel="prev" href="what_is_aleph.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="how_alephbft_does_it.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <i class="fa fa-angle-left"></i>
                             </a>
                         
@@ -325,7 +325,7 @@
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 
-                    <a rel="prev" href="what_is_aleph.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="how_alephbft_does_it.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <i class="fa fa-angle-left"></i>
                     </a>
                 

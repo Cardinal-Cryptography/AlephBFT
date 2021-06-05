@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="how_alephbft_does_it.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -169,13 +169,13 @@
 <p>AlephBFT is a Rust implementation of the <a href="https://arxiv.org/abs/1908.05156">Aleph Consensus Protocol</a> that offers a convenient API allowing it to be easily applied to various problems. The prime application of AlephBFT is to be the consensus engine (sometimes called the &quot;finality gadget&quot;) of the <a href="https://alephzero.org/">Aleph Zero blockchain</a>.</p>
 <h3 id="11-high-level-idea-of-what-alephbft-does"><a class="header" href="#11-high-level-idea-of-what-alephbft-does">1.1 High level idea of what AlephBFT does.</a></h3>
 <p>From the high level perspective AlephBFT allows a set of <code>N</code> prespecified nodes to agree on an ordering of items arriving in some unreliable streams of data that these nodes locally observe. An illustrative example to have in mind here is when these nodes all observe a growing blockchain that does not have a built-in notion of finality, and would like to finalize blocks. Then the above mentioned &quot;streams of data&quot; are simply the advancing sequences of blockchain &quot;tips&quot; that each of the nodes sees. Note that in this (and in all the interesting examples), because of possible forks, or network delays, the data streams of individual nodes might not be consistent.
-The goal of a consensus protocol, is to ensure consistency of the decisions, even though relying on an unreliable data source. Consequently, what AlephBFT produces is a single stream of data that &quot;combines&quot; all the individual streams of the <code>N</code> nodes and importantly <strong>is consistent</strong> among the nodes. Thus, in the example above, all the nodes would produce a unique sequence of <strong>finalized</strong> blocks (see also the <a href="aleph_bft_api.html">AlephBFT API section</a> for a more detailed description on how to use AlephBFT as a finality gadget for a blockchain).</p>
+The goal of a consensus protocol, is to ensure consistency of the decisions, even though relying on an unreliable data source. Consequently, what AlephBFT produces is a single stream of data that &quot;combines&quot; all the individual streams of the <code>N</code> nodes and importantly <strong>is consistent</strong> among the nodes. Thus, in the example above, all the nodes would produce a unique sequence of <strong>finalized</strong> blocks (see also the corresponding <a href="aleph_bft_api.html#321-blockchain-finality-gadget">AlephBFT API section</a> for a more detailed description on how to use AlephBFT as a finality gadget for a blockchain).</p>
 <h3 id="12-high-level-idea-of-alephbft-requirements"><a class="header" href="#12-high-level-idea-of-alephbft-requirements">1.2 High level idea of AlephBFT requirements.</a></h3>
 <p>Let us index the nodes taking part in the protocol as <code>i = 0, 1, ..., N-1</code> and call them &quot;the committee&quot;, below we list some high-level requirements to be able to run AlephBFT among this nodes:</p>
 <ol>
 <li>The nodes are connected via a network (that is not assumed to be 100% reliable) allowing them to send arbitrary messages to each other,</li>
 <li>Each node knows the identities of all other nodes (via their public keys) and holds a private key allowing it to sign messages.</li>
-<li>Each node <code>i</code> holds a data source object (to be explained in detail in the <a href="aleph_bft_api.html">AlephBFT API section</a> -- see <code>DataIO</code>) that allows it 1) to receive fresh pieces of data (we refer to it as the input stream <code>in_i</code>), and 2) to check that a piece of data received from another node is &quot;available&quot;. The availability is best understood when thinking about the blockchain example and data being block hashes. Then the availability question for a blockhash is essentially whether we locally hold a block with such a hash.</li>
+<li>Each node <code>i</code> holds a data source object (to be explained in detail in the <a href="aleph_bft_api.html#311-dataio">DataIO subsection of AlephBFT API section</a> -- see <code>DataIO</code>) that allows it 1) to receive fresh pieces of data (we refer to it as the input stream <code>in_i</code>), and 2) to check that a piece of data received from another node is &quot;available&quot;. The availability is best understood when thinking about the blockchain example and data being block hashes. Then the availability question for a blockhash is essentially whether we locally hold a block with such a hash.</li>
 <li>At most <code>(N-1)/3</code> of the nodes can be malicious (act with the intent to break the protocol guarantees).</li>
 </ol>
 <h3 id="13-high-level-idea-of-alephbft-guarantees"><a class="header" href="#13-high-level-idea-of-alephbft-guarantees">1.3 High level idea of AlephBFT guarantees.</a></h3>
@@ -193,7 +193,7 @@ The goal of a consensus protocol, is to ensure consistency of the decisions, eve
                         
 
                         
-                            <a rel="next" href="what_is_aleph.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next" href="how_alephbft_does_it.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <i class="fa fa-angle-right"></i>
                             </a>
                         
@@ -207,7 +207,7 @@ The goal of a consensus protocol, is to ensure consistency of the decisions, eve
                 
 
                 
-                    <a rel="next" href="what_is_aleph.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next" href="how_alephbft_does_it.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <i class="fa fa-angle-right"></i>
                     </a>
                 

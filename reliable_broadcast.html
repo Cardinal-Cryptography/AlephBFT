@@ -95,7 +95,7 @@
 
         <nav id="sidebar" class="sidebar" aria-label="Table of contents">
             <div class="sidebar-scrollbox">
-                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="what_is_aleph.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html" class="active"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
+                <ol class="chapter"><li class="chapter-item expanded "><a href="what_is_aleph_bft.html"><strong aria-hidden="true">1.</strong> What is AlephBFT?</a></li><li class="chapter-item expanded "><a href="how_alephbft_does_it.html"><strong aria-hidden="true">2.</strong> What is Aleph?</a></li><li class="chapter-item expanded "><a href="aleph_bft_api.html"><strong aria-hidden="true">3.</strong> API of AlephBFT</a></li><li class="chapter-item expanded "><a href="differences.html"><strong aria-hidden="true">4.</strong> Differences between Aleph and AlephBFT</a></li><li class="chapter-item expanded "><a href="internals.html"><strong aria-hidden="true">5.</strong> AlephBFT Internals</a></li><li class="chapter-item expanded "><a href="reliable_broadcast.html" class="active"><strong aria-hidden="true">6.</strong> Reliable Broadcast</a></li></ol>
             </div>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle"></div>
         </nav>
@@ -166,7 +166,7 @@
                 <div id="content" class="content">
                     <main>
                         <h2 id="6-reliable-broadcast"><a class="header" href="#6-reliable-broadcast">6 Reliable Broadcast</a></h2>
-<p>Recall that Reliable Broadcast is the primitive we use to broadcast <code>fork alerts</code> among nodes -- see <a href="what_is_aleph.html#25-alerts----dealing-with-fork-spam">the section on alerts</a>. There are two requirements for a protocol realizing reliable broadcast:</p>
+<p>Recall that Reliable Broadcast is the primitive we use to broadcast <code>fork alerts</code> among nodes -- see <a href="how_alephbft_does_it.html#25-alerts----dealing-with-fork-spam">the section on alerts</a>. There are two requirements for a protocol realizing reliable broadcast:</p>
 <ol>
 <li>If an honest sender initiates a reliable broadcast with some message <code>m</code> then the protocol terminates and as a result all honest nodes receive <code>m</code>.</li>
 <li>If a malicious sender initiates a reliable broadcast then either it terminates for all honest nodes and they receive the same message <code>m</code>, or it does not terminate for any honest node.</li>
