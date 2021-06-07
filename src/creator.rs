@@ -77,13 +77,13 @@ impl<H: Hasher> Creator<H> {
 
         let new_preunit = PreUnit::new(self.node_ix, round, control_hash);
         debug!(target: "AlephBFT-creator", "{:?} Created a new unit {:?} at round {:?}.", self.node_ix, new_preunit, self.current_round);
-        if let Err(e) = self
+        self
             .new_units_tx
             .unbounded_send(NotificationOut::CreatedPreUnit(new_preunit))
+            .map_err(|e|
         {
             debug!(target: "AlephBFT-creator", "{:?} notification channel is closed {:?}, closing", self.node_ix, e);
-            return Err(());
-        }
+        })?;
 
         self.current_round += 1;
         self.init_round(self.current_round);
