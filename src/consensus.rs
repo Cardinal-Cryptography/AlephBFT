@@ -63,8 +63,8 @@ pub(crate) async fn run<H: Hasher + 'static>(
 
     let _ = exit.await;
     // we stop no matter if received Ok or Err
-    let _ = creator_exit.send(());
     let _ = terminal_exit.send(());
+    let _ = creator_exit.send(());
     let _ = extender_exit.send(());
 
     debug!(target: "AlephBFT", "{:?} All services stopped.", conf.node_ix);
