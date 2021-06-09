@@ -8,6 +8,7 @@ use crate::{
     Data, Hasher, Index, MultiKeychain, NodeIndex, Receiver, Sender, SessionId,
 };
 use codec::{Decode, Encode};
+use derivative::Derivative;
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, StreamExt,
@@ -16,19 +17,21 @@ use log::{debug, error};
 use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},
-    hash::{Hash, Hasher as StdHasher},
     ops::Deref,
     time,
 };
 
 pub(crate) type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);
 
-#[derive(Debug, Decode, Encode)]
+#[derive(Debug, Decode, Encode, Derivative)]
+#[derivative(PartialEq, Eq, Hash)]
 pub(crate) struct Alert<H: Hasher, D: Data, S: Signature> {
     sender: NodeIndex,
     proof: ForkProof<H, D, S>,
     legit_units: Vec<UncheckedSignedUnit<H, D, S>>,
     #[codec(skip)]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
     hash: RwLock<Option<H::Hash>>,
 }
 
@@ -77,16 +80,6 @@ impl<H: Hasher, D: Data, S: Signature> Alert<H, D, S> {
     fn forker(&self) -> NodeIndex {
         self.proof.0.as_signable().creator()
     }
-
-    fn key(
-        &self,
-    ) -> (
-        &NodeIndex,
-        &ForkProof<H, D, S>,
-        &Vec<UncheckedSignedUnit<H, D, S>>,
-    ) {
-        (&self.sender, &self.proof, &self.legit_units)
-    }
 }
 
 impl<H: Hasher, D: Data, S: Signature> Index for Alert<H, D, S> {
@@ -99,20 +92,6 @@ impl<H: Hasher, D: Data, S: Signature> Signable for Alert<H, D, S> {
     type Hash = H::Hash;
     fn hash(&self) -> Self::Hash {
         self.hash()
-    }
-}
-
-impl<H: Hasher, D: Data, S: Signature> PartialEq for Alert<H, D, S> {
-    fn eq(&self, other: &Self) -> bool {
-        self.key() == other.key()
-    }
-}
-
-impl<H: Hasher, D: Data, S: Signature> Eq for Alert<H, D, S> {}
-
-impl<H: Hasher + Hash, D: Data, S: Signature + Hash> Hash for Alert<H, D, S> {
-    fn hash<R: StdHasher>(&self, state: &mut R) {
-        Hash::hash(&self.key(), state);
     }
 }
 

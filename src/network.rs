@@ -8,7 +8,7 @@ use crate::{
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::error;
-use std::{fmt::Debug, hash::Hash};
+use std::fmt::Debug;
 
 /// Network represents an interface for sending and receiving NetworkData.
 ///
@@ -197,7 +197,7 @@ mod tests {
     ) -> UncheckedSignedUnit<Hasher64, Data, Signature> {
         let control_hash = ControlHash {
             parents_mask: BoolNodeMap::with_capacity(7.into()),
-            combined_hash: 0.using_encoded(<Hasher64 as Hasher>::hash),
+            combined_hash: 0.using_encoded(Hasher64::hash),
         };
         let pu = PreUnit::new(creator, round, control_hash);
         let data = Data::new(UnitCoord::new(7, 13.into()), variant);
@@ -265,7 +265,7 @@ mod tests {
         use UnitMessage::RequestParents;
 
         let ni = 7.into();
-        let h = 43.using_encoded(<Hasher64 as Hasher>::hash);
+        let h = 43.using_encoded(Hasher64::hash);
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
             RequestParents(ni, h),
         ));
@@ -281,7 +281,7 @@ mod tests {
         use NetworkDataInner::Units;
         use UnitMessage::ResponseParents;
 
-        let h = 43.using_encoded(<Hasher64 as Hasher>::hash);
+        let h = 43.using_encoded(Hasher64::hash);
         let p1 = test_unchecked_unit(5.into(), 43, 1729);
         let p2 = test_unchecked_unit(13.into(), 43, 1729);
         let p3 = test_unchecked_unit(17.into(), 43, 1729);

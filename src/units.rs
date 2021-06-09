@@ -4,13 +4,11 @@ use crate::{
     Data, Hasher, Index, KeyBox, NodeCount, NodeIndex, NodeMap, Round, SessionId,
 };
 use codec::{Decode, Encode};
+use derivative::Derivative;
 use log::{debug, error};
-use std::{
-    collections::HashMap,
-    hash::{Hash as StdHash, Hasher as StdHasher},
-};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Encode, Decode, StdHash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Encode, Decode, Hash)]
 pub(crate) struct UnitCoord {
     pub(crate) round: u16,
     creator: NodeIndex,
@@ -35,7 +33,7 @@ impl UnitCoord {
 
 /// Combined hashes of the parents of a unit together with the set of indices of creators of the
 /// parents
-#[derive(Clone, Debug, PartialEq, Eq, StdHash, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub(crate) struct ControlHash<H: Hasher> {
     pub(crate) parents_mask: BoolNodeMap,
     pub(crate) combined_hash: H::Hash,
@@ -70,7 +68,7 @@ impl<H: Hasher> ControlHash<H> {
 }
 
 /// The simplest type representing a unit, consisting of coordinates and a control hash
-#[derive(Clone, Debug, PartialEq, Eq, StdHash, Encode, Decode)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub(crate) struct PreUnit<H: Hasher> {
     coord: UnitCoord,
     control_hash: ControlHash<H>,
@@ -106,12 +104,15 @@ impl<H: Hasher> PreUnit<H> {
 }
 
 ///
-#[derive(Debug, Encode, Decode)]
+#[derive(Debug, Encode, Decode, Derivative)]
+#[derivative(PartialEq, Eq, Hash)]
 pub(crate) struct FullUnit<H: Hasher, D: Data> {
     pre_unit: PreUnit<H>,
     data: D,
     session_id: SessionId,
     #[codec(skip)]
+    #[derivative(PartialEq = "ignore")]
+    #[derivative(Hash = "ignore")]
     hash: RwLock<Option<H::Hash>>,
 }
 
@@ -124,20 +125,6 @@ impl<H: Hasher, D: Data> Clone for FullUnit<H, D> {
             session_id: self.session_id,
             hash: RwLock::new(hash),
         }
-    }
-}
-
-impl<H: Hasher, D: Data> PartialEq for FullUnit<H, D> {
-    fn eq(&self, other: &Self) -> bool {
-        self.key() == other.key()
-    }
-}
-
-impl<H: Hasher, D: Data> Eq for FullUnit<H, D> {}
-
-impl<H: Hasher + StdHash, D: Data> StdHash for FullUnit<H, D> {
-    fn hash<R: StdHasher>(&self, state: &mut R) {
-        StdHash::hash(&self.key(), state);
     }
 }
 
@@ -170,9 +157,6 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
     }
     pub(crate) fn session_id(&self) -> SessionId {
         self.session_id
-    }
-    fn key(&self) -> (&PreUnit<H>, &D, &SessionId) {
-        (&self.pre_unit, &self.data, &self.session_id)
     }
     pub(crate) fn hash(&self) -> H::Hash {
         let hash = *self.hash.read();
