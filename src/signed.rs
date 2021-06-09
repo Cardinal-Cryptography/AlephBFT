@@ -405,7 +405,7 @@ impl<'a, T: Signable, MK: MultiKeychain> PartiallyMultisigned<'a, T, MK> {
 }
 
 /// A set of signatures of a subset of nodes serving as a (partial) multisignature
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignatureSet<S: Signature> {
     signatures: NodeMap<Option<S>>,
 }
