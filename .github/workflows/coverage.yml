@@ -1,0 +1,36 @@
+name: coverage
+
+on:
+  push:
+    branches:
+      - "*"
+
+jobs:
+  cargo-audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+  code-coverage:
+    name: code coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
+      - name: tooling
+        run: sh ./install_cov_tools.sh
+      - name: data
+        run: sh ./gen_cov_data.sh
+      - name: report
+        run: sh ./cov_report.sh
+      - name: codecov push
+        run: |
+          cargo install grcov
+          grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+          bash <(curl -s https://codecov.io/bash) -f lcov.info
