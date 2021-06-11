@@ -32,5 +32,5 @@ jobs:
       - name: codecov push
         run: |
           cargo install grcov
-          grcov . --binary-path ./target/debug/deps/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
-          bash <(curl -s https://codecov.io/bash) -f lcov.info
+          ./grcov . --binary-path ./target/debug/deps/ -s . -t lcov --branch --ignore-not-existing --ignore "/*" -o lcov.info
+          bash <(curl -s https://codecov.io/bash) -f -t ${{ secrets.CODECOV_TOKEN }} lcov.info
