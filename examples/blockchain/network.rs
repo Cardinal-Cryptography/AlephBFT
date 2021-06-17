@@ -12,7 +12,7 @@ use futures::{
 
 use log::{debug, info};
 
-use std::{collections::HashMap, convert::TryFrom as _, error::Error, io, iter, time::Duration};
+use std::{collections::HashMap, error::Error, io, iter, time::Duration};
 
 use libp2p::{
     development_transport, identity,
@@ -39,15 +39,20 @@ impl aleph_bft::SpawnHandle for Spawner {
     }
 }
 
-const ALEPH_PROTOCOL_NAME: &str = "/aleph/chain/1";
+const ALEPH_PROTOCOL_NAME: &str = "/alephbft/test/1";
 
 type NetworkData = aleph_bft::NetworkData<Hasher256, Data, Signature, PartialMultisignature>;
 
 #[derive(Clone, Encode, Decode)]
 enum Message {
     Auth(NodeIndex),
-    Consensus(Vec<u8>),
+    Consensus(NetworkData),
     Block(Block),
+}
+
+enum MessageRecipient {
+    AllNodes,
+    Node(NodeIndex),
 }
 
 /// Implements the libp2p [`RequestResponseCodec`] trait.
@@ -55,8 +60,6 @@ enum Message {
 /// Defines how streams of bytes are turned into requests and responses and vice-versa.
 #[derive(Debug, Clone)]
 struct GenericCodec {
-    max_request_size: u64,
-    max_response_size: u64,
 }
 
 type Request = Vec<u8>;
@@ -80,15 +83,6 @@ impl RequestResponseCodec for GenericCodec {
         let length = unsigned_varint::aio::read_usize(&mut io)
             .await
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
-        if length > usize::try_from(self.max_request_size).unwrap_or(usize::max_value()) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "Request size exceeds limit: {} > {}",
-                    length, self.max_request_size
-                ),
-            ));
-        }
         let mut buffer = vec![0; length];
         io.read_exact(&mut buffer).await?;
         Ok(buffer)
@@ -114,11 +108,11 @@ impl RequestResponseCodec for GenericCodec {
     where
         T: AsyncWrite + Unpin + Send,
     {
-        {
+
             let mut buffer = unsigned_varint::encode::usize_buffer();
             io.write_all(unsigned_varint::encode::usize(req.len(), &mut buffer))
                 .await?;
-        }
+
         io.write_all(&req).await?;
 
         io.close().await?;
@@ -147,7 +141,7 @@ struct Behaviour {
     #[behaviour(ignore)]
     peer_by_index: HashMap<NodeIndex, PeerId>,
     #[behaviour(ignore)]
-    consensus_tx: mpsc::UnboundedSender<Vec<u8>>,
+    consensus_tx: mpsc::UnboundedSender<NetworkData>,
     #[behaviour(ignore)]
     block_tx: mpsc::UnboundedSender<Block>,
     #[behaviour(ignore)]
@@ -155,17 +149,17 @@ struct Behaviour {
 }
 
 impl Behaviour {
-    fn send_consensus_message(&mut self, message: Vec<u8>, recipient: Option<NodeIndex>) {
+    fn send_consensus_message(&mut self, message: NetworkData, recipient: MessageRecipient) {
         let message = Message::Consensus(message).encode();
         match recipient {
-            Some(node_ix) => {
+            MessageRecipient::Node(node_ix) => {
                 if let Some(peer_id) = self.peer_by_index.get(&node_ix) {
                     self.rq_rp.send_request(peer_id, message);
                 } else {
                     debug!(target: "Blockchain-network", "No peer_id known for node {:?}.", node_ix);
                 }
             }
-            None => {
+            MessageRecipient::AllNodes => {
                 for peer_id in self.peers.iter() {
                     self.rq_rp.send_request(peer_id, message.clone());
                 }
@@ -208,13 +202,13 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for B
                 RequestResponseMessage::Request {
                     request_id: _,
                     request,
-                    channel,
+                    channel: _,
                 } => {
                     let message = Message::decode(&mut &request[..])
                         .expect("honest network data should decode");
                     match message {
                         Message::Consensus(msg) => {
-                            self.consensus_tx.unbounded_send(msg).unwrap();
+                            self.consensus_tx.unbounded_send(msg).expect("Network must listen");
                         }
                         Message::Auth(node_ix) => {
                             debug!(target: "Blockchain-network", "Authenticated peer: {:?} {:?}", node_ix, peer_id);
@@ -222,16 +216,12 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for B
                         }
                         Message::Block(block) => {
                             debug!(target: "Blockchain-network", "Received block num {:?}", block.num);
-                            self.block_tx.unbounded_send(block).unwrap();
+                            self.block_tx.unbounded_send(block).expect("Blockchain process must listen");
                         }
                     }
-                    // Not sure if better to "send" () or just do nothing?
-                    self.rq_rp.send_response(channel, ()).unwrap();
+                    // We do not send back a response to a request. We treat them simply as one-way messages.
                 }
-                RequestResponseMessage::Response {
-                    request_id: _,
-                    response: _,
-                } => {
+                RequestResponseMessage::Response {..} => {
                     //We ignore the response, as it is dummy anyway.
                 }
             }
@@ -240,8 +230,8 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for B
 }
 
 pub(crate) struct Network {
-    msg_to_manager_tx: mpsc::UnboundedSender<(Vec<u8>, Option<NodeIndex>)>,
-    msg_from_manager_rx: mpsc::UnboundedReceiver<Vec<u8>>,
+    msg_to_manager_tx: mpsc::UnboundedSender<(NetworkData, MessageRecipient)>,
+    msg_from_manager_rx: mpsc::UnboundedReceiver<NetworkData>,
 }
 
 #[async_trait::async_trait]
@@ -249,24 +239,22 @@ impl aleph_bft::Network<Hasher256, Data, Signature, PartialMultisignature> for N
     type Error = ();
     fn send(&self, data: NetworkData, node: NodeIndex) -> Result<(), Self::Error> {
         self.msg_to_manager_tx
-            .unbounded_send((data.encode(), Some(node)))
+            .unbounded_send((data, MessageRecipient::Node(node)))
             .map_err(|_| ())
     }
     fn broadcast(&self, data: NetworkData) -> Result<(), Self::Error> {
         self.msg_to_manager_tx
-            .unbounded_send((data.encode(), None))
+            .unbounded_send((data, MessageRecipient::AllNodes))
             .map_err(|_| ())
     }
     async fn next_event(&mut self) -> Option<NetworkData> {
-        self.msg_from_manager_rx.next().await.map(|msg| {
-            NetworkData::decode(&mut &msg[..]).expect("honest network data should decode")
-        })
+        self.msg_from_manager_rx.next().await
     }
 }
 
 pub(crate) struct NetworkManager {
     swarm: Swarm<Behaviour>,
-    consensus_rx: mpsc::UnboundedReceiver<(Vec<u8>, Option<NodeIndex>)>,
+    consensus_rx: mpsc::UnboundedReceiver<(NetworkData, MessageRecipient)>,
     block_rx: mpsc::UnboundedReceiver<Block>,
 }
 
@@ -297,16 +285,12 @@ impl Network {
             rr_cfg.set_connection_keep_alive(Duration::from_secs(10));
             rr_cfg.set_request_timeout(Duration::from_secs(4));
             let protocol_support = ProtocolSupport::Full;
-            // ProtocolSupport::Outbound
             let mdns_config = MdnsConfig {
                 ttl: Duration::from_secs(6 * 60),
                 query_interval: Duration::from_millis(100),
             };
             let rq_rp = RequestResponse::new(
-                GenericCodec {
-                    max_request_size: 1 << 26,
-                    max_response_size: 1 << 26,
-                },
+                GenericCodec { },
                 iter::once((ALEPH_PROTOCOL_NAME.as_bytes().to_vec(), protocol_support)),
                 rr_cfg,
             );

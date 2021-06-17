@@ -122,7 +122,7 @@ impl DataIO {
     pub(crate) fn new() -> (Self, UnboundedReceiver<OrderedBatch<Data>>) {
         let (finalized_tx, finalized_rx) = mpsc::unbounded();
         // We initialize with the "Genesis Block" => number 0.
-        let available_blocks: HashSet<_> = vec![0u64].into_iter().collect();
+        let available_blocks: HashSet<_> = [0u64].iter().cloned().collect();
         let inner = InnerDataIO {
             current_block: 0,
             available_blocks,
@@ -154,6 +154,17 @@ impl DataIO {
     }
 }
 
+
+
+// Runs a process that maintains a simple blockchain. The blocks are created every config.blocktime_ms
+// milliseconds and the block authors are determined by config.authorship_plan. The default config
+// uses round robin authorship: node k creates blocks number n if n%n_members = k.
+// A node will create a block n only if:
+// 1) it received the previous block (n-1)
+// 2) it is the nth block author
+// 3) enough time has passed -- to maintain blocktime of roughly config.blocktime_ms milliseconds.
+// This process holds two channel endpoints: block_rx to receive blocks from the network and
+// block_tx to push created blocks to the network (to send them to all the remaining nodes).
 pub(crate) async fn run_blockchain(
     config: ChainConfig,
     data_io: DataIO,
@@ -179,8 +190,8 @@ pub(crate) async fn run_blockchain(
                     data_io.add_block(block_num);
                 }
             }
-            // We tick every 50ms.
-            let mut delay_fut = Delay::new(Duration::from_millis(50)).fuse();
+            // We tick every 10ms.
+            let mut delay_fut = Delay::new(Duration::from_millis(10)).fuse();
 
             futures::select! {
                 maybe_block = block_rx.next() => {

@@ -12,9 +12,11 @@ mod chain;
 mod crypto;
 mod network;
 
-const DATA_SIZE: usize = 1000000;
-const BLOCK_TIME_MS: u64 = 500;
-const INITIAL_DELAY_MS: u64 = 4000;
+const TXS_PER_BLOCK: usize = 10000;
+const TX_SIZE: usize = 300;
+const BLOCK_TIME_MS: u64 = 1000;
+const INITIAL_DELAY_MS: u64 = 5000;
+
 
 const USAGE_MSG: &str = "Missing arg. Usage
     cargo run --example blockchain my_id n_members n_finalized
@@ -58,16 +60,18 @@ async fn main() {
     let start_time = time::Instant::now();
     info!(target: "Blockchain-main", "Getting network up.");
     let (network, mut manager, block_from_data_io_tx, block_from_network_rx) =
-        Network::new(my_node_ix).await.unwrap();
+        Network::new(my_node_ix).await.expect("Libp2p network set-up should succeed.");
     let (data_io, mut batch_rx) = DataIO::new();
 
     let (close_network, exit) = oneshot::channel();
     tokio::spawn(async move { manager.run(exit).await });
 
+
+    let data_size: usize = TXS_PER_BLOCK*TX_SIZE;
     let chain_config = gen_chain_config(
         my_node_ix,
         n_members,
-        DATA_SIZE,
+        data_size,
         BLOCK_TIME_MS,
         INITIAL_DELAY_MS,
     );
@@ -113,10 +117,7 @@ async fn main() {
     }
     let stop_time = time::Instant::now();
     let tot_millis = (stop_time - start_time).as_millis() - INITIAL_DELAY_MS as u128;
-    let transaction_size = 300;
-    let tps = (n_finalized as f64) * (DATA_SIZE as f64)
-        / (transaction_size as f64)
-        / (0.001 * (tot_millis as f64));
+    let tps = (n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
     close_member.send(()).expect("should send");
     close_chain.send(()).expect("should send");
