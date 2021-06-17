@@ -154,8 +154,6 @@ impl DataIO {
     }
 }
 
-
-
 // Runs a process that maintains a simple blockchain. The blocks are created every config.blocktime_ms
 // milliseconds and the block authors are determined by config.authorship_plan. The default config
 // uses round robin authorship: node k creates blocks number n if n%n_members = k.

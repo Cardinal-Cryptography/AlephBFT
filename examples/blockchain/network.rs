@@ -43,6 +43,7 @@ const ALEPH_PROTOCOL_NAME: &str = "/alephbft/test/1";
 
 type NetworkData = aleph_bft::NetworkData<Hasher256, Data, Signature, PartialMultisignature>;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Encode, Decode)]
 enum Message {
     Auth(NodeIndex),
@@ -59,8 +60,7 @@ enum MessageRecipient {
 /// GenericCodec is a suitably adjusted version of the GenericCodec implemented in sc-network in substrate.
 /// Defines how streams of bytes are turned into requests and responses and vice-versa.
 #[derive(Debug, Clone)]
-struct GenericCodec {
-}
+struct GenericCodec {}
 
 type Request = Vec<u8>;
 // The Response type is dummy -- we use RequestResponse just to send regular messages (requests).
@@ -108,10 +108,9 @@ impl RequestResponseCodec for GenericCodec {
     where
         T: AsyncWrite + Unpin + Send,
     {
-
-            let mut buffer = unsigned_varint::encode::usize_buffer();
-            io.write_all(unsigned_varint::encode::usize(req.len(), &mut buffer))
-                .await?;
+        let mut buffer = unsigned_varint::encode::usize_buffer();
+        io.write_all(unsigned_varint::encode::usize(req.len(), &mut buffer))
+            .await?;
 
         io.write_all(&req).await?;
 
@@ -208,7 +207,9 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for B
                         .expect("honest network data should decode");
                     match message {
                         Message::Consensus(msg) => {
-                            self.consensus_tx.unbounded_send(msg).expect("Network must listen");
+                            self.consensus_tx
+                                .unbounded_send(msg)
+                                .expect("Network must listen");
                         }
                         Message::Auth(node_ix) => {
                             debug!(target: "Blockchain-network", "Authenticated peer: {:?} {:?}", node_ix, peer_id);
@@ -216,12 +217,14 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for B
                         }
                         Message::Block(block) => {
                             debug!(target: "Blockchain-network", "Received block num {:?}", block.num);
-                            self.block_tx.unbounded_send(block).expect("Blockchain process must listen");
+                            self.block_tx
+                                .unbounded_send(block)
+                                .expect("Blockchain process must listen");
                         }
                     }
                     // We do not send back a response to a request. We treat them simply as one-way messages.
                 }
-                RequestResponseMessage::Response {..} => {
+                RequestResponseMessage::Response { .. } => {
                     //We ignore the response, as it is dummy anyway.
                 }
             }
@@ -290,7 +293,7 @@ impl Network {
                 query_interval: Duration::from_millis(100),
             };
             let rq_rp = RequestResponse::new(
-                GenericCodec { },
+                GenericCodec {},
                 iter::once((ALEPH_PROTOCOL_NAME.as_bytes().to_vec(), protocol_support)),
                 rr_cfg,
             );

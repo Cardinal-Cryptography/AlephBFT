@@ -17,7 +17,6 @@ const TX_SIZE: usize = 300;
 const BLOCK_TIME_MS: u64 = 1000;
 const INITIAL_DELAY_MS: u64 = 5000;
 
-
 const USAGE_MSG: &str = "Missing arg. Usage
     cargo run --example blockchain my_id n_members n_finalized
 
@@ -60,14 +59,15 @@ async fn main() {
     let start_time = time::Instant::now();
     info!(target: "Blockchain-main", "Getting network up.");
     let (network, mut manager, block_from_data_io_tx, block_from_network_rx) =
-        Network::new(my_node_ix).await.expect("Libp2p network set-up should succeed.");
+        Network::new(my_node_ix)
+            .await
+            .expect("Libp2p network set-up should succeed.");
     let (data_io, mut batch_rx) = DataIO::new();
 
     let (close_network, exit) = oneshot::channel();
     tokio::spawn(async move { manager.run(exit).await });
 
-
-    let data_size: usize = TXS_PER_BLOCK*TX_SIZE;
+    let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = gen_chain_config(
         my_node_ix,
         n_members,
