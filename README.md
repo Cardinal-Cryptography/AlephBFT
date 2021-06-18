@@ -121,7 +121,7 @@ The second example: `blockchain` is meant for benchmarking AlephBFT in the block
 ```
 ./examples/blockchain/run_blockchain 4
 ```
-where `4` in the above is the number of committee members and can be replaced by any reasonable number. Running this script will result in generating log files `node0.log, node1.log, ...` corresponding to subsequent nodes. As one of the last log messages the achieved transactions per second count should be displayed.
+where `4` in the above is the number of committee members and can be replaced by any reasonable number. Running this script will result in generating log files `node0.log, node1.log, ...` corresponding to subsequent nodes. The achieved transactions per second should be among the final log messages in these files.
 
 ### Tests
 
