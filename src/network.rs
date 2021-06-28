@@ -214,7 +214,7 @@ mod tests {
             uu.clone(),
         )));
         let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
-        assert!(decoded.is_ok(), "Bug in dencode/decode for Units(NewUnit)");
+        assert!(decoded.is_ok(), "Bug in encode/decode for Units(NewUnit)");
         if let Units(NewUnit(decoded_unchecked)) = decoded.unwrap().0 {
             assert!(
                 uu.as_signable() == decoded_unchecked.as_signable(),
