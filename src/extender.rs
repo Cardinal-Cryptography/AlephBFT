@@ -237,7 +237,7 @@ impl<H: Hasher> Extender<H> {
 
             if !self.state.votes_up_to_date {
                 // We need to recompute all the votes for the current candidate.
-                for r in curr_round + 1..=self.state.highest_round {
+                'outer: for r in curr_round + 1..=self.state.highest_round {
                     for u_hash in self.units_by_round[r].iter() {
                         let (vote, u_decision) = self.vote_and_decision(
                             &candidate_hash,
@@ -249,11 +249,8 @@ impl<H: Hasher> Extender<H> {
                         self.units.get_mut(u_hash).unwrap().vote = vote;
                         decision = u_decision;
                         if decision.is_some() {
-                            break;
+                            break 'outer;
                         }
-                    }
-                    if decision.is_some() {
-                        break;
                     }
                 }
             } else {
