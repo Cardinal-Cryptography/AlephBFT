@@ -203,15 +203,12 @@ impl<H: Hasher> Extender<H> {
             decision = Some(cv);
         }
 
-        let vote = {
-            if n_votes_false == NodeCount(0) {
-                true
-            } else if n_votes_true == NodeCount(0) {
-                false
-            } else {
-                cv
-            }
+        let vote = match (n_votes_false, n_votes_true) {
+            (NodeCount(0), _) => true,
+            (_, NodeCount(0)) => false,
+            _ => cv,
         };
+
         (vote, decision)
     }
 
@@ -266,21 +263,26 @@ impl<H: Hasher> Extender<H> {
                 decision = u_decision;
             }
 
-            if decision == Some(true) {
-                self.finalize_round(self.state.current_round, &candidate_hash)?;
-                self.state.current_round += 1;
-                self.state.round_initialized = false;
-                continue;
+            match decision {
+                Some(true) => {
+                    self.finalize_round(self.state.current_round, &candidate_hash)?;
+                    self.state.current_round += 1;
+                    self.state.round_initialized = false;
+                    continue;
+                }
+                Some(false) => {
+                    self.state.pending_cand_id += 1;
+                    self.state.votes_up_to_date = false;
+                    continue;
+                }
+                None => {
+                    // decision = None, no progress can be done
+                    self.state.votes_up_to_date = true;
+                    break;
+                }
             }
-            if decision == Some(false) {
-                self.state.pending_cand_id += 1;
-                self.state.votes_up_to_date = false;
-                continue;
-            }
-            // decision = None, no progress can be done
-            self.state.votes_up_to_date = true;
-            break;
         }
+
         Ok(())
     }
 
