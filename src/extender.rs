@@ -111,7 +111,6 @@ impl<H: Hasher> Extender<H> {
         self.units.insert(u.hash, u);
     }
 
-    //
     fn initialize_round(&mut self, round: Round) {
         // The clone below is necessary as we take "a snapshot" of the set of units at this round and never
         // go back and never update this list. From math it follows that each unit that is added to the Dag later
