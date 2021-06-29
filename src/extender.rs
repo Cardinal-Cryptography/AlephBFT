@@ -211,6 +211,25 @@ impl<H: Hasher> Extender<H> {
         (vote, decision)
     }
 
+    fn recompute_votes(
+        &mut self,
+        candidate_hash: H::Hash,
+        candidate_creator: NodeIndex,
+        curr_round: Round,
+        voters_round: Round,
+    ) -> Option<bool> {
+        for u_hash in self.units_by_round[voters_round].iter() {
+            let (vote, u_decision) =
+                self.vote_and_decision(&candidate_hash, u_hash, candidate_creator, curr_round);
+            // We update the vote.
+            self.units.get_mut(u_hash).unwrap().vote = vote;
+            if u_decision.is_some() {
+                return u_decision;
+            }
+        }
+        None
+    }
+
     // Tries to make progress in extending the partial order after adding a new unit to the Dag.
     fn progress(&mut self, u_new_hash: H::Hash) -> Result<(), ()> {
         loop {
@@ -233,20 +252,15 @@ impl<H: Hasher> Extender<H> {
 
             if !self.state.votes_up_to_date {
                 // We need to recompute all the votes for the current candidate.
-                'outer: for r in curr_round + 1..=self.state.highest_round {
-                    for u_hash in self.units_by_round[r].iter() {
-                        let (vote, u_decision) = self.vote_and_decision(
-                            &candidate_hash,
-                            u_hash,
-                            candidate_creator,
-                            curr_round,
-                        );
-                        // We update the vote.
-                        self.units.get_mut(u_hash).unwrap().vote = vote;
-                        decision = u_decision;
-                        if decision.is_some() {
-                            break 'outer;
-                        }
+                for voters_round in curr_round + 1..=self.state.highest_round {
+                    decision = self.recompute_votes(
+                        candidate_hash,
+                        candidate_creator,
+                        curr_round,
+                        voters_round,
+                    );
+                    if decision.is_some() {
+                        break;
                     }
                 }
             } else {
@@ -267,12 +281,10 @@ impl<H: Hasher> Extender<H> {
                     self.finalize_round(self.state.current_round, &candidate_hash)?;
                     self.state.current_round += 1;
                     self.state.round_initialized = false;
-                    continue;
                 }
                 Some(false) => {
                     self.state.pending_cand_id += 1;
                     self.state.votes_up_to_date = false;
-                    continue;
                 }
                 None => {
                     // decision = None, no progress can be done
