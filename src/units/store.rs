@@ -215,13 +215,9 @@ mod tests {
 
         let mut store = UnitStore::<Hasher64, Data, KeyBox>::new(n_nodes, threshold, 100);
 
-        let keyboxes = vec![
-            KeyBox::new(n_nodes, NodeIndex(0)),
-            KeyBox::new(n_nodes, NodeIndex(1)),
-            KeyBox::new(n_nodes, NodeIndex(2)),
-            KeyBox::new(n_nodes, NodeIndex(3)),
-            KeyBox::new(n_nodes, NodeIndex(4)),
-        ];
+        let keyboxes: Vec<_> = (0..=4)
+            .map(|i| KeyBox::new(n_nodes, NodeIndex(i)))
+            .collect();
 
         assert_eq!(0, store.round_in_progress);
         assert_eq!(NodeCount(0), store.n_units_per_round[0]);
@@ -242,13 +238,9 @@ mod tests {
 
         let mut store = UnitStore::<Hasher64, Data, KeyBox>::new(n_nodes, threshold, 100);
 
-        let keyboxes = vec![
-            KeyBox::new(n_nodes, NodeIndex(0)),
-            KeyBox::new(n_nodes, NodeIndex(1)),
-            KeyBox::new(n_nodes, NodeIndex(2)),
-            KeyBox::new(n_nodes, NodeIndex(3)),
-            KeyBox::new(n_nodes, NodeIndex(4)),
-        ];
+        let keyboxes: Vec<_> = (0..=4)
+            .map(|i| KeyBox::new(n_nodes, NodeIndex(i)))
+            .collect();
 
         let mut forker_hashes = Vec::new();
 
@@ -272,14 +264,14 @@ mod tests {
         let forker_units: Vec<_> = store
             .mark_forker(NodeIndex(0))
             .iter()
-            .map(|unit| unit.clone().into_unchecked().signable.round())
+            .map(|unit| unit.clone().into_unchecked().as_signable().round())
             .collect();
 
         assert_eq!(vec![0, 1, 2, 3, 4], forker_units);
         assert!(store.is_forker[NodeIndex(0)]);
 
         // Rounds that are not in progress still have forker's units
-        for (round, hash) in forker_hashes.iter().enumerate().take(4) {
+        for (round, hash) in forker_hashes[0..4].iter().enumerate() {
             let coord = UnitCoord::new(round, NodeIndex(0));
             assert_eq!(NodeCount(5), store.n_units_per_round[round]);
             assert!(store.by_coord.contains_key(&coord));
@@ -294,7 +286,8 @@ mod tests {
         assert!(store.by_hash.contains_key(&forker_hashes[4]));
 
         // Rounds after round in progress are "free" of forker's units;
-        for (round, hash) in forker_hashes.iter().enumerate().take(7).skip(5) {
+        for (round, hash) in forker_hashes[5..7].iter().enumerate() {
+            let round = round + 5;
             let coord = UnitCoord::new(round, NodeIndex(0));
             assert_eq!(NodeCount(0), store.n_units_per_round[round]);
             assert!(!store.by_coord.contains_key(&coord));
