@@ -38,6 +38,21 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
     ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, S>>),
 }
 
+impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
+    pub(crate) fn included_data(&self) -> Vec<D> {
+        match self {
+            Self::NewUnit(uu) => vec![uu.as_signable().data().clone()],
+            Self::RequestCoord(_, _) => Vec::new(),
+            Self::ResponseCoord(uu) => vec![uu.as_signable().data().clone()],
+            Self::RequestParents(_, _) => Vec::new(),
+            Self::ResponseParents(_, units) => units
+                .iter()
+                .map(|uu| uu.as_signable().data().clone())
+                .collect(),
+        }
+    }
+}
+
 /// Type for incoming notifications: Member to Consensus.
 #[derive(Clone, PartialEq)]
 pub(crate) enum NotificationIn<H: Hasher> {
