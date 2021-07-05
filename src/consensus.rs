@@ -70,17 +70,29 @@ pub(crate) async fn run<H: Hasher + 'static>(
         .fuse();
     info!(target: "AlephBFT", "{:?} All services started.", conf.node_ix);
 
+    let mut terminal_exited = false;
+    let mut creator_exited = false;
+    let mut extender_exited = false;
     futures::select! {
         _ = exit => {},
-        _ = terminal_handle => {},
-        _ = creator_handle => {},
-        _ = extender_handle => {},
+        _ = terminal_handle => terminal_exited = true,
+        _ = creator_handle => creator_exited = true,
+        _ = extender_handle => extender_exited = true,
     }
 
     // we stop no matter if received Ok or Err
     let _ = terminal_exit.send(());
+    if !terminal_exited {
+        terminal_handle.await.unwrap();
+    }
     let _ = creator_exit.send(());
+    if !creator_exited {
+        creator_handle.await.unwrap();
+    }
     let _ = extender_exit.send(());
+    if !extender_exited {
+        extender_handle.await.unwrap();
+    }
 
     info!(target: "AlephBFT", "{:?} All services stopped.", conf.node_ix);
 }
