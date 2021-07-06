@@ -2,7 +2,7 @@ use futures::{
     channel::{mpsc, oneshot},
     FutureExt,
 };
-use log::info;
+use log::{debug, info};
 
 use crate::{
     config::Config,
@@ -75,9 +75,18 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let mut extender_exited = false;
     futures::select! {
         _ = exit => {},
-        _ = terminal_handle => terminal_exited = true,
-        _ = creator_handle => creator_exited = true,
-        _ = extender_handle => extender_exited = true,
+        _ = terminal_handle => {
+            terminal_exited = true;
+            debug!(target: "AlephBFT-consensus", "{:?} terminal task terminated early.", conf.node_ix);
+        },
+        _ = creator_handle => {
+            creator_exited = true;
+            debug!(target: "AlephBFT-consensus", "{:?} creator task terminated early.", conf.node_ix);
+        },
+        _ = extender_handle => {
+            extender_exited = true;
+            debug!(target: "AlephBFT-consensus", "{:?} extender task terminated early.", conf.node_ix);
+        }
     }
 
     // we stop no matter if received Ok or Err

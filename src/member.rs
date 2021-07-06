@@ -776,9 +776,21 @@ where
                     self.trigger_tasks();
                     ticker = Delay::new(ticker_delay).fuse();
                 },
-                _ = &mut consensus_handle => { consensus_exited = true; break;},
-                _ = &mut network_handle => { network_exited = true; break; },
-                _ = &mut alerts_handle => { alerter_exited = true; break; },
+                _ = &mut consensus_handle => {
+                    consensus_exited = true;
+                    debug!(target: "AlephBFT-member", "{:?} consensus task terminated early.", self.index());
+                    break;
+                },
+                _ = &mut network_handle => {
+                    network_exited = true;
+                    debug!(target: "AlephBFT-member", "{:?} network task terminated early.", self.index());
+                    break;
+                },
+                _ = &mut alerts_handle => {
+                    alerter_exited = true;
+                    debug!(target: "AlephBFT-member", "{:?} alerts task terminated early.", self.index());
+                    break;
+                },
                 _ = &mut exit => break,
             }
             self.move_units_to_consensus();
