@@ -15,10 +15,12 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::Hasher as StdHasher,
     pin::Pin,
-    sync::Arc,
+    sync::{atomic::AtomicBool, Arc},
     task::{Context, Poll},
     time::Duration,
 };
+
+use tokio::task::yield_now;
 
 use crate::{
     alerts,
@@ -182,11 +184,26 @@ impl Future for HonestHub {
 }
 
 #[derive(Clone)]
-pub(crate) struct Spawner {}
+pub struct Spawner {
+    handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
 
 impl Spawner {
-    pub(crate) fn new() -> Self {
-        Spawner {}
+    pub async fn wait(&self) {
+        for h in self.handles.lock().iter_mut() {
+            let _ = h.await;
+        }
+    }
+    pub fn new() -> Self {
+        Spawner {
+            handles: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl Default for Spawner {
+    fn default() -> Self {
+        Spawner::new()
     }
 }
 
@@ -206,6 +223,91 @@ impl SpawnHandle for Spawner {
             res_tx.send(()).expect("We own the rx.");
         });
         Box::pin(async move { res_rx.await.map_err(|_| ()) })
+    }
+}
+
+#[derive(Clone)]
+pub struct IdleAwareSpawner {
+    spawner: Arc<Spawner>,
+    idle_mx: Arc<Mutex<()>>,
+    wake_flag: Arc<AtomicBool>,
+}
+
+struct SpawnFuture<T> {
+    task: Pin<Box<T>>,
+    wake_flag: Arc<AtomicBool>,
+}
+
+impl<T> SpawnFuture<T> {
+    fn new(task: T, wake_flag: Arc<AtomicBool>) -> Self {
+        SpawnFuture {
+            task: Box::pin(task),
+            wake_flag,
+        }
+    }
+}
+
+impl<T: Future<Output = ()> + Send + 'static> Future for SpawnFuture<T> {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.wake_flag
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        Future::poll(self.task.as_mut(), cx)
+    }
+}
+
+impl SpawnHandle for IdleAwareSpawner {
+    fn spawn(&self, _name: &'static str, task: impl Future<Output = ()> + Send + 'static) {
+        let wrapped = SpawnFuture::new(task, self.wake_flag.clone());
+        self.spawner.spawn(_name, wrapped)
+    }
+
+    fn spawn_essential(
+        &self,
+        name: &'static str,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> TaskHandle {
+        let wrapped = SpawnFuture::new(task, self.wake_flag.clone());
+        self.spawner.spawn_essential(name, wrapped)
+    }
+}
+
+impl IdleAwareSpawner {
+    pub async fn wait(&self) {
+        self.spawner.wait().await
+    }
+
+    pub fn new() -> Self {
+        IdleAwareSpawner {
+            spawner: Arc::new(Spawner::new()),
+            idle_mx: Arc::new(Mutex::new(())),
+            wake_flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub async fn wait_idle(&self) {
+        let _ = self.idle_mx.lock();
+        // try to verify if any other task was attempting to wake up
+        // it assumes that we are using a single-threaded runtime for scheduling our Futures
+        self.wake_flag
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+
+        loop {
+            yield_now().await;
+            if self
+                .wake_flag
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                break;
+            }
+        }
+    }
+}
+
+impl Default for IdleAwareSpawner {
+    fn default() -> Self {
+        IdleAwareSpawner::new()
     }
 }
 

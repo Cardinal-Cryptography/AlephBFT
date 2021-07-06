@@ -2,7 +2,7 @@ use crate::{
     consensus,
     member::{NotificationIn, NotificationOut},
     nodes::{NodeCount, NodeIndex, NodeMap},
-    testing::mock::{gen_config, Hash64, Hasher64, Spawner},
+    testing::mock::{gen_config, Hash64, Hasher64, IdleAwareSpawner},
     units::{ControlHash, PreUnit, Unit},
     Receiver, Round, Sender, SpawnHandle,
 };
@@ -11,10 +11,9 @@ use futures::{
     stream::StreamExt,
     FutureExt,
 };
-use futures_timer::Delay;
 use log::{debug, error, trace};
 use rand::{distributions::Open01, prelude::*};
-use std::{cmp, time::Duration};
+use std::cmp;
 
 use std::collections::HashMap;
 
@@ -124,30 +123,30 @@ impl ConsensusDagFeeder {
 async fn run_consensus_on_dag(
     units: Vec<UnitWithParents>,
     n_members: NodeCount,
-    deadline_ms: u64,
 ) -> Vec<Vec<Hash64>> {
     let (feeder, rx_in, tx_out) = ConsensusDagFeeder::new(units);
     let conf = gen_config(NodeIndex(0), n_members);
-    let (_exit_tx, exit_rx) = oneshot::channel();
+    let (exit_tx, exit_rx) = oneshot::channel();
     let (batch_tx, mut batch_rx) = mpsc::unbounded();
-    let spawner = Spawner::new();
+    let spawner = IdleAwareSpawner::new();
     spawner.spawn(
         "consensus",
         consensus::run(conf, rx_in, tx_out, batch_tx, spawner.clone(), exit_rx),
     );
     spawner.spawn("feeder", feeder.run());
     let mut batches = Vec::new();
-    let mut delay_fut = Delay::new(Duration::from_millis(deadline_ms)).fuse();
     loop {
         futures::select! {
             batch = batch_rx.next() => {
                 batches.push(batch.unwrap());
             },
-            _ = &mut delay_fut => {
+            _ = spawner.wait_idle().fuse() => {
                 break;
             }
         };
     }
+    exit_tx.send(()).unwrap();
+    spawner.wait().await;
     batches
 }
 
@@ -272,8 +271,7 @@ async fn ordering_random_dag_consistency_under_permutations() {
         let n_members = NodeCount(rng.gen_range(1..11));
         let height = rng.gen_range(3..11);
         let mut units = generate_random_dag(n_members, height, seed);
-        let batch_on_sorted =
-            run_consensus_on_dag(units.clone(), n_members, 80 + (n_members.0 as u64) * 5).await;
+        let batch_on_sorted = run_consensus_on_dag(units.clone(), n_members).await;
         debug!(target: "dag-test",
             "seed {:?} n_members {:?} height {:?} batch_len {:?}",
             seed,
@@ -283,12 +281,11 @@ async fn ordering_random_dag_consistency_under_permutations() {
         );
         for i in 0..8 {
             units.shuffle(&mut rng);
-            let mut batch =
-                run_consensus_on_dag(units.clone(), n_members, 25 + (n_members.0 as u64) * 5).await;
+            let mut batch = run_consensus_on_dag(units.clone(), n_members).await;
             if batch != batch_on_sorted {
                 if batch_lists_consistent(&batch, &batch_on_sorted) {
                     // there might be some timing issue here, we run it with more time
-                    batch = run_consensus_on_dag(units.clone(), n_members, 200).await;
+                    batch = run_consensus_on_dag(units.clone(), n_members).await;
                 }
                 if batch != batch_on_sorted {
                     debug!(target: "dag-test",
