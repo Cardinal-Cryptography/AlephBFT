@@ -4,20 +4,17 @@
 
 #### 3.1.1 DataIO.
 
-The DataIO trait is an abstraction for a component that provides data items, checks availability of data items and allows to input ordered data items. `DataIO` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
+The DataIO trait is an abstraction for a component that provides data items and allows to input ordered data items. `DataIO` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
 
 ```rust
 pub trait DataIO<Data> {
     type Error: Debug;
     fn get_data(&self) -> Data;
     fn send_ordered_batch(&mut self, batch: Vec<Data>) -> Result<(), Self::Error>;
-    fn check_availability(&self, data: &Data) -> bool;
 }
 ```
 
-AlephBFT internally calls `get_data()` whenever a new unit is created and data needs to be placed inside. The `send_ordered_batch` method is called whenever a new round has been decided and thus a new batch of units (or more precisely the data they carry) is available. Finally `check_availability` is used to validate and check availability of data. The meaning of the latter might be unclear if we think of `Data` as being the actual data that is being ordered, but in applications one often wants to use **hashes of data** (for instance block hashes, see the example below) in which case it is crucial for security that there is access to the actual data, cryptographically represented by a hash. It is assumed that the implementation of DataIO makes best effort of fetch the data in case it is unavailable.
-
-**Note:** above we presented a slightly simplified version of the `DataIO` trait whose `check_availability` method outputs `bool`. The version in the actual implementation returns an `Option`: `None` means that the data is available, `Some(fut)` means that the data is not available and `fut` is a `Future` that will complete at the very moment the data is fetched. Conceptually this still works as explained above and the examples in the later part, but it is a bit more efficient to do it this way in the implementation.
+AlephBFT internally calls `get_data()` whenever a new unit is created and data needs to be placed inside. The `send_ordered_batch` method is called whenever a new round has been decided and thus a new batch of units (or more precisely the data they carry) is available.
 
 #### 3.1.2 Network.
 
@@ -33,6 +30,8 @@ pub trait Network<H: Hasher, D: Data, S: Encode + Decode>: Send {
 ```
 
 Here `NetworkData` is a type representing possible network messages for the AlephBFT protocol. For the purpose of implementing the Network trait what matters the most is that they implement the `Encode` and `Decode` traits, i.e., allow for serialization/deserialization thus can be treated as byte arrays if that is more convenient. The `NodeIndex` type represents node indices, i.e., a number between `0` and `N-1`.
+
+Additionally `NetworkData` implements a `included_data` method which returns all the `Data` that might end up ordered as a result of this message being passed to AlephBFT. The implementation of `Network` should ensure that the user system is ready to have that `Data` be ordered. In the case of `Data` only representing actual data being ordered (e.g. hashes of blocks of transactions), this means ensuring data availability before passing the messages on.
 
 The `send` and `broadcast` methods have straightforward semantics: sending a message to a single or to all the nodes. `next_event` is an asynchronous method for receiving messages from other nodes.
 
