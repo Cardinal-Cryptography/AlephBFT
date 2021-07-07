@@ -284,7 +284,6 @@ async fn ordering_random_dag_consistency_under_permutations() {
             let mut batch = run_consensus_on_dag(units.clone(), n_members).await;
             if batch != batch_on_sorted {
                 if batch_lists_consistent(&batch, &batch_on_sorted) {
-                    // there might be some timing issue here, we run it with more time
                     batch = run_consensus_on_dag(units.clone(), n_members).await;
                 }
                 if batch != batch_on_sorted {
