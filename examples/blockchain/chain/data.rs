@@ -1,23 +1,22 @@
 use crate::{chain::BlockNum, network::NetworkData};
 use aleph_bft::OrderedBatch;
-use codec::Encode;
 use futures::channel::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use log::debug;
 use parking_lot::Mutex;
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap, HashSet},
-    hash::Hasher,
+    collections::{HashMap, HashSet},
     sync::Arc,
 };
 
 pub(crate) type Data = BlockNum;
 
 pub(crate) struct DataStore {
+    next_message_id: u32,
     current_block: Arc<Mutex<BlockNum>>,
     available_blocks: HashSet<BlockNum>,
-    message_requirements: HashMap<u64, usize>,
-    dependent_messages: HashMap<BlockNum, Vec<u64>>,
-    pending_messages: HashMap<u64, NetworkData>,
+    message_requirements: HashMap<u32, usize>,
+    dependent_messages: HashMap<BlockNum, Vec<u32>>,
+    pending_messages: HashMap<u32, NetworkData>,
     messages_for_member: UnboundedSender<NetworkData>,
 }
 
@@ -28,6 +27,7 @@ impl DataStore {
     ) -> Self {
         let available_blocks = (0..=*current_block.lock()).collect();
         DataStore {
+            next_message_id: 0,
             current_block,
             available_blocks,
             message_requirements: HashMap::new(),
@@ -37,23 +37,19 @@ impl DataStore {
         }
     }
 
-    fn message_hash(message: &NetworkData) -> u64 {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(&message.encode());
-        hasher.finish()
-    }
-
     fn add_pending_message(&mut self, message: NetworkData, requirements: Vec<BlockNum>) {
-        let message_hash = Self::message_hash(&message);
+        let message_id = self.next_message_id;
+        self.next_message_id += 1;
+        self.next_message_id %= 1_000_000;
         for block_num in requirements.iter() {
             self.dependent_messages
                 .entry(*block_num)
                 .or_insert_with(Vec::new)
-                .push(message_hash);
+                .push(message_id);
         }
         self.message_requirements
-            .insert(message_hash, requirements.len());
-        self.pending_messages.insert(message_hash, message);
+            .insert(message_id, requirements.len());
+        self.pending_messages.insert(message_id, message);
     }
 
     pub(crate) fn add_message(&mut self, message: NetworkData) {
@@ -72,7 +68,7 @@ impl DataStore {
     }
 
     fn push_messages(&mut self, num: BlockNum) {
-        for message_hash in self
+        for message_id in self
             .dependent_messages
             .entry(num)
             .or_insert_with(Vec::new)
@@ -80,17 +76,17 @@ impl DataStore {
         {
             *self
                 .message_requirements
-                .get_mut(message_hash)
+                .get_mut(message_id)
                 .expect("there are some requirements") -= 1;
-            if self.message_requirements[message_hash] == 0 {
+            if self.message_requirements[message_id] == 0 {
                 let message = self
                     .pending_messages
-                    .remove(message_hash)
+                    .remove(message_id)
                     .expect("there is a pending message");
                 self.messages_for_member
                     .unbounded_send(message)
                     .expect("member accept messages");
-                self.message_requirements.remove(message_hash);
+                self.message_requirements.remove(message_id);
             }
         }
         self.dependent_messages.remove(&num);

@@ -121,7 +121,6 @@ pub(crate) async fn run_blockchain(
                 maybe_message = messages_from_network.next() => {
                     if let Some(message) = maybe_message {
                         data_store.add_message(message);
-                        //We drop the block at this point, only keep track of the fact that we received it.
                     }
                 }
                 _ = &mut delay_fut => {
