@@ -15,7 +15,7 @@ pub(crate) type Data = BlockNum;
 pub(crate) struct DataStore {
     current_block: Arc<Mutex<BlockNum>>,
     available_blocks: HashSet<BlockNum>,
-    message_requirements: HashMap<u64, HashSet<BlockNum>>,
+    message_requirements: HashMap<u64, usize>,
     dependent_messages: HashMap<BlockNum, Vec<u64>>,
     pending_messages: HashMap<u64, NetworkData>,
     messages_for_member: UnboundedSender<NetworkData>,
@@ -52,7 +52,7 @@ impl DataStore {
                 .push(message_hash);
         }
         self.message_requirements
-            .insert(message_hash, requirements.iter().cloned().collect());
+            .insert(message_hash, requirements.len());
         self.pending_messages.insert(message_hash, message);
     }
 
@@ -78,11 +78,11 @@ impl DataStore {
             .or_insert_with(Vec::new)
             .iter()
         {
-            self.message_requirements
+            *self
+                .message_requirements
                 .get_mut(message_hash)
-                .expect("there are some requirements")
-                .remove(&num);
-            if self.message_requirements[message_hash].is_empty() {
+                .expect("there are some requirements") -= 1;
+            if self.message_requirements[message_hash] == 0 {
                 let message = self
                     .pending_messages
                     .remove(message_hash)
