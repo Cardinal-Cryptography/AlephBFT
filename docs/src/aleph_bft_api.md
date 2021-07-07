@@ -59,7 +59,7 @@ While the implementations of `KeyBox` and `Network` are pretty much universal, t
 
 #### 3.2.1 Blockchain Finality Gadget.
 
-Consider a blockchain that does not have an intrinsic finality mechanism, so for instance it might be a PoW chain with probabilistic finality or a chain based on PoS that uses some probabilistic or round-robin block proposal mechanism. Each of the `N` nodes in the network has its own view of the chain and at certain moments in time there might be conflicts on what the given nodes consider as the "tip" of the blockchain (because of possible forks or network delays). We would like to design a finality mechanism based on AlephBFT that will allow the nodes to have agreement on what the "tip" is. Towards this end we just need to implement a suitable `DataIO` object.
+Consider a blockchain that does not have an intrinsic finality mechanism, so for instance it might be a PoW chain with probabilistic finality or a chain based on PoS that uses some probabilistic or round-robin block proposal mechanism. Each of the `N` nodes in the network has its own view of the chain and at certain moments in time there might be conflicts on what the given nodes consider as the "tip" of the blockchain (because of possible forks or network delays). We would like to design a finality mechanism based on AlephBFT that will allow the nodes to have agreement on what the "tip" is. Towards this end we just need to implement a suitable `DataIO` object and filtering of network messages for AlephBFT.
 
 For concreteness, suppose each node holds the genesis block `B[0]` and its hash `hash(B[0])` and treats it as the highest finalized block so far.
 
@@ -73,36 +73,51 @@ def get_data():
 
 This is simply the hash of the block the node thinks is the current "tip".
 
+Using the `included_data` method of `NetworkData` we can filter incoming network messages in our implementation of `Network`. The code handling incoming network messages could be
+
+```
+def handle_incoming_message(M):
+ let hashes = M.included_data()
+ if we have all the blocks referred to by hashes:
+	 if we have all the ancestors of these blocks:
+			add M to ready_messages
+			return
+	add M with it's required hashes to waiting_messages
+	request all the blocks we don't have from random nodes
+```
+
+We note that availability of a block alone is not quite enough for this case, as, for instance, if the parent of a block is missing from out storage, we cannot really think of the block as available, because we cannot finalize it.
+
+When we get a new block we can check all the messages in `wating_messages` and move the ones that now have all the hashes satisfied into `ready_messages`.
+
+```
+def handle_incoming_block(B):
+	block_hash = hash(B)
+	for M in waiting_messages:
+		if M depends on block_hash:
+			remove the dependency
+			if we don't have an ancestor B' of B:
+				add a dependency on hash(B') and request it from random nodes
+			if M has no more dependencies:
+				move M to ready_messages
+```
+
+The `next` method of `Network` simply returns messages from `ready_messages`.
+
+Now we can implement handling ordered batches.
+
 ```
 def send_ordered_batch(batch):
 	let finalized = the highest finalized block so far
 	for block_hash in batch:
+	 // We have this block in local storage by the above filtering.
 		let B be the block such that hash(B) == block_hash
-		if there is no such block in local storage then fetch it
-		// The fact that block_hash appeared in the batch implies that at least half of the honest nodes hold B, so fetching from random nodes should work
 		if finalized is an ancestor of B:
 			finalize all the blocks on the path from finalized to B
 			let finalized = B
 ```
 
 Since (because of AlephBFT's guarantees) all the nodes locally observe the same ordered batches, the above implies that all the nodes will finalize the same blocks, with the only difference being possibly a slight difference in timing.
-
-Finally, the availability check is also straightforward. Note that we assume that there is an underlying block import mechanism that is independent from AlephBFT and assumes that the blocks disseminate with no significant delays.
-
-```
-def check_availability(data):
-	let B be the block such that hash(B) == data
-	if there is no such B in our local storage:
-		// start efforts to fetch B
-		return false
-	if all the blocks on the path from genesis to B are in local storage:
-		return true
-	else:
-		// start efforts to fetch the missing blocks
-		return false
-```
-
-We note that availability of `B` alone is not quite enough for this case, as, for instance, if the parent of `B` is missing from out storage, we cannot really think of `B` as available, because we cannot finalize `B`.
 
 #### 3.2.2 State Machine Replication (Standalone Blockchain).
 
@@ -131,14 +146,9 @@ def send_ordered_batch(batch):
 	add B[k+1] to the blockchain
 ```
 
-Whenever a new batch is receive we simple create a new block out of the batch's content.
+Whenever a new batch is received we simply create a new block out of the batch's content.
 
-When it comes to the availability check, in this case `Data` is not a cryptographic fingerprint of data, but the data itself, so it is available automatically.
-
-```
-def check_availability(data):
-	return true
-```
+When it comes to availability, in this case `Data` is not a cryptographic fingerprint of data, but the data itself, so no filtering of network messages is necessary. However, they can be inspected to precompute some operations as an optimization.
 
 ### 3.3 Guarantees of AlephBFT.
 
