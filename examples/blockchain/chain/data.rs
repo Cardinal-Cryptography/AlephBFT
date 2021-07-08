@@ -39,8 +39,8 @@ impl DataStore {
 
     fn add_pending_message(&mut self, message: NetworkData, requirements: Vec<BlockNum>) {
         let message_id = self.next_message_id;
+        // Whatever test you are running should end before this becomes a problem.
         self.next_message_id += 1;
-        self.next_message_id %= 1_000_000;
         for block_num in requirements.iter() {
             self.dependent_messages
                 .entry(*block_num)
