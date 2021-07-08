@@ -438,11 +438,13 @@ where
     }
 
     fn move_units_to_consensus(&mut self) {
-        for su in self.store.yield_buffer_units() {
-            let full_unit = su.as_signable();
-            let unit = full_unit.unit();
-            self.send_consensus_notification(NotificationIn::NewUnits(vec![unit]))
-        }
+        let units_to_move = self
+            .store
+            .yield_buffer_units()
+            .into_iter()
+            .map(|su| su.as_signable().unit())
+            .collect();
+        self.send_consensus_notification(NotificationIn::NewUnits(units_to_move))
     }
 
     fn on_unit_received(&mut self, uu: UncheckedSignedUnit<H, D, MK::Signature>, alert: bool) {
