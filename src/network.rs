@@ -48,7 +48,7 @@ pub trait Network<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature>: 
     async fn next_event(&mut self) -> Option<NetworkData<H, D, S, MS>>;
 }
 
-#[derive(Encode, Decode, Clone)]
+#[derive(Encode, Decode, Clone, Debug)]
 pub(crate) enum NetworkDataInner<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
     Units(UnitMessage<H, D, S>),
     Alert(AlertMessage<H, D, S, MS>),
@@ -64,7 +64,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> NetworkDataInn
 }
 
 /// NetworkData is the opaque format for all data that a committee member needs to send to other nodes.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct NetworkData<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature>(
     pub(crate) NetworkDataInner<H, D, S, MS>,
 );
