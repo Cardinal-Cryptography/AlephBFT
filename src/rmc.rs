@@ -1,6 +1,6 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 use crate::{
-    nodes::{NodeCount},
+    nodes::NodeCount,
     signed::{PartiallyMultisigned, Signable, Signed, UncheckedSigned},
     Indexed, MultiKeychain, Multisigned, PartialMultisignature, Signature,
 };
@@ -177,8 +177,7 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
 pub struct ReliableMulticast<'a, H: Signable + Hash, MK: MultiKeychain> {
     hash_states: HashMap<H, PartiallyMultisigned<'a, H, MK>>,
     network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
-    network_tx: UnboundedSender<
-        Message<H, MK::Signature, MK::PartialMultisignature>>,
+    network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
     keychain: &'a MK,
     _node_count: NodeCount,
     scheduler: Box<dyn TaskScheduler<Task<H, MK>>>,
@@ -189,8 +188,7 @@ pub struct ReliableMulticast<'a, H: Signable + Hash, MK: MultiKeychain> {
 impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMulticast<'a, H, MK> {
     pub fn new(
         network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
-        network_tx: UnboundedSender<
-            Message<H, MK::Signature, MK::PartialMultisignature>>,
+        network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
         keychain: &'a MK,
         _node_count: NodeCount,
         scheduler: impl TaskScheduler<Task<H, MK>> + 'static,
@@ -218,7 +216,6 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
         let task = Task::BroadcastMessage(message);
         self.do_task(task.clone());
         self.scheduler.add_task(task);
-
     }
 
     fn on_complete_multisignature(&mut self, multisigned: Multisigned<'a, H, MK>) {
@@ -280,8 +277,8 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
     fn do_task(&self, task: Task<H, MK>) {
         let Task::BroadcastMessage(message) = task;
         self.network_tx
-                .unbounded_send(message)
-                .expect("Sending message should succeed");
+            .unbounded_send(message)
+            .expect("Sending message should succeed");
         // for recipient in 0..self.node_count.0 {
         //     let recipient = NodeIndex(recipient);
         //     self.network_tx

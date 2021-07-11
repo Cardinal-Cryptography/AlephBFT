@@ -151,8 +151,7 @@ struct Alerter<'a, H: Hasher, D: Data, MK: MultiKeychain> {
     known_alerts: HashMap<H::Hash, Signed<'a, Alert<H, D, MK::Signature>, MK>>,
     known_rmcs: HashMap<(NodeIndex, NodeIndex), H::Hash>,
     rmc: ReliableMulticast<'a, H::Hash, MK>,
-    messages_from_rmc: Receiver<
-        rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    messages_from_rmc: Receiver<rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>>,
     messages_for_rmc: Sender<rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>>,
 }
 
@@ -416,8 +415,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
 
     fn rmc_message_to_network(
         &mut self,
-        message:
-            rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>
+        message: rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
         self.messages_for_network
             .unbounded_send((

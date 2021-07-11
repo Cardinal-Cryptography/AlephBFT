@@ -7,7 +7,7 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
-use log::error;
+use log::{error, warn};
 use std::fmt::Debug;
 
 /// Network represents an interface for sending and receiving NetworkData.
@@ -166,14 +166,17 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature, N: Network<H, 
         let NetworkData(network_data) = network_data;
         use NetworkDataInner::*;
         match network_data {
-            Units(unit_message) => self
-                .units_received
-                .unbounded_send(unit_message)
-                .expect("Channel should be open"),
-            Alert(alert_message) => self
-                .alerts_received
-                .unbounded_send(alert_message)
-                .expect("Channel should be open"),
+            Units(unit_message) => {
+                if let Err(e) = self.units_received.unbounded_send(unit_message) {
+                    warn!(target: "AlephBFT-network-hub", "Error when sending units to consensus {:?}", e);
+                }
+            }
+
+            Alert(alert_message) => {
+                if let Err(e) = self.alerts_received.unbounded_send(alert_message) {
+                    warn!(target: "AlephBFT-network-hub", "Error when sending alerts to consensus {:?}", e);
+                }
+            }
         }
     }
 
