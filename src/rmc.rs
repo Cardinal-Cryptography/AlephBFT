@@ -229,10 +229,10 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
         self.multisigned_hashes_tx
             .unbounded_send(multisigned.clone())
             .expect("We own the the rx, so this can't fail");
-        self.scheduler
-            .add_task(Task::BroadcastMessage(Message::MultisignedHash(
-                multisigned.into_unchecked(),
-            )));
+
+        let task = Task::BroadcastMessage(Message::MultisignedHash(multisigned.into_unchecked()));
+        self.do_task(task.clone());
+        self.scheduler.add_task(task);
     }
 
     fn handle_message(&mut self, message: Message<H, MK::Signature, MK::PartialMultisignature>) {
@@ -279,12 +279,6 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
         self.network_tx
             .unbounded_send(message)
             .expect("Sending message should succeed");
-        // for recipient in 0..self.node_count.0 {
-        //     let recipient = NodeIndex(recipient);
-        //     self.network_tx
-        //         .unbounded_send((recipient, message.clone()))
-        //         .expect("Sending message should succeed");
-        // }
     }
 
     /// Fetches final multisignature.
