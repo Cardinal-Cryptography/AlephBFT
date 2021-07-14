@@ -351,7 +351,7 @@ That being said, there are <strong>practical</strong> issues when it comes to de
 <div id="chapter_begin" style="break-before: page; page-break-before: always;"></div><h2 id="3-api-of-alephbft"><a class="header" href="#3-api-of-alephbft">3 API of AlephBFT</a></h2>
 <h3 id="31-required-trait-implementations"><a class="header" href="#31-required-trait-implementations">3.1 Required Trait Implementations.</a></h3>
 <h4 id="311-dataio"><a class="header" href="#311-dataio">3.1.1 DataIO.</a></h4>
-<p>The DataIO trait is an abstraction for a component that provides data items, checks availability of data items and allows to input ordered data items. <code>DataIO</code> is parametrized with a <code>Data</code> generic type representing the type of items we would like to order. Below we give examples of what these might be.</p>
+<p>The DataIO trait is an abstraction for a component that provides data items and allows to input ordered data items. <code>DataIO</code> is parametrized with a <code>Data</code> generic type representing the type of items we would like to order. Below we give examples of what these might be.</p>
 <pre><pre class="playground"><code class="language-rust">
 <span class="boring">#![allow(unused)]
 </span><span class="boring">fn main() {
@@ -359,12 +359,10 @@ That being said, there are <strong>practical</strong> issues when it comes to de
     type Error: Debug;
     fn get_data(&amp;self) -&gt; Data;
     fn send_ordered_batch(&amp;mut self, batch: Vec&lt;Data&gt;) -&gt; Result&lt;(), Self::Error&gt;;
-    fn check_availability(&amp;self, data: &amp;Data) -&gt; bool;
 }
 <span class="boring">}
 </span></code></pre></pre>
-<p>AlephBFT internally calls <code>get_data()</code> whenever a new unit is created and data needs to be placed inside. The <code>send_ordered_batch</code> method is called whenever a new round has been decided and thus a new batch of units (or more precisely the data they carry) is available. Finally <code>check_availability</code> is used to validate and check availability of data. The meaning of the latter might be unclear if we think of <code>Data</code> as being the actual data that is being ordered, but in applications one often wants to use <strong>hashes of data</strong> (for instance block hashes, see the example below) in which case it is crucial for security that there is access to the actual data, cryptographically represented by a hash. It is assumed that the implementation of DataIO makes best effort of fetch the data in case it is unavailable.</p>
-<p><strong>Note:</strong> above we presented a slightly simplified version of the <code>DataIO</code> trait whose <code>check_availability</code> method outputs <code>bool</code>. The version in the actual implementation returns an <code>Option</code>: <code>None</code> means that the data is available, <code>Some(fut)</code> means that the data is not available and <code>fut</code> is a <code>Future</code> that will complete at the very moment the data is fetched. Conceptually this still works as explained above and the examples in the later part, but it is a bit more efficient to do it this way in the implementation.</p>
+<p>AlephBFT internally calls <code>get_data()</code> whenever a new unit is created and data needs to be placed inside. The <code>send_ordered_batch</code> method is called whenever a new round has been decided and thus a new batch of units (or more precisely the data they carry) is available.</p>
 <h4 id="312-network"><a class="header" href="#312-network">3.1.2 Network.</a></h4>
 <p>The Network trait defines the functionality we expect the network layer to satisfy and is quite straightforward:</p>
 <pre><pre class="playground"><code class="language-rust">
@@ -379,6 +377,7 @@ That being said, there are <strong>practical</strong> issues when it comes to de
 <span class="boring">}
 </span></code></pre></pre>
 <p>Here <code>NetworkData</code> is a type representing possible network messages for the AlephBFT protocol. For the purpose of implementing the Network trait what matters the most is that they implement the <code>Encode</code> and <code>Decode</code> traits, i.e., allow for serialization/deserialization thus can be treated as byte arrays if that is more convenient. The <code>NodeIndex</code> type represents node indices, i.e., a number between <code>0</code> and <code>N-1</code>.</p>
+<p>Additionally <code>NetworkData</code> implements a <code>included_data</code> method which returns all the <code>Data</code> that might end up ordered as a result of this message being passed to AlephBFT. The implementation of <code>Network</code> should ensure that the user system is ready to have that <code>Data</code> be ordered. In the case of <code>Data</code> only representing actual data being ordered (e.g. hashes of blocks of transactions), this means ensuring data availability before passing the messages on.</p>
 <p>The <code>send</code> and <code>broadcast</code> methods have straightforward semantics: sending a message to a single or to all the nodes. <code>next_event</code> is an asynchronous method for receiving messages from other nodes.</p>
 <p><strong>Note on Rate Control</strong>: it is assumed that Network <strong>implements a rate control mechanism</strong> guaranteeing that no node is allowed to spam messages without limits. We do not specify details yet, but in future releases we plan to publish recommended upper bounds for the amounts of bandwidth and number of messages allowed per node per a unit of time. These bounds must be carefully crafted based upon the number of nodes <code>N</code> and the configured delays between subsequent Dag rounds, so that at the same time spammers are cut off but honest nodes are able function correctly within these bounds.</p>
 <p><strong>Note on Network Reliability</strong>: it is not assumed that each message that AlephBFT orders to send reaches its intended recipient, there are some built-in reliability mechanisms within AlephBFT that will automatically detect certain failures and resend messages as needed. Clearly, the less reliable the network is, the worse the performarmence of AlephBFT will be (generally slower to produce output). Also, not surprisingly if the percentage of dropped messages is too high AlephBFT might stop making progress, but from what we observe in tests, this happens only when the reliability is extremely bad, i.e., drops below 50% (which means there is some significant issue with the network).</p>
@@ -398,7 +397,7 @@ That being said, there are <strong>practical</strong> issues when it comes to de
 <h3 id="32-examples"><a class="header" href="#32-examples">3.2 Examples</a></h3>
 <p>While the implementations of <code>KeyBox</code> and <code>Network</code> are pretty much universal, the implementation of <code>DataIO</code> depends on the specific application. We consider two examples here.</p>
 <h4 id="321-blockchain-finality-gadget"><a class="header" href="#321-blockchain-finality-gadget">3.2.1 Blockchain Finality Gadget.</a></h4>
-<p>Consider a blockchain that does not have an intrinsic finality mechanism, so for instance it might be a PoW chain with probabilistic finality or a chain based on PoS that uses some probabilistic or round-robin block proposal mechanism. Each of the <code>N</code> nodes in the network has its own view of the chain and at certain moments in time there might be conflicts on what the given nodes consider as the &quot;tip&quot; of the blockchain (because of possible forks or network delays). We would like to design a finality mechanism based on AlephBFT that will allow the nodes to have agreement on what the &quot;tip&quot; is. Towards this end we just need to implement a suitable <code>DataIO</code> object.</p>
+<p>Consider a blockchain that does not have an intrinsic finality mechanism, so for instance it might be a PoW chain with probabilistic finality or a chain based on PoS that uses some probabilistic or round-robin block proposal mechanism. Each of the <code>N</code> nodes in the network has its own view of the chain and at certain moments in time there might be conflicts on what the given nodes consider as the &quot;tip&quot; of the blockchain (because of possible forks or network delays). We would like to design a finality mechanism based on AlephBFT that will allow the nodes to have agreement on what the &quot;tip&quot; is. Towards this end we just need to implement a suitable <code>DataIO</code> object and filtering of network messages for AlephBFT.</p>
 <p>For concreteness, suppose each node holds the genesis block <code>B[0]</code> and its hash <code>hash(B[0])</code> and treats it as the highest finalized block so far.</p>
 <p>We start by defining the <code>Data</code> type: this will be simply <code>Hash</code> representing the block hash in our blockchain. Subsequently, we implement <code>get_data</code> (note that we use pseudocode instead of Rust, for clarity)</p>
 <pre><code>def get_data():
@@ -406,30 +405,40 @@ That being said, there are <strong>practical</strong> issues when it comes to de
 	return hash(B)
 </code></pre>
 <p>This is simply the hash of the block the node thinks is the current &quot;tip&quot;.</p>
+<p>Using the <code>included_data</code> method of <code>NetworkData</code> we can filter incoming network messages in our implementation of <code>Network</code>. The code handling incoming network messages could be</p>
+<pre><code>def handle_incoming_message(M):
+ let hashes = M.included_data()
+ if we have all the blocks referred to by hashes:
+	 if we have all the ancestors of these blocks:
+			add M to ready_messages
+			return
+	add M with it's required hashes to waiting_messages
+	request all the blocks we don't have from random nodes
+</code></pre>
+<p>We note that availability of a block alone is not quite enough for this case as, for instance, if the parent of a block is missing from out storage, we cannot really think of the block as available because we cannot finalize it.</p>
+<p>When we get a new block we can check all the messages in <code>wating_messages</code> and move the ones that now have all the hashes satisfied into <code>ready_messages</code>.</p>
+<pre><code>def handle_incoming_block(B):
+	block_hash = hash(B)
+	for M in waiting_messages:
+		if M depends on block_hash:
+			remove the dependency
+			if we don't have an ancestor B' of B:
+				add a dependency on hash(B') and request it from random nodes
+			if M has no more dependencies:
+				move M to ready_messages
+</code></pre>
+<p>The <code>next</code> method of <code>Network</code> simply returns messages from <code>ready_messages</code>.</p>
+<p>Now we can implement handling ordered batches.</p>
 <pre><code>def send_ordered_batch(batch):
 	let finalized = the highest finalized block so far
 	for block_hash in batch:
+	 // We have this block in local storage by the above filtering.
 		let B be the block such that hash(B) == block_hash
-		if there is no such block in local storage then fetch it
-		// The fact that block_hash appeared in the batch implies that at least half of the honest nodes hold B, so fetching from random nodes should work
 		if finalized is an ancestor of B:
 			finalize all the blocks on the path from finalized to B
 			let finalized = B
 </code></pre>
 <p>Since (because of AlephBFT's guarantees) all the nodes locally observe the same ordered batches, the above implies that all the nodes will finalize the same blocks, with the only difference being possibly a slight difference in timing.</p>
-<p>Finally, the availability check is also straightforward. Note that we assume that there is an underlying block import mechanism that is independent from AlephBFT and assumes that the blocks disseminate with no significant delays.</p>
-<pre><code>def check_availability(data):
-	let B be the block such that hash(B) == data
-	if there is no such B in our local storage:
-		// start efforts to fetch B
-		return false
-	if all the blocks on the path from genesis to B are in local storage:
-		return true
-	else:
-		// start efforts to fetch the missing blocks
-		return false
-</code></pre>
-<p>We note that availability of <code>B</code> alone is not quite enough for this case, as, for instance, if the parent of <code>B</code> is missing from out storage, we cannot really think of <code>B</code> as available, because we cannot finalize <code>B</code>.</p>
 <h4 id="322-state-machine-replication-standalone-blockchain"><a class="header" href="#322-state-machine-replication-standalone-blockchain">3.2.2 State Machine Replication (Standalone Blockchain).</a></h4>
 <p>Suppose the set of <code>N</code> nodes would like to implement State Machine Replication, so roughly speaking, a blockchain. Each of the nodes keeps a local transaction pool: transactions it received from users, and the goal is to keep producing blocks with transactions, or in other words produce a linear ordering of these transactions. As previously, we demonstrate how one should go about implementing the <code>DataIO</code> object for this application.</p>
 <p>First of all, <code>Data</code> in this case is <code>Vec&lt;Transaction&gt;</code>, i.e., a list of transactions.</p>
@@ -449,11 +458,8 @@ That being said, there are <strong>practical</strong> issues when it comes to de
 	form block B[k+1] using tx_list as its content
 	add B[k+1] to the blockchain
 </code></pre>
-<p>Whenever a new batch is receive we simple create a new block out of the batch's content.</p>
-<p>When it comes to the availability check, in this case <code>Data</code> is not a cryptographic fingerprint of data, but the data itself, so it is available automatically.</p>
-<pre><code>def check_availability(data):
-	return true
-</code></pre>
+<p>Whenever a new batch is received we simply create a new block out of the batch's content.</p>
+<p>When it comes to availability, in this case <code>Data</code> is not a cryptographic fingerprint of data, but the data itself, so no filtering of network messages is necessary. However, they can be inspected to precompute some operations as an optimization.</p>
 <h3 id="33-guarantees-of-alephbft"><a class="header" href="#33-guarantees-of-alephbft">3.3 Guarantees of AlephBFT.</a></h3>
 <p>Let <code>round_delay</code> be the average delay between two consecutive rounds in the Dag that can be configured in AlephBFT (default value: 0.5 sec). Under the assumption that there are at most <code>floor(N/3)</code> dishonest nodes in the committee and the network behaves reasonably well (we do not specify the details here, but roughly speaking, a weak form of partial synchrony is required) AlephBFT guarantees that:</p>
 <ol>
@@ -502,7 +508,7 @@ That being said, there are <strong>practical</strong> issues when it comes to de
 <li>The newly created unit is filled with data, session information and a signature. This is done in <code>src/member.rs</code>. Subsequently a recurring task of broadcasting this unit is put in the task queue. The unit will be broadcast to all other nodes a few times (with some delays in between).</li>
 <li>The unit is received by another node -- happens in <code>src/member.rs</code> and passes some validation (signature checks etc.). If all these checks pass and the unit is not detected to be a fork, then it is placed in the <code>UnitStore</code> -- the <code>store</code> field of the <code>Member</code> struct.</li>
 <li>The idea is that this store keeps only <strong>legit units</strong> in the sense defined in <a href="how_alephbft_does_it.html#25-alerts----dealing-with-fork-spam">the section on alerts</a>. Thus no fork is ever be put there unless coming from an alert.</li>
-<li>At a suitable moment the units from the store are passed through a data availability check and upon passing it, they are further moved to a component called <code>Terminal</code> -- implemented in <code>src/terminal.rs</code>.</li>
+<li>At a suitable moment the units from the store are further moved to a component called <code>Terminal</code> -- implemented in <code>src/terminal.rs</code>.</li>
 <li>Roughly speaking, terminal is expected to &quot;unpack&quot; the unit, so that their parents become explicit (instead of being control hashes only).</li>
 <li>Each unit whose parents are successfully decoded, is added to the &quot;Dag&quot;. Each unit in the Dag is legit + has all its parents in the Dag.</li>
 <li>Dag units are passed to a component called the <code>Extender</code> -- see <code>src/extender.rs</code>. The role of the extender is to efficiently run the <code>OrderData</code> algorithm, described in the <a href="how_alephbft_does_it.html">section on AlephBFT</a>.</li>
