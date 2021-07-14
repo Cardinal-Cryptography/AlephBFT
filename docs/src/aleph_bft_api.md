@@ -86,7 +86,7 @@ def handle_incoming_message(M):
 	request all the blocks we don't have from random nodes
 ```
 
-We note that availability of a block alone is not quite enough for this case, as, for instance, if the parent of a block is missing from out storage, we cannot really think of the block as available, because we cannot finalize it.
+We note that availability of a block alone is not quite enough for this case as, for instance, if the parent of a block is missing from out storage, we cannot really think of the block as available because we cannot finalize it.
 
 When we get a new block we can check all the messages in `wating_messages` and move the ones that now have all the hashes satisfied into `ready_messages`.
 
