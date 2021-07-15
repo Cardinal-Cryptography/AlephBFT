@@ -179,7 +179,6 @@ pub struct ReliableMulticast<'a, H: Signable + Hash, MK: MultiKeychain> {
     network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
     network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
     keychain: &'a MK,
-    _node_count: NodeCount,
     scheduler: Box<dyn TaskScheduler<Task<H, MK>>>,
     multisigned_hashes_tx: UnboundedSender<Multisigned<'a, H, MK>>,
     multisigned_hashes_rx: UnboundedReceiver<Multisigned<'a, H, MK>>,
@@ -190,6 +189,7 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
         network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
         network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
         keychain: &'a MK,
+        //kept for compatibility
         _node_count: NodeCount,
         scheduler: impl TaskScheduler<Task<H, MK>> + 'static,
     ) -> Self {
@@ -199,7 +199,6 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
             network_rx,
             network_tx,
             keychain,
-            _node_count,
             scheduler: Box::new(scheduler),
             multisigned_hashes_tx,
             multisigned_hashes_rx,
