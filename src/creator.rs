@@ -27,7 +27,7 @@ pub(crate) struct Creator<H: Hasher> {
     parents_rx: Receiver<Unit<H>>,
     new_units_tx: Sender<NotificationOut<H>>,
     n_members: NodeCount,
-    current_round: Round, // current_round is the round number of our next unit
+    current_round: Round, // current_round is the highest round number of all known units
     candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>,
     create_lag: DelaySchedule,
@@ -63,8 +63,7 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    fn create_unit(&mut self) {
-        let round = self.current_round;
+    fn create_unit(&mut self, round: Round) {
         let parents = {
             if round == 0 {
                 NodeMap::new_with_len(self.n_members)
@@ -76,13 +75,13 @@ impl<H: Hasher> Creator<H> {
         let control_hash = ControlHash::new(&parents);
 
         let new_preunit = PreUnit::new(self.node_ix, round, control_hash);
-        trace!(target: "AlephBFT-creator", "{:?} Created a new unit {:?} at round {:?}.", self.node_ix, new_preunit, self.current_round);
+        trace!(target: "AlephBFT-creator", "{:?} Created a new unit {:?} at round {:?}.", self.node_ix, new_preunit, round);
         self.new_units_tx
             .unbounded_send(NotificationOut::CreatedPreUnit(new_preunit))
             .expect("Notification channel should be open");
 
-        self.current_round += 1;
-        self.init_round(self.current_round);
+        round += 1;
+        self.init_round(round);
     }
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
@@ -97,17 +96,17 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    fn check_ready(&self) -> bool {
-        if self.current_round == 0 {
+    fn check_ready(&self, round: Round) -> bool {
+        if round == 0 {
             return true;
         }
-        if self.current_round > self.max_round {
+        if round > self.max_round {
             warn!(target: "AlephBFT-creator", "{:?} Maximum round reached. Not creating another unit.", self.node_ix);
             return false;
         }
         // To create a new unit, we need to have at least >floor(2*N/3) parents available in previous round.
         // Additionally, our unit from previous round must be available.
-        let prev_round_index = (self.current_round - 1) as usize;
+        let prev_round_index = (round - 1) as usize;
         let threshold = (self.n_members * 2) / 3;
 
         self.n_candidates_by_round[prev_round_index] > threshold
@@ -124,6 +123,9 @@ impl<H: Hasher> Creator<H> {
                 unit = self.parents_rx.next() => {
                     if let Some(u) = unit{
                         self.add_unit(u.round(), u.creator(), u.hash());
+                        if self.current_round < u.round {
+                            self.current_round = u.round;
+                        }
                     }
                 },
                 _ = &mut delay_fut => {
@@ -138,8 +140,12 @@ impl<H: Hasher> Creator<H> {
                     break;
                 },
             };
-            if delay_passed && self.check_ready() {
-                self.create_unit();
+            while delay_passed && round < self.current_round {
+                self.create_unit(round);
+                round += 1;
+            }
+            if delay_passed && self.check_ready(round) {
+                self.create_unit(round);
                 delay_fut = Delay::new((self.create_lag)(round + 1)).fuse();
                 round += 1;
                 delay_passed = false;
