@@ -80,8 +80,7 @@ impl<H: Hasher> Creator<H> {
             .unbounded_send(NotificationOut::CreatedPreUnit(new_preunit))
             .expect("Notification channel should be open");
 
-        round += 1;
-        self.init_round(round);
+        self.init_round(round + 1);
     }
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
@@ -115,7 +114,7 @@ impl<H: Hasher> Creator<H> {
 
     pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
         let half_hour = Duration::from_secs(30 * 60);
-        let mut round: usize = 0;
+        let mut round: Round = 0;
         let mut delay_fut = Delay::new((self.create_lag)(0)).fuse();
         let mut delay_passed = false;
         loop {
@@ -123,8 +122,8 @@ impl<H: Hasher> Creator<H> {
                 unit = self.parents_rx.next() => {
                     if let Some(u) = unit{
                         self.add_unit(u.round(), u.creator(), u.hash());
-                        if self.current_round < u.round {
-                            self.current_round = u.round;
+                        if self.current_round < u.round() {
+                            self.current_round = u.round();
                         }
                     }
                 },
@@ -146,7 +145,7 @@ impl<H: Hasher> Creator<H> {
             }
             if delay_passed && self.check_ready(round) {
                 self.create_unit(round);
-                delay_fut = Delay::new((self.create_lag)(round + 1)).fuse();
+                delay_fut = Delay::new((self.create_lag)((round + 1).into())).fuse();
                 round += 1;
                 delay_passed = false;
             }
