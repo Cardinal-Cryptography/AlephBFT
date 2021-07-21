@@ -3,7 +3,7 @@ name: Autobump version
 on:
   push:
     branches:
-    - main
+    - flatPolice
 
 jobs:
   autobump:
@@ -29,4 +29,4 @@ jobs:
           sed -i "s/^version = \"$version\"$/version = \"$new_version\"/" Cargo.toml
           git add Cargo.toml
           git commit --amend --no-edit
-          git push -f origin main
+          git push -f origin flatPolice
