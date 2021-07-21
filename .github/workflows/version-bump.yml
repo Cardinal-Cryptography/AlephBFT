@@ -1,0 +1,15 @@
+name: Autobump version
+
+on:
+  push:
+    branches:
+    - main
+
+jobs:
+  autobump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+      - name: bump
+        run: ./bump_version.sh && git push -f origin main || echo 'No action needed.'
