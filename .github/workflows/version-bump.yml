@@ -13,11 +13,11 @@ jobs:
         uses: actions/checkout@v2
       - name: bump
         run: |
-          if [ -e `git diff HEAD~ src/` ]; then
+          if [ -e `git diff HEAD~ -- src/` ]; then
            echo 'No changes in code.'
            exit 0
           fi
-          if git diff HEAD~ Cargo.toml | grep -q '^+version ='; then
+          if git diff HEAD~ -- Cargo.toml | grep -q '^+version ='; then
            echo 'Version has been bumped manually.'
            exit 0
           fi
