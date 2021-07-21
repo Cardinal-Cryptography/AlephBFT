@@ -30,5 +30,7 @@ jobs:
           new_version=$major_version.$minor_version.$((patch_version + 1))
           sed -i "s/^version = \"$version\"$/version = \"$new_version\"/" Cargo.toml
           git add Cargo.toml
+          git config user.email "<>"
+          git config user.name "Version autobump"
           git commit --amend --no-edit
           git push -f origin flatPolice
