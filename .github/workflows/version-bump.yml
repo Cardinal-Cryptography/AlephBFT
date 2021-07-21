@@ -13,6 +13,7 @@ jobs:
         uses: actions/checkout@v2
       - name: bump
         run: |
+          git checkout flatPolice
           if [ -e `git diff HEAD~ src/` ]; then
            echo 'No changes in code.'
            exit 0
