@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
       - name: bump
         run: |
           if [ -e `git diff HEAD~ -- src/` ]; then
