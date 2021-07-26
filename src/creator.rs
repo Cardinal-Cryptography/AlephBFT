@@ -5,10 +5,9 @@ use crate::{
     units::{ControlHash, PreUnit, Unit},
     Hasher, Receiver, Round, Sender,
 };
-use futures::{channel::oneshot, FutureExt, StreamExt};
-use futures_timer::Delay;
+use futures::{channel::oneshot, StreamExt};
 use log::{info, trace, warn};
-use std::time::Duration;
+use tokio::time::{self, Duration};
 
 /// A process responsible for creating new units. It receives all the units added locally to the Dag
 /// via the parents_rx channel endpoint. It creates units according to an internal strategy respecting
@@ -17,7 +16,7 @@ use std::time::Duration;
 /// - all U's parents are created by different nodes,
 /// - one of U's parents is the (r-1)-round unit by U's creator,
 /// - U has > floor(2*N/3) parents.
-/// The currently implemented strategy creates the unit U at the very first moment when enough
+/// The currently implemented strategy creates the unit U according to a delay schedule and when enough
 /// candidates for parents are available for all the above constraints to be satisfied.
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
@@ -54,8 +53,12 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    // initializes the vectors corresponding to the given round (and all between if not there)
+    // updates current_round and initializes the vectors corresponding to the given round (and all between if not there)
     fn init_round(&mut self, round: Round) {
+        if self.current_round < round {
+            self.current_round = round;
+        }
+
         while self.candidates_by_round.len() <= round.into() {
             self.candidates_by_round
                 .push(NodeMap::new_with_len(self.n_members));
@@ -95,60 +98,241 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    fn check_ready(&self, round: Round) -> bool {
-        if round == 0 {
-            return true;
+    async fn ready_for_create(&mut self, round: Round) {
+
+        let prev_round_index = match round.checked_sub(1) {
+            Some(prev_round) => prev_round as usize,
+            None => return,
+        };
+
+        let delay = time::sleep((self.create_lag)(round.into()));
+        tokio::pin!(delay);
+        loop {
+            if round < self.current_round {
+                return ();
+            }
+
+            tokio::select! {
+                unit = self.parents_rx.next() => {
+                    if let Some(u) = unit {
+                        self.add_unit(u.round(), u.creator(), u.hash());
+                    }
+                    continue;
+                }
+                _ = &mut delay => {
+                    break;
+                }
+            }
         }
-        if round > self.max_round {
-            warn!(target: "AlephBFT-creator", "{:?} Maximum round reached. Not creating another unit.", self.node_ix);
-            return false;
-        }
+
         // To create a new unit, we need to have at least >floor(2*N/3) parents available in previous round.
         // Additionally, our unit from previous round must be available.
-        let prev_round_index = (round - 1) as usize;
         let threshold = (self.n_members * 2) / 3;
 
-        self.n_candidates_by_round[prev_round_index] > threshold
-            && self.candidates_by_round[prev_round_index][self.node_ix].is_some()
+        while self.n_candidates_by_round[prev_round_index] <= threshold || self.candidates_by_round[prev_round_index][self.node_ix].is_none() {
+             if let Some(u) = self.parents_rx.next().await {
+                self.add_unit(u.round(), u.creator(), u.hash());
+             }
+        }
     }
 
     pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
-        let half_hour = Duration::from_secs(30 * 60);
-        let mut round: Round = 0;
-        let mut delay_fut = Delay::new((self.create_lag)(0)).fuse();
-        let mut delay_passed = false;
-        loop {
-            futures::select! {
-                unit = self.parents_rx.next() => {
-                    if let Some(u) = unit{
-                        self.add_unit(u.round(), u.creator(), u.hash());
-                        if self.current_round < u.round() {
-                            self.current_round = u.round();
-                        }
+        for round in 0..self.max_round {
+            let mut ticker = time::interval(Duration::from_secs(30 * 60));
+            loop {
+                tokio::select! {
+                    _ = self.ready_for_create(round) => {
+                        break;
                     }
-                },
-                _ = &mut delay_fut => {
-                    if delay_passed {
+                    _ = ticker.tick() => {
                         warn!(target: "AlephBFT-creator", "{:?} more than half hour has passed since we created the previous unit.", self.node_ix);
                     }
-                    delay_passed = true;
-                    delay_fut = Delay::new(half_hour).fuse();
+                    _ = &mut exit => {
+                        info!(target: "AlephBFT-creator", "{:?} received exit signal.", self.node_ix);
+                        return;
+                    }
                 }
-                _ = &mut exit => {
-                    info!(target: "AlephBFT-creator", "{:?} received exit signal.", self.node_ix);
-                    break;
-                },
-            };
-            while delay_passed && round < self.current_round {
-                self.create_unit(round);
-                round += 1;
             }
-            if delay_passed && self.check_ready(round) {
-                self.create_unit(round);
-                delay_fut = Delay::new((self.create_lag)((round + 1).into())).fuse();
-                round += 1;
-                delay_passed = false;
+            self.create_unit(round);
+        }
+        warn!(target: "AlephBFT-creator", "{:?} Maximum round reached. Not creating another unit.", self.node_ix);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::units::{FullUnit, UnitCoord};
+    use crate::testing::mock::{Hasher64, Data};
+    use crate::config::default_config;
+    use futures::channel::mpsc;
+
+    struct TestController {
+        notifications_in: Receiver<NotificationOut<Hasher64>>,
+        units_out: Vec<Sender<Unit<Hasher64>>>,
+        units: usize,
+        max_units: usize,
+        n_candidates_by_round: Vec<NodeCount>,
+        candidates_by_round: Vec<NodeMap<Option<<Hasher64 as Hasher>::Hash>>>,
+        n_members: NodeCount,
+    }
+    
+    impl TestController {
+        fn new(
+            notifications_in: Receiver<NotificationOut<Hasher64>>,
+            max_units: usize,
+            n_members: NodeCount
+        ) -> Self {
+            Self {
+                notifications_in,
+                units_out: vec![],
+                units: 0,
+                max_units,
+                candidates_by_round: vec![NodeMap::new_with_len(n_members)],
+                n_candidates_by_round: vec![NodeCount(0)],
+                n_members,
             }
         }
+
+        async fn control(&mut self) {
+            while self.units < self.max_units {
+                if let Some(pre_unit) = self.notifications_in.next().await {
+                    match pre_unit {
+                        NotificationOut::CreatedPreUnit(h) => {
+                            self.units += 1;
+                            if self.n_candidates_by_round.len() <= h.round().into() {
+                                self.candidates_by_round
+                                    .push(NodeMap::new_with_len(self.n_members));
+                                self.n_candidates_by_round.push(NodeCount(0));
+                            }
+                            if self.candidates_by_round[h.round() as usize][h.creator()].is_none() {
+                                self.candidates_by_round[h.round() as usize][h.creator()] = Some([0; 8]);
+                                self.n_candidates_by_round[h.round() as usize] += NodeCount(1);
+                            }
+                            let full_unit = FullUnit::<Hasher64, Data>::new(h.clone(), Data::new(UnitCoord::new(0, 0.into()), 0), 0);
+                            for c in self.units_out.iter() {
+                                if c.unbounded_send(full_unit.unit()).is_err() {
+                                    return;
+                                }
+                            }
+                        },
+                        _  => {},
+                    }    
+                }
+            }
+        }
+    }
+
+    async fn start(
+        n_members: usize,
+        n_fallen_members: usize,
+        max_units: usize
+    ) -> (
+        TestController,
+        Vec<oneshot::Sender<()>>,
+        Vec<tokio::task::JoinHandle<()>>,
+        Sender<NotificationOut<Hasher64>>
+    ) {
+        let session_id = 0;
+        
+        let (to_test_controller, notifications_in) = mpsc::unbounded();
+
+        let mut test_controller = TestController::new(notifications_in, max_units, (n_members + n_fallen_members).into());
+
+        let mut handles = vec![];
+        let mut killers = vec![];
+
+        
+        for node_ix in 0..n_members {
+            let (units_out, from_test_controller) = mpsc::unbounded();
+
+            let mut creator = Creator::new(
+                default_config((n_members + n_fallen_members).into(), node_ix.into(), session_id),
+                from_test_controller,
+                to_test_controller.clone(),
+            );
+
+            test_controller.units_out.push(units_out);
+
+            let (killer, exit) = oneshot::channel::<()>();
+
+            let handle = tokio::spawn(async move {
+                creator.create(exit).await
+            });
+
+            killers.push(killer);
+            handles.push(handle);
+        }
+
+        (test_controller, killers, handles, to_test_controller)
+    }
+
+    async fn finish(
+        killers: Vec<oneshot::Sender<()>>,
+        mut handles: Vec<tokio::task::JoinHandle<()>>,
+    ) {
+        for killer in killers {
+            killer.send(()).unwrap();   
+        }
+        
+        for handle in handles.iter_mut() {
+            handle.await.unwrap();
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn synchronous_creators_should_create_dag() {
+        let n_members: usize = 7;
+        let rounds: usize = 50;
+        let max_units: usize = n_members * rounds;
+
+        let (mut test_controller, killers, handles, _) = start(n_members, 0, max_units).await;
+        test_controller.control().await;
+        assert_eq!(test_controller.n_candidates_by_round[rounds - 1], test_controller.n_members);
+        finish(killers, handles).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn asynchronous_creators_should_create_dag() {
+        let n_members: usize = 5;
+        let mut rounds = 25;
+        let n_fallen_members: usize = 2;
+        let mut max_units: usize = n_members * rounds;
+
+        let (mut test_controller, mut killers, mut handles, to_test_controller) = start(n_members, n_fallen_members, max_units).await;
+        test_controller.control().await;
+
+        rounds = 50;
+        max_units = (n_members + n_fallen_members) * rounds - n_fallen_members;
+        test_controller.max_units = max_units;
+        
+        for node_ix in n_members..(n_members + n_fallen_members) {
+            let (units_out, from_test_controller) = mpsc::unbounded();
+
+            let mut creator = Creator::new(
+                default_config((n_members + n_fallen_members).into(), node_ix.into(), 0),
+                from_test_controller,
+                to_test_controller.clone(),
+            );
+            creator.n_candidates_by_round = test_controller.n_candidates_by_round.clone();
+            creator.candidates_by_round = test_controller.candidates_by_round.clone();
+
+            test_controller.units_out.push(units_out);
+
+            let (killer, exit) = oneshot::channel::<()>();
+
+            let handle = tokio::spawn(async move {
+                creator.create(exit).await
+            });
+
+            killers.push(killer);
+            handles.push(handle);
+        }
+
+        test_controller.control().await;
+        assert!(test_controller.n_candidates_by_round[rounds - 1] >= n_members.into());
+        assert_eq!(test_controller.n_candidates_by_round[rounds - 2], (n_members + n_fallen_members).into());
+        finish(killers, handles).await;
     }
 }
