@@ -12,10 +12,12 @@ use tokio::time::{self, Duration};
 /// A process responsible for creating new units. It receives all the units added locally to the Dag
 /// via the parents_rx channel endpoint. It creates units according to an internal strategy respecting
 /// always the following constraints: for a unit U of round r
+/// - if r = 0, U has no parents
 /// - all U's parents are from round (r-1),
 /// - all U's parents are created by different nodes,
 /// - one of U's parents is the (r-1)-round unit by U's creator,
 /// - U has > floor(2*N/3) parents.
+/// - U will appear in the channel only if all U's parents appeared there before
 /// The currently implemented strategy creates the unit U according to a delay schedule and when enough
 /// candidates for parents are available for all the above constraints to be satisfied.
 ///
@@ -26,9 +28,8 @@ pub(crate) struct Creator<H: Hasher> {
     parents_rx: Receiver<Unit<H>>,
     new_units_tx: Sender<NotificationOut<H>>,
     n_members: NodeCount,
-    current_round: Round, // current_round is the highest round number of all known units
-    candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
-    n_candidates_by_round: Vec<NodeCount>,
+    candidates_by_round: Vec<NodeMap<Option<H::Hash>>>, 
+    n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
     create_lag: DelaySchedule,
     max_round: Round,
 }
@@ -45,7 +46,6 @@ impl<H: Hasher> Creator<H> {
             parents_rx,
             new_units_tx,
             n_members,
-            current_round: 0,
             candidates_by_round: vec![NodeMap::new_with_len(n_members)],
             n_candidates_by_round: vec![NodeCount(0)],
             create_lag: conf.delay_config.unit_creation_delay,
@@ -53,16 +53,11 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    // updates current_round and initializes the vectors corresponding to the given round (and all between if not there)
+    // initializes the vectors corresponding to the given round (and all between if not there)
     fn init_round(&mut self, round: Round) {
-        if self.current_round < round {
-            self.current_round = round;
-        }
-
-        while self.candidates_by_round.len() <= round.into() {
-            self.candidates_by_round
-                .push(NodeMap::new_with_len(self.n_members));
-            self.n_candidates_by_round.push(NodeCount(0));
+        if usize::from(round + 1) > self.n_candidates_by_round.len() {
+            self.candidates_by_round.resize((round + 1).into(), NodeMap::new_with_len(self.n_members));
+            self.n_candidates_by_round.resize((round + 1).into(), NodeCount(0));
         }
     }
 
@@ -88,7 +83,7 @@ impl<H: Hasher> Creator<H> {
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
         // units that are too old are of no interest to us
-        if round + 1 >= self.current_round {
+        if usize::from(round + 1) >= self.n_candidates_by_round.len() - 1 {
             self.init_round(round);
             if self.candidates_by_round[round as usize][pid].is_none() {
                 // passing the check above means that we do not have any unit for the pair (round, pid) yet
@@ -98,7 +93,7 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    async fn ready_for_create(&mut self, round: Round) {
+    async fn wait_until_ready(&mut self, round: Round) {
 
         let prev_round_index = match round.checked_sub(1) {
             Some(prev_round) => prev_round as usize,
@@ -108,8 +103,8 @@ impl<H: Hasher> Creator<H> {
         let delay = time::sleep((self.create_lag)(round.into()));
         tokio::pin!(delay);
         loop {
-            if round < self.current_round {
-                return ();
+            if usize::from(round) < self.n_candidates_by_round.len() - 1 {
+                return; // Since we get unit from round r, we have enough units from previous rounds to create our unit 
             }
 
             tokio::select! {
@@ -125,23 +120,26 @@ impl<H: Hasher> Creator<H> {
             }
         }
 
-        // To create a new unit, we need to have at least >floor(2*N/3) parents available in previous round.
+        // To create a new unit, we need to have at least floor(2*N/3) + 1 parents available in previous round.
         // Additionally, our unit from previous round must be available.
-        let threshold = (self.n_members * 2) / 3;
+        let threshold = (self.n_members * 2) / 3 + NodeCount(1);
 
-        while self.n_candidates_by_round[prev_round_index] <= threshold || self.candidates_by_round[prev_round_index][self.node_ix].is_none() {
+        while self.n_candidates_by_round[prev_round_index] < threshold || self.candidates_by_round[prev_round_index][self.node_ix].is_none() {
              if let Some(u) = self.parents_rx.next().await {
                 self.add_unit(u.round(), u.creator(), u.hash());
-             }
+             } else {
+                warn!(target: "AlephBFT-creator", "{:?} get error as result from channel with parents.", self.node_ix);
+            }
         }
     }
 
     pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
         for round in 0..self.max_round {
             let mut ticker = time::interval(Duration::from_secs(30 * 60));
+            ticker.tick().await;
             loop {
                 tokio::select! {
-                    _ = self.ready_for_create(round) => {
+                    _ = self.wait_until_ready(round) => {
                         break;
                     }
                     _ = ticker.tick() => {
