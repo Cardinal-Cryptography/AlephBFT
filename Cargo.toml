@@ -13,6 +13,7 @@ readme = "README.md"
 
 description = """AlephBFT is an asynchronous and Byzantine fault tolerant consensus protocol aimed at ordering arbitrary messages (transactions). It has been designed to continuously operate even in the harshest conditions: with no bounds on message-delivery delays and in the presence of malicious actors. This makes it an excellent fit for blockchain-related applications."""
 
+
 [dependencies]
 bit-vec = "0.6"
 futures = "0.3"
