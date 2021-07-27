@@ -26,7 +26,6 @@ codec = { package = "parity-scale-codec", version = "2", default-features = fals
 parking_lot = "0.11"
 
 [dev-dependencies]
-assert_matches = "1.5"
 sha3 = "0.9.1"
 unsigned-varint = { version = "0.7.0", features = ["futures", "asynchronous_codec"] }
 tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
