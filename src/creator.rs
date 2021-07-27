@@ -5,14 +5,14 @@ use crate::{
     units::{ControlHash, PreUnit, Unit},
     Hasher, Receiver, Round, Sender,
 };
-use futures::{channel::oneshot, StreamExt};
+use futures::{channel::oneshot, FutureExt, StreamExt};
+use futures_timer::Delay;
 use log::{info, trace, warn};
-use tokio::time::{self, Duration};
+use std::time::Duration;
 
 /// A process responsible for creating new units. It receives all the units added locally to the Dag
 /// via the parents_rx channel endpoint. It creates units according to an internal strategy respecting
-/// always the following constraints: for a unit U of round r
-/// - if r = 0, U has no parents
+/// always the following constraints: if round is equal to 0, U has no parents, otherwise for a unit U of round r > 0
 /// - all U's parents are from round (r-1),
 /// - all U's parents are created by different nodes,
 /// - one of U's parents is the (r-1)-round unit by U's creator,
@@ -55,7 +55,7 @@ impl<H: Hasher> Creator<H> {
 
     // initializes the vectors corresponding to the given round (and all between if not there)
     fn init_round(&mut self, round: Round) {
-        if usize::from(round + 1) > self.n_candidates_by_round.len() {
+        if (round + 1) as usize > self.n_candidates_by_round.len() {
             self.candidates_by_round.resize((round + 1).into(), NodeMap::new_with_len(self.n_members));
             self.n_candidates_by_round.resize((round + 1).into(), NodeCount(0));
         }
@@ -84,7 +84,9 @@ impl<H: Hasher> Creator<H> {
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
         // units that are too old are of no interest to us
-        if usize::from(round + 1) >= self.n_candidates_by_round.len() - 1 {
+        if (round + 2) as usize >= self.n_candidates_by_round.len() - 1 { // since there is "+2" in wait_until_ready, 
+                                                                          // we also need to make bound lower here to 
+                                                                          // add our own units from catching up
             self.init_round(round);
             if self.candidates_by_round[round as usize][pid].is_none() {
                 // passing the check above means that we do not have any unit for the pair (round, pid) yet
@@ -98,17 +100,21 @@ impl<H: Hasher> Creator<H> {
 
         let prev_round_index = match round.checked_sub(1) {
             Some(prev_round) => prev_round as usize,
-            None => return,
+            None => {
+                Delay::new((self.create_lag)(round.into())).await;
+                return
+            },
         };
 
-        let delay = time::sleep((self.create_lag)(round.into()));
-        tokio::pin!(delay);
+        let mut delay = Delay::new((self.create_lag)(round.into())).fuse();
         loop {
-            if usize::from(round) < self.n_candidates_by_round.len() - 1 {
-                return; // Since we get unit from round r, we have enough units from previous rounds to create our unit 
+            if ((round + 2) as usize) < self.n_candidates_by_round.len() { // We need to require a number higher by one then currently highest round 
+                                                                           // (by 2 then length) to prevent attack when a malcious node is creating
+                                                                           // units without any delay to achive max_round as soon as possible
+                return; // Since we get unit from round r, we have enough units from previous rounds to skip delay, because we are already behind
             }
 
-            tokio::select! {
+            futures::select! {
                 unit = self.parents_rx.next() => {
                     if let Some(u) = unit {
                         self.add_unit(u.round(), u.creator(), u.hash());
@@ -126,7 +132,8 @@ impl<H: Hasher> Creator<H> {
         let threshold = (self.n_members * 2) / 3 + NodeCount(1);
 
         while self.n_candidates_by_round[prev_round_index] < threshold || self.candidates_by_round[prev_round_index][self.node_ix].is_none() {
-             if let Some(u) = self.parents_rx.next().await {
+            println!("{:?} {:?}", self.node_ix, self.candidates_by_round[prev_round_index][self.node_ix].is_none());
+            if let Some(u) = self.parents_rx.next().await {
                 self.add_unit(u.round(), u.creator(), u.hash());
              } else {
                 warn!(target: "AlephBFT-creator", "{:?} get error as result from channel with parents.", self.node_ix);
@@ -136,15 +143,15 @@ impl<H: Hasher> Creator<H> {
 
     pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
         for round in 0..self.max_round {
-            let mut ticker = time::interval(Duration::from_secs(30 * 60));
-            ticker.tick().await;
+            let mut delay = Delay::new(Duration::from_secs(30 * 60)).fuse();
             loop {
-                tokio::select! {
-                    _ = self.wait_until_ready(round) => {
+                futures::select! {
+                    _ = self.wait_until_ready(round).fuse() => {
                         break;
                     }
-                    _ = ticker.tick() => {
+                    _ = &mut delay => {
                         warn!(target: "AlephBFT-creator", "{:?} more than half hour has passed since we created the previous unit.", self.node_ix);
+                        delay = Delay::new(Duration::from_secs(30 * 60)).fuse();
                     }
                     _ = &mut exit => {
                         info!(target: "AlephBFT-creator", "{:?} received exit signal.", self.node_ix);
@@ -280,6 +287,7 @@ mod tests {
         }
     }
 
+    // This test checks if 7 creators that start at the same time will create 350 units together, 50 units each
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn synchronous_creators_should_create_dag() {
         let n_members: usize = 7;
@@ -292,6 +300,8 @@ mod tests {
         finish(killers, handles).await;
     }
 
+    // This test checks if 5 creators that start at the same time and 2 creators that starts after those 5 first create 125 blocks,
+    // will create 346 units together, 50 units each of first 5 and at least 48 units rest
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn asynchronous_creators_should_create_dag() {
         let n_members: usize = 5;
@@ -303,7 +313,7 @@ mod tests {
         test_controller.control().await;
 
         rounds = 50;
-        max_units = (n_members + n_fallen_members) * rounds - n_fallen_members;
+        max_units = (n_members + n_fallen_members) * rounds - n_fallen_members * 2;
         test_controller.max_units = max_units;
         
         for node_ix in n_members..(n_members + n_fallen_members) {
@@ -331,7 +341,7 @@ mod tests {
 
         test_controller.control().await;
         assert!(test_controller.n_candidates_by_round[rounds - 1] >= n_members.into());
-        assert_eq!(test_controller.n_candidates_by_round[rounds - 2], (n_members + n_fallen_members).into());
+        assert_eq!(test_controller.n_candidates_by_round[rounds - 3], (n_members + n_fallen_members).into());
         finish(killers, handles).await;
     }
 }
