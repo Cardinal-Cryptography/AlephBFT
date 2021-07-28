@@ -84,11 +84,10 @@ impl<H: Hasher> Creator<H> {
     }
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
-        // units that are too old are of no interest to us
+        // units that are too old are of no interest to us.
+        // since there is "+2" in wait_until_ready, we also need to make bound lower here to
+        // add our own units from catching up
         if (round + 2) as usize >= self.n_candidates_by_round.len() - 1 {
-            // since there is "+2" in wait_until_ready,
-            // we also need to make bound lower here to
-            // add our own units from catching up
             self.init_round(round);
             if self.candidates_by_round[round as usize][pid].is_none() {
                 // passing the check above means that we do not have any unit for the pair (round, pid) yet
@@ -109,11 +108,13 @@ impl<H: Hasher> Creator<H> {
 
         let mut delay = Delay::new((self.create_lag)(round.into())).fuse();
         loop {
+            // We need to require a number higher by one then currently highest round
+            // (by 2 then length) to prevent attack when a malcious node is creating
+            // units without any delay to achive max_round as soon as possible
             if ((round + 2) as usize) < self.n_candidates_by_round.len() {
-                // We need to require a number higher by one then currently highest round
-                // (by 2 then length) to prevent attack when a malcious node is creating
-                // units without any delay to achive max_round as soon as possible
-                return; // Since we get unit from round r, we have enough units from previous rounds to skip delay, because we are already behind
+                // Since we get unit from round r, we have enough units from previous
+                // rounds to skip delay, because we are already behind
+                return;
             }
 
             futures::select! {
@@ -136,11 +137,7 @@ impl<H: Hasher> Creator<H> {
         while self.n_candidates_by_round[prev_round_index] < threshold
             || self.candidates_by_round[prev_round_index][self.node_ix].is_none()
         {
-            println!(
-                "{:?} {:?}",
-                self.node_ix,
-                self.candidates_by_round[prev_round_index][self.node_ix].is_none()
-            );
+            println!("HERE");
             if let Some(u) = self.parents_rx.next().await {
                 self.add_unit(u.round(), u.creator(), u.hash());
             } else {
@@ -212,7 +209,8 @@ mod tests {
 
         async fn control(&mut self) {
             while self.units < self.max_units {
-                if let Some(NotificationOut::CreatedPreUnit(pre_unit)) = self.notifications_in.next().await
+                if let Some(NotificationOut::CreatedPreUnit(pre_unit)) =
+                    self.notifications_in.next().await
                 {
                     self.units += 1;
                     if self.n_candidates_by_round.len() <= pre_unit.round().into() {
@@ -220,8 +218,11 @@ mod tests {
                             .push(NodeMap::new_with_len(self.n_members));
                         self.n_candidates_by_round.push(NodeCount(0));
                     }
-                    if self.candidates_by_round[pre_unit.round() as usize][pre_unit.creator()].is_none() {
-                        self.candidates_by_round[pre_unit.round() as usize][pre_unit.creator()] = Some([0; 8]);
+                    if self.candidates_by_round[pre_unit.round() as usize][pre_unit.creator()]
+                        .is_none()
+                    {
+                        self.candidates_by_round[pre_unit.round() as usize][pre_unit.creator()] =
+                            Some([0; 8]);
                         self.n_candidates_by_round[pre_unit.round() as usize] += NodeCount(1);
                     }
                     let full_unit = FullUnit::<Hasher64, Data>::new(
@@ -231,7 +232,7 @@ mod tests {
                     );
                     for c in self.units_out.iter() {
                         if c.unbounded_send(full_unit.unit()).is_err() {
-                            return;
+                            panic!("Failed to send a unit to a creator");
                         }
                     }
                 }
@@ -317,7 +318,9 @@ mod tests {
         finish(killers, handles).await;
     }
 
-    // This test checks if 5 creators that start at the same time and 2 creators that starts after those 5 first create 125 blocks,
+    // Catching up test
+    // This test checks if 5 creators that start at the same time and 2 creators
+    // that start after those first 5 create 125 blocks,
     // will create 346 units together, 50 units each of first 5 and at least 48 units rest
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn asynchronous_creators_should_create_dag() {
