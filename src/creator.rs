@@ -138,7 +138,6 @@ impl<H: Hasher> Creator<H> {
         while self.n_candidates_by_round[prev_round_index] < threshold
             || self.candidates_by_round[prev_round_index][self.node_ix].is_none()
         {
-            println!("HERE");
             if let Some(u) = self.parents_rx.next().await {
                 self.add_unit(u.round(), u.creator(), u.hash());
             } else {
@@ -321,7 +320,7 @@ mod tests {
 
     // Catching up test
     // This test checks if 5 creators that start at the same time and 2 creators
-    // that start after those first 5 create 125 blocks,
+    // that start after those first 5 create 125 units,
     // will create 346 units together, 50 units each of first 5 and at least 48 units rest
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn asynchronous_creators_should_create_dag() {
