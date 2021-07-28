@@ -88,7 +88,7 @@ impl<H: Hasher> Creator<H> {
         // units that are too old are of no interest to us.
         // since there is "+2" in wait_until_ready, we also need to make bound lower here to
         // add our own units from catching up
-        if (round + 2) as usize >= self.n_candidates_by_round.len() - 1 {
+        if (round + 2) as usize >= self.n_candidates_by_round.len() - 1 || pid == self.node_ix {
             self.init_round(round);
             if self.candidates_by_round[round as usize][pid].is_none() {
                 // passing the check above means that we do not have any unit for the pair (round, pid) yet
