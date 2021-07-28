@@ -115,7 +115,7 @@ impl<H: Hasher> Creator<H> {
             if ((round + 2) as usize) < self.n_candidates_by_round.len() {
                 // Since we get unit from round r, we have enough units from previous
                 // rounds to skip delay, because we are already behind
-                return;
+                break;
             }
 
             futures::select! {
