@@ -209,7 +209,7 @@ mod tests {
 
         async fn control(&mut self) {
             while self.units < self.max_units {
-                if let Some(NotificationOut::CreatedPreUnit(pre_unit)) =
+                if let Some(NotificationOut::CreatedPreUnit(pre_unit, _hash)) =
                     self.notifications_in.next().await
                 {
                     self.units += 1;
