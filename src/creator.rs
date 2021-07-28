@@ -110,7 +110,7 @@ impl<H: Hasher> Creator<H> {
         let mut delay = Delay::new((self.create_lag)(round.into())).fuse();
         loop {
             // We need to require a number higher by one then currently highest round
-            // (by 2 then length) to prevent attack when a malcious node is creating
+            // (by 2 then length) to prevent attack when a malicious node is creating
             // units without any delay to achive max_round as soon as possible
             if ((round + 2) as usize) < self.n_candidates_by_round.len() {
                 // Since we get unit from round r, we have enough units from previous
