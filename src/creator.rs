@@ -174,8 +174,7 @@ impl<H: Hasher> Creator<H> {
 mod tests {
     use super::*;
     use crate::{
-        config::default_config,
-        testing::mock::{Data, Hasher64},
+        testing::mock::{gen_config, Data, Hasher64},
         units::{FullUnit, UnitCoord},
     };
     use futures::channel::mpsc;
@@ -250,8 +249,6 @@ mod tests {
         Vec<tokio::task::JoinHandle<()>>,
         Sender<NotificationOut<Hasher64>>,
     ) {
-        let session_id = 0;
-
         let (to_test_controller, notifications_in) = mpsc::unbounded();
 
         let mut test_controller = TestController::new(
@@ -267,11 +264,7 @@ mod tests {
             let (units_out, from_test_controller) = mpsc::unbounded();
 
             let mut creator = Creator::new(
-                default_config(
-                    (n_members + n_fallen_members).into(),
-                    node_ix.into(),
-                    session_id,
-                ),
+                gen_config(node_ix.into(), (n_members + n_fallen_members).into()),
                 from_test_controller,
                 to_test_controller.clone(),
             );
@@ -341,7 +334,7 @@ mod tests {
             let (units_out, from_test_controller) = mpsc::unbounded();
 
             let mut creator = Creator::new(
-                default_config((n_members + n_fallen_members).into(), node_ix.into(), 0),
+                gen_config(node_ix.into(), (n_members + n_fallen_members).into()),
                 from_test_controller,
                 to_test_controller.clone(),
             );
