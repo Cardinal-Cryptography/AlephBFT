@@ -94,14 +94,6 @@ impl<H: Hasher> Creator<H> {
     }
 
     async fn wait_until_ready(&mut self, round: Round) {
-        let prev_round_index = match round.checked_sub(1) {
-            Some(prev_round) => prev_round as usize,
-            None => {
-                Delay::new((self.create_lag)(round.into())).await;
-                return;
-            }
-        };
-
         let mut delay = Delay::new((self.create_lag)(round.into())).fuse();
         loop {
             // We need to require a number higher by one then currently highest round
@@ -125,6 +117,13 @@ impl<H: Hasher> Creator<H> {
                 }
             }
         }
+
+        let prev_round_index = match round.checked_sub(1) {
+            Some(prev_round) => prev_round as usize,
+            None => {
+                return;
+            }
+        };
 
         // To create a new unit, we need to have at least floor(2*N/3) + 1 parents available in previous round.
         // Additionally, our unit from previous round must be available.
