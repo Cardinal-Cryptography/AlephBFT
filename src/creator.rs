@@ -28,7 +28,7 @@ pub(crate) struct Creator<H: Hasher> {
     parents_rx: Receiver<Unit<H>>,
     new_units_tx: Sender<NotificationOut<H>>,
     n_members: NodeCount,
-    candidates_by_round: Vec<NodeMap<Option<H::Hash>>>, 
+    candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
     create_lag: DelaySchedule,
     max_round: Round,
@@ -56,8 +56,10 @@ impl<H: Hasher> Creator<H> {
     // initializes the vectors corresponding to the given round (and all between if not there)
     fn init_round(&mut self, round: Round) {
         if (round + 1) as usize > self.n_candidates_by_round.len() {
-            self.candidates_by_round.resize((round + 1).into(), NodeMap::new_with_len(self.n_members));
-            self.n_candidates_by_round.resize((round + 1).into(), NodeCount(0));
+            self.candidates_by_round
+                .resize((round + 1).into(), NodeMap::new_with_len(self.n_members));
+            self.n_candidates_by_round
+                .resize((round + 1).into(), NodeCount(0));
         }
     }
 
@@ -84,9 +86,10 @@ impl<H: Hasher> Creator<H> {
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
         // units that are too old are of no interest to us
-        if (round + 2) as usize >= self.n_candidates_by_round.len() - 1 { // since there is "+2" in wait_until_ready, 
-                                                                          // we also need to make bound lower here to 
-                                                                          // add our own units from catching up
+        if (round + 2) as usize >= self.n_candidates_by_round.len() - 1 {
+            // since there is "+2" in wait_until_ready,
+            // we also need to make bound lower here to
+            // add our own units from catching up
             self.init_round(round);
             if self.candidates_by_round[round as usize][pid].is_none() {
                 // passing the check above means that we do not have any unit for the pair (round, pid) yet
@@ -97,20 +100,20 @@ impl<H: Hasher> Creator<H> {
     }
 
     async fn wait_until_ready(&mut self, round: Round) {
-
         let prev_round_index = match round.checked_sub(1) {
             Some(prev_round) => prev_round as usize,
             None => {
                 Delay::new((self.create_lag)(round.into())).await;
-                return
-            },
+                return;
+            }
         };
 
         let mut delay = Delay::new((self.create_lag)(round.into())).fuse();
         loop {
-            if ((round + 2) as usize) < self.n_candidates_by_round.len() { // We need to require a number higher by one then currently highest round 
-                                                                           // (by 2 then length) to prevent attack when a malcious node is creating
-                                                                           // units without any delay to achive max_round as soon as possible
+            if ((round + 2) as usize) < self.n_candidates_by_round.len() {
+                // We need to require a number higher by one then currently highest round
+                // (by 2 then length) to prevent attack when a malcious node is creating
+                // units without any delay to achive max_round as soon as possible
                 return; // Since we get unit from round r, we have enough units from previous rounds to skip delay, because we are already behind
             }
 
@@ -131,11 +134,17 @@ impl<H: Hasher> Creator<H> {
         // Additionally, our unit from previous round must be available.
         let threshold = (self.n_members * 2) / 3 + NodeCount(1);
 
-        while self.n_candidates_by_round[prev_round_index] < threshold || self.candidates_by_round[prev_round_index][self.node_ix].is_none() {
-            println!("{:?} {:?}", self.node_ix, self.candidates_by_round[prev_round_index][self.node_ix].is_none());
+        while self.n_candidates_by_round[prev_round_index] < threshold
+            || self.candidates_by_round[prev_round_index][self.node_ix].is_none()
+        {
+            println!(
+                "{:?} {:?}",
+                self.node_ix,
+                self.candidates_by_round[prev_round_index][self.node_ix].is_none()
+            );
             if let Some(u) = self.parents_rx.next().await {
                 self.add_unit(u.round(), u.creator(), u.hash());
-             } else {
+            } else {
                 warn!(target: "AlephBFT-creator", "{:?} get error as result from channel with parents.", self.node_ix);
             }
         }
@@ -165,13 +174,14 @@ impl<H: Hasher> Creator<H> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::units::{FullUnit, UnitCoord};
-    use crate::testing::mock::{Hasher64, Data};
-    use crate::config::default_config;
+    use crate::{
+        config::default_config,
+        testing::mock::{Data, Hasher64},
+        units::{FullUnit, UnitCoord},
+    };
     use futures::channel::mpsc;
 
     struct TestController {
@@ -183,12 +193,12 @@ mod tests {
         candidates_by_round: Vec<NodeMap<Option<<Hasher64 as Hasher>::Hash>>>,
         n_members: NodeCount,
     }
-    
+
     impl TestController {
         fn new(
             notifications_in: Receiver<NotificationOut<Hasher64>>,
             max_units: usize,
-            n_members: NodeCount
+            n_members: NodeCount,
         ) -> Self {
             Self {
                 notifications_in,
@@ -203,28 +213,28 @@ mod tests {
 
         async fn control(&mut self) {
             while self.units < self.max_units {
-                if let Some(pre_unit) = self.notifications_in.next().await {
-                    match pre_unit {
-                        NotificationOut::CreatedPreUnit(h) => {
-                            self.units += 1;
-                            if self.n_candidates_by_round.len() <= h.round().into() {
-                                self.candidates_by_round
-                                    .push(NodeMap::new_with_len(self.n_members));
-                                self.n_candidates_by_round.push(NodeCount(0));
-                            }
-                            if self.candidates_by_round[h.round() as usize][h.creator()].is_none() {
-                                self.candidates_by_round[h.round() as usize][h.creator()] = Some([0; 8]);
-                                self.n_candidates_by_round[h.round() as usize] += NodeCount(1);
-                            }
-                            let full_unit = FullUnit::<Hasher64, Data>::new(h.clone(), Data::new(UnitCoord::new(0, 0.into()), 0), 0);
-                            for c in self.units_out.iter() {
-                                if c.unbounded_send(full_unit.unit()).is_err() {
-                                    return;
-                                }
-                            }
-                        },
-                        _  => {},
-                    }    
+                if let Some(NotificationOut::CreatedPreUnit(pre_unit)) = self.notifications_in.next().await
+                {
+                    self.units += 1;
+                    if self.n_candidates_by_round.len() <= pre_unit.round().into() {
+                        self.candidates_by_round
+                            .push(NodeMap::new_with_len(self.n_members));
+                        self.n_candidates_by_round.push(NodeCount(0));
+                    }
+                    if self.candidates_by_round[pre_unit.round() as usize][pre_unit.creator()].is_none() {
+                        self.candidates_by_round[pre_unit.round() as usize][pre_unit.creator()] = Some([0; 8]);
+                        self.n_candidates_by_round[pre_unit.round() as usize] += NodeCount(1);
+                    }
+                    let full_unit = FullUnit::<Hasher64, Data>::new(
+                        pre_unit.clone(),
+                        Data::new(UnitCoord::new(0, 0.into()), 0),
+                        0,
+                    );
+                    for c in self.units_out.iter() {
+                        if c.unbounded_send(full_unit.unit()).is_err() {
+                            return;
+                        }
+                    }
                 }
             }
         }
@@ -233,28 +243,35 @@ mod tests {
     async fn start(
         n_members: usize,
         n_fallen_members: usize,
-        max_units: usize
+        max_units: usize,
     ) -> (
         TestController,
         Vec<oneshot::Sender<()>>,
         Vec<tokio::task::JoinHandle<()>>,
-        Sender<NotificationOut<Hasher64>>
+        Sender<NotificationOut<Hasher64>>,
     ) {
         let session_id = 0;
-        
+
         let (to_test_controller, notifications_in) = mpsc::unbounded();
 
-        let mut test_controller = TestController::new(notifications_in, max_units, (n_members + n_fallen_members).into());
+        let mut test_controller = TestController::new(
+            notifications_in,
+            max_units,
+            (n_members + n_fallen_members).into(),
+        );
 
         let mut handles = vec![];
         let mut killers = vec![];
 
-        
         for node_ix in 0..n_members {
             let (units_out, from_test_controller) = mpsc::unbounded();
 
             let mut creator = Creator::new(
-                default_config((n_members + n_fallen_members).into(), node_ix.into(), session_id),
+                default_config(
+                    (n_members + n_fallen_members).into(),
+                    node_ix.into(),
+                    session_id,
+                ),
                 from_test_controller,
                 to_test_controller.clone(),
             );
@@ -263,9 +280,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move {
-                creator.create(exit).await
-            });
+            let handle = tokio::spawn(async move { creator.create(exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -279,9 +294,9 @@ mod tests {
         mut handles: Vec<tokio::task::JoinHandle<()>>,
     ) {
         for killer in killers {
-            killer.send(()).unwrap();   
+            killer.send(()).unwrap();
         }
-        
+
         for handle in handles.iter_mut() {
             handle.await.unwrap();
         }
@@ -296,7 +311,10 @@ mod tests {
 
         let (mut test_controller, killers, handles, _) = start(n_members, 0, max_units).await;
         test_controller.control().await;
-        assert_eq!(test_controller.n_candidates_by_round[rounds - 1], test_controller.n_members);
+        assert_eq!(
+            test_controller.n_candidates_by_round[rounds - 1],
+            test_controller.n_members
+        );
         finish(killers, handles).await;
     }
 
@@ -309,13 +327,14 @@ mod tests {
         let n_fallen_members: usize = 2;
         let mut max_units: usize = n_members * rounds;
 
-        let (mut test_controller, mut killers, mut handles, to_test_controller) = start(n_members, n_fallen_members, max_units).await;
+        let (mut test_controller, mut killers, mut handles, to_test_controller) =
+            start(n_members, n_fallen_members, max_units).await;
         test_controller.control().await;
 
         rounds = 50;
         max_units = (n_members + n_fallen_members) * rounds - n_fallen_members * 2;
         test_controller.max_units = max_units;
-        
+
         for node_ix in n_members..(n_members + n_fallen_members) {
             let (units_out, from_test_controller) = mpsc::unbounded();
 
@@ -331,9 +350,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move {
-                creator.create(exit).await
-            });
+            let handle = tokio::spawn(async move { creator.create(exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -341,7 +358,10 @@ mod tests {
 
         test_controller.control().await;
         assert!(test_controller.n_candidates_by_round[rounds - 1] >= n_members.into());
-        assert_eq!(test_controller.n_candidates_by_round[rounds - 3], (n_members + n_fallen_members).into());
+        assert_eq!(
+            test_controller.n_candidates_by_round[rounds - 3],
+            (n_members + n_fallen_members).into()
+        );
         finish(killers, handles).await;
     }
 }
