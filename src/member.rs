@@ -85,7 +85,7 @@ pub(crate) enum NotificationOut<H: Hasher> {
 
 #[derive(Eq, PartialEq)]
 enum Task<H: Hasher> {
-    // Request the unit with the given hash.
+    // Request the unit with the given (creator, round) coordinates.
     CoordRequest(UnitCoord),
     // Request parents of the unit with the given hash.
     ParentsRequest(H::Hash),
