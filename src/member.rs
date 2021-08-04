@@ -85,17 +85,20 @@ pub(crate) enum NotificationOut<H: Hasher> {
 
 #[derive(Eq, PartialEq)]
 enum Task<H: Hasher> {
+    // Request the unit with the given hash.
     CoordRequest(UnitCoord),
-    // Request parents of the unit with a given hash. The bool flag determines whether we request parents for the first time
-    ParentsRequest(H::Hash, bool),
-    // The hash of a unit, and the number of this multicast (i.e., how many times was the unit multicast already).
-    UnitMulticast(H::Hash, usize),
+    // Request parents of the unit with the given hash.
+    ParentsRequest(H::Hash),
+    // Broadcast the unit with the given hash.
+    UnitMulticast(H::Hash),
 }
 
 #[derive(Eq, PartialEq)]
 struct ScheduledTask<H: Hasher> {
     task: Task<H>,
     scheduled_time: time::Instant,
+    // The number of times the task was performed so far.
+    counter: usize,
 }
 
 impl<H: Hasher> ScheduledTask<H> {
@@ -103,6 +106,7 @@ impl<H: Hasher> ScheduledTask<H> {
         ScheduledTask {
             task,
             scheduled_time,
+            counter: 0,
         }
     }
 }
@@ -205,7 +209,7 @@ where
         // WrongControlHash notification. This is still fine as the member will answer it without sending a request outside.
         self.store.add_parents(hash, parent_hashes);
         let curr_time = time::Instant::now();
-        let task = ScheduledTask::new(Task::UnitMulticast(hash, 0), curr_time);
+        let task = ScheduledTask::new(Task::UnitMulticast(hash), curr_time);
         self.task_queue.push(task);
     }
 
@@ -217,18 +221,18 @@ where
             if request.scheduled_time > curr_time {
                 break;
             }
-            let request = self.task_queue.pop().expect("The element was peeked");
-
-            match request.task {
-                Task::CoordRequest(coord) => {
-                    self.schedule_coord_request(coord, curr_time);
-                }
-                Task::UnitMulticast(hash, multicast_number) => {
-                    self.schedule_unit_multicast(hash, multicast_number, curr_time);
-                }
-                Task::ParentsRequest(u_hash, first_time) => {
-                    self.schedule_parents_request(u_hash, first_time, curr_time);
-                }
+            let mut request = self.task_queue.pop().expect("The element was peeked");
+            if let Some((message, recipient, delay)) =
+                self.task_details(&request.task, request.counter)
+            {
+                self.unit_messages_for_network
+                    .as_ref()
+                    .unwrap()
+                    .unbounded_send((message, recipient))
+                    .expect("Channel to network should be open");
+                request.scheduled_time += delay;
+                request.counter += 1;
+                self.task_queue.push(request);
             }
         }
     }
@@ -251,81 +255,68 @@ where
             .expect("Channel to network should be open")
     }
 
-    fn broadcast_units(&mut self, message: UnitMessage<H, D, MK::Signature>) {
-        self.unit_messages_for_network
-            .as_ref()
-            .unwrap()
-            .unbounded_send((message, Recipient::Everyone))
-            .expect("Channel to network should be open")
-    }
-
-    fn schedule_parents_request(
+    /// Given a task and the number of times it was performed, returns `None` if the task is no longer active, or
+    /// `Some((message, recipient, delay))` if the task is active and the task is to send `message` to `recipient`
+    /// and should be rescheduled after `delay`.
+    fn task_details(
         &mut self,
-        u_hash: H::Hash,
-        first_time: bool,
-        curr_time: time::Instant,
-    ) {
-        if self.store.get_parents(u_hash).is_none() {
-            let message = UnitMessage::<H, D, MK::Signature>::RequestParents(self.index(), u_hash);
-            let peer_id = if first_time {
-                self.store
-                    .unit_by_hash(&u_hash)
-                    .expect("We request parents of units fromm store")
+        task: &Task<H>,
+        counter: usize,
+    ) -> Option<(UnitMessage<H, D, MK::Signature>, Recipient, time::Duration)> {
+        // preferred_recipient is Everyone if the message is supposed to be broadcast,
+        // and Node(node_id) if the message should be send to one peer (node_id when
+        // the task is done for the first time or a random peer otherwise)
+        let (message, preferred_recipient) = match task {
+            Task::CoordRequest(coord) => {
+                if self.store.contains_coord(coord) {
+                    return None;
+                }
+                let message = UnitMessage::RequestCoord(self.index(), *coord);
+                let preferred_recipient = Recipient::Node(coord.creator());
+                (message, preferred_recipient)
+            }
+            Task::ParentsRequest(hash) => {
+                if self.store.get_parents(*hash).is_some() {
+                    return None;
+                }
+                let message = UnitMessage::RequestParents(self.index(), *hash);
+                let preferred_id = self
+                    .store
+                    .unit_by_hash(hash)
+                    .expect("We request parents of units from store")
                     .as_signable()
-                    .creator()
-            } else {
-                self.random_peer()
-            };
-            self.send_unit_message(message, peer_id);
-            trace!(target: "AlephBFT-member", "{:?} Fetch parents for {:?} sent.", self.index(), u_hash);
-            let delay = self.config.delay_config.requests_interval;
-            self.task_queue.push(ScheduledTask::new(
-                Task::ParentsRequest(u_hash, false),
-                curr_time + delay,
-            ));
-        } else {
-            trace!(target: "AlephBFT-member", "{:?} Request dropped as the parents are in store for {:?}.", self.index(), u_hash);
-        }
-    }
-
-    fn schedule_coord_request(&mut self, coord: UnitCoord, curr_time: time::Instant) {
-        trace!(target: "AlephBFT-member", "{:?} Starting request for {:?}", self.index(), coord);
-        // If we already have a unit with such a coord in our store then there is no need to request it.
-        // It will be sent to consensus soon (or have already been sent).
-        if self.store.contains_coord(&coord) {
-            trace!(target: "AlephBFT-member", "{:?} Request dropped as the unit is in store already {:?}", self.index(), coord);
-            return;
-        }
-        let message = UnitMessage::<H, D, MK::Signature>::RequestCoord(self.index(), coord);
-        let peer_id = self.random_peer();
-        self.send_unit_message(message, peer_id);
-        trace!(target: "AlephBFT-member", "{:?} Fetch request for {:?} sent.", self.index(), coord);
-        let delay = self.config.delay_config.requests_interval;
-        self.task_queue.push(ScheduledTask::new(
-            Task::CoordRequest(coord),
-            curr_time + delay,
-        ));
-    }
-
-    fn schedule_unit_multicast(
-        &mut self,
-        hash: H::Hash,
-        multicast_number: usize,
-        curr_time: time::Instant,
-    ) {
-        let signed_unit = self
-            .store
-            .unit_by_hash(&hash)
-            .cloned()
-            .expect("Our units are in store.");
-        let message = UnitMessage::<H, D, MK::Signature>::NewUnit(signed_unit.into());
-        trace!(target: "AlephBFT-member", "{:?} Sending a unit {:?} over network {:?}th time.", self.index(), hash, multicast_number);
-        self.broadcast_units(message);
-        let delay = (self.config.delay_config.unit_broadcast_delay)(multicast_number);
-        self.task_queue.push(ScheduledTask::new(
-            Task::UnitMulticast(hash, multicast_number + 1),
-            curr_time + delay,
-        ));
+                    .creator();
+                (message, Recipient::Node(preferred_id))
+            }
+            Task::UnitMulticast(hash) => {
+                let signed_unit = self
+                    .store
+                    .unit_by_hash(hash)
+                    .cloned()
+                    .expect("Our units are in store.");
+                let message = UnitMessage::NewUnit(signed_unit.into());
+                let preferred_recipient = Recipient::Everyone;
+                (message, preferred_recipient)
+            }
+        };
+        let (recipient, delay) = match preferred_recipient {
+            Recipient::Everyone => (
+                Recipient::Everyone,
+                (self.config.delay_config.unit_broadcast_delay)(counter),
+            ),
+            Recipient::Node(preferred_id) => {
+                let recipient = if counter == 0 {
+                    preferred_id
+                } else {
+                    self.random_peer()
+                };
+                (
+                    Recipient::Node(recipient),
+                    self.config.delay_config.requests_interval,
+                )
+            }
+        };
+        Some((message, recipient, delay))
     }
 
     pub(crate) fn on_missing_coords(&mut self, coords: Vec<UnitCoord>) {
@@ -349,7 +340,7 @@ where
             self.send_consensus_notification(NotificationIn::UnitParents(u_hash, p_hashes));
         } else {
             let curr_time = time::Instant::now();
-            let task = ScheduledTask::new(Task::ParentsRequest(u_hash, true), curr_time);
+            let task = ScheduledTask::new(Task::ParentsRequest(u_hash), curr_time);
             self.task_queue.push(task);
             self.trigger_tasks();
         }
