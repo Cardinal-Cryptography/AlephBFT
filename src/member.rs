@@ -21,7 +21,12 @@ use crate::{
 };
 
 use futures_timer::Delay;
-use std::{cmp::Ordering, collections::BinaryHeap, fmt::Debug, time};
+use std::{
+    cmp::Ordering,
+    collections::{BinaryHeap, HashSet},
+    fmt::Debug,
+    time,
+};
 
 /// A message concerning units, either about new units or some requests for them.
 #[derive(Debug, Encode, Decode, Clone)]
@@ -81,8 +86,9 @@ pub(crate) enum NotificationOut<H: Hasher> {
 #[derive(Eq, PartialEq)]
 enum Task<H: Hasher> {
     CoordRequest(UnitCoord),
-    ParentsRequest(H::Hash),
-    //The hash of a unit, and the number of this multicast (i.e., how many times was the unit multicast already).
+    // Request parents of the unit with a given hash. The bool flag determines whether we request parents for the first time
+    ParentsRequest(H::Hash, bool),
+    // The hash of a unit, and the number of this multicast (i.e., how many times was the unit multicast already).
     UnitMulticast(H::Hash, usize),
 }
 
@@ -139,7 +145,8 @@ where
     data_io: DP,
     keybox: &'a MK,
     store: UnitStore<'a, H, D, MK>,
-    requests: BinaryHeap<ScheduledTask<H>>,
+    task_queue: BinaryHeap<ScheduledTask<H>>,
+    requested_coords: HashSet<UnitCoord>,
     threshold: NodeCount,
     n_members: NodeCount,
     unit_messages_for_network: Option<Sender<(UnitMessage<H, D, MK::Signature>, Recipient)>>,
@@ -168,7 +175,8 @@ where
             data_io,
             keybox,
             store: UnitStore::new(n_members, threshold, max_round),
-            requests: BinaryHeap::new(),
+            task_queue: BinaryHeap::new(),
+            requested_coords: HashSet::new(),
             threshold,
             n_members,
             unit_messages_for_network: None,
@@ -198,18 +206,18 @@ where
         self.store.add_parents(hash, parent_hashes);
         let curr_time = time::Instant::now();
         let task = ScheduledTask::new(Task::UnitMulticast(hash, 0), curr_time);
-        self.requests.push(task);
+        self.task_queue.push(task);
     }
 
     // Pulls tasks from the priority queue (sorted by scheduled time) and sends them to random peers
     // as long as they are scheduled at time <= curr_time
     pub(crate) fn trigger_tasks(&mut self) {
-        while let Some(request) = self.requests.peek() {
+        while let Some(request) = self.task_queue.peek() {
             let curr_time = time::Instant::now();
             if request.scheduled_time > curr_time {
                 break;
             }
-            let request = self.requests.pop().expect("The element was peeked");
+            let request = self.task_queue.pop().expect("The element was peeked");
 
             match request.task {
                 Task::CoordRequest(coord) => {
@@ -218,8 +226,8 @@ where
                 Task::UnitMulticast(hash, multicast_number) => {
                     self.schedule_unit_multicast(hash, multicast_number, curr_time);
                 }
-                Task::ParentsRequest(u_hash) => {
-                    self.schedule_parents_request(u_hash, curr_time);
+                Task::ParentsRequest(u_hash, first_time) => {
+                    self.schedule_parents_request(u_hash, first_time, curr_time);
                 }
             }
         }
@@ -251,15 +259,28 @@ where
             .expect("Channel to network should be open")
     }
 
-    fn schedule_parents_request(&mut self, u_hash: H::Hash, curr_time: time::Instant) {
+    fn schedule_parents_request(
+        &mut self,
+        u_hash: H::Hash,
+        first_time: bool,
+        curr_time: time::Instant,
+    ) {
         if self.store.get_parents(u_hash).is_none() {
             let message = UnitMessage::<H, D, MK::Signature>::RequestParents(self.index(), u_hash);
-            let peer_id = self.random_peer();
+            let peer_id = if first_time {
+                self.store
+                    .unit_by_hash(&u_hash)
+                    .expect("We request parents of units fromm store")
+                    .as_signable()
+                    .creator()
+            } else {
+                self.random_peer()
+            };
             self.send_unit_message(message, peer_id);
             trace!(target: "AlephBFT-member", "{:?} Fetch parents for {:?} sent.", self.index(), u_hash);
             let delay = self.config.delay_config.requests_interval;
-            self.requests.push(ScheduledTask::new(
-                Task::ParentsRequest(u_hash),
+            self.task_queue.push(ScheduledTask::new(
+                Task::ParentsRequest(u_hash, false),
                 curr_time + delay,
             ));
         } else {
@@ -280,7 +301,7 @@ where
         self.send_unit_message(message, peer_id);
         trace!(target: "AlephBFT-member", "{:?} Fetch request for {:?} sent.", self.index(), coord);
         let delay = self.config.delay_config.requests_interval;
-        self.requests.push(ScheduledTask::new(
+        self.task_queue.push(ScheduledTask::new(
             Task::CoordRequest(coord),
             curr_time + delay,
         ));
@@ -301,7 +322,7 @@ where
         trace!(target: "AlephBFT-member", "{:?} Sending a unit {:?} over network {:?}th time.", self.index(), hash, multicast_number);
         self.broadcast_units(message);
         let delay = (self.config.delay_config.unit_broadcast_delay)(multicast_number);
-        self.requests.push(ScheduledTask::new(
+        self.task_queue.push(ScheduledTask::new(
             Task::UnitMulticast(hash, multicast_number + 1),
             curr_time + delay,
         ));
@@ -311,9 +332,9 @@ where
         trace!(target: "AlephBFT-member", "{:?} Dealing with missing coords notification {:?}.", self.index(), coords);
         let curr_time = time::Instant::now();
         for coord in coords {
-            if !self.store.contains_coord(&coord) {
+            if !self.store.contains_coord(&coord) && self.requested_coords.insert(coord) {
                 let task = ScheduledTask::new(Task::CoordRequest(coord), curr_time);
-                self.requests.push(task);
+                self.task_queue.push(task);
             }
         }
         self.trigger_tasks();
@@ -328,8 +349,8 @@ where
             self.send_consensus_notification(NotificationIn::UnitParents(u_hash, p_hashes));
         } else {
             let curr_time = time::Instant::now();
-            let task = ScheduledTask::new(Task::ParentsRequest(u_hash), curr_time);
-            self.requests.push(task);
+            let task = ScheduledTask::new(Task::ParentsRequest(u_hash, true), curr_time);
+            self.task_queue.push(task);
             self.trigger_tasks();
         }
     }
