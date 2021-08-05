@@ -194,7 +194,6 @@ fn spawn_malicious_member(
         let keybox = KeyBox::new(n_members, node_index);
         let session_id = 0u64;
         let lesniak = MaliciousMember::new(
-            // I know its a meme, but is it a place for memes?
             &keybox,
             network,
             node_index,
