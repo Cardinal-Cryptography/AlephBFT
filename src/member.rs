@@ -1,7 +1,7 @@
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
-    FutureExt, StreamExt,
+    pin_mut, FutureExt, StreamExt,
 };
 use log::{debug, error, info, trace, warn};
 use rand::Rng;
@@ -12,6 +12,7 @@ use crate::{
     config::Config,
     consensus,
     network::{NetworkHub, Recipient},
+    recovery,
     signed::{Signature, Signed},
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
@@ -41,6 +42,9 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
     RequestParents(NodeIndex, H::Hash),
     /// Response to a request for a full list of parents.
     ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, S>>),
+    /// Request the newest unit created by us (used to recover after crash)
+    RequestNewest(NodeIndex),
+    ResponseNewest(Option<UncheckedSignedUnit<H, D, S>>),
 }
 
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
@@ -54,6 +58,8 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
                 .iter()
                 .map(|uu| uu.as_signable().data().clone())
                 .collect(),
+            UnitMessage::RequestNewest(_) => Vec::new(),
+            UnitMessage::ResponseNewest(_) => Vec::new(),
         }
     }
 }
@@ -638,6 +644,12 @@ where
                 trace!(target: "AlephBFT-member", "{:?} Response parents received {:?}.", self.index(), u_hash);
                 self.on_parents_response(u_hash, parents);
             }
+            RequestNewest(_) => {
+                todo!();
+            }
+            ResponseNewest(_) => {
+                todo!();
+            }
         }
     }
 
@@ -736,12 +748,31 @@ where
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
 
+        let (_messages_for_recovery, messages_from_network) = mpsc::unbounded();
+        let (messages_for_network, mut messages_from_recovery) = mpsc::unbounded();
+        let recovered_units = recovery::recover_our_units::<H, D, MK, _, _>(
+            self.n_members,
+            messages_from_network,
+            messages_for_network,
+            self.keybox,
+        )
+        .fuse();
+        pin_mut!(recovered_units);
+
         let mut consensus_exited = false;
         let mut network_exited = false;
         let mut alerter_exited = false;
         info!(target: "AlephBFT-member", "{:?} Start routing messages from consensus to network", self.index());
+
         loop {
             futures::select! {
+
+                _units = recovered_units => {
+                    // todo!("Send units to consensus");
+                }
+                _message = messages_from_recovery.next() => {
+                    todo!("handle messages from recovery");
+                }
                 notification = rx_consensus.next() => match notification {
                         Some(notification) => self.on_consensus_notification(notification).await,
                         None => {
