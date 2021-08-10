@@ -691,26 +691,34 @@ where
         let (consensus_exit, exit_stream) = oneshot::channel();
         let config = self.config.clone();
         let sh = self.spawn_handle.clone();
-        let (_messages_for_recovery, messages_from_network) = mpsc::unbounded();
-        let (messages_for_network, _messages_from_recovery) = mpsc::unbounded();
+        // let (_messages_for_recovery, messages_from_network) = mpsc::unbounded();
+        let (messages_for_network, _messages_from_recovery) =
+            mpsc::unbounded::<(Recipient, UnitMessage<H, D, MK::Signature>)>();
+        let (_responses_newest_tx, responses_newest_rx) = mpsc::unbounded();
+        let (_responses_created_units_tx, responses_created_units_rx) = mpsc::unbounded();
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
         let n_members = self.n_members;
+        let our_index = self.keybox.index();
+        let recovered_units = recovery::recover_our_units::<H, D, MK::Signature>(
+            n_members,
+            responses_newest_rx,
+            responses_created_units_rx,
+            messages_for_network,
+            our_index,
+        )
+        .await;
+        for unchecked in recovered_units {
+            self.on_unit_received(unchecked, false);
+        }
         let mut consensus_handle = self
             .spawn_handle
             .spawn_essential("member/consensus", async move {
-                let recovered_units = recovery::recover_our_units::<H, D, MK::Signature, _, _>(
-                    n_members,
-                    messages_from_network,
-                    messages_for_network,
-                )
-                .await;
                 consensus::run(
                     config,
                     consensus_stream,
                     consensus_sink,
                     ordered_batch_tx,
                     sh,
-                    recovered_units,
                     exit_stream,
                 )
                 .await

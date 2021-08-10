@@ -10,7 +10,6 @@ use crate::{
     extender::Extender,
     member::{NotificationIn, NotificationOut},
     terminal::Terminal,
-    units::Unit,
     Hasher, OrderedBatch, Receiver, Sender, SpawnHandle,
 };
 
@@ -20,7 +19,6 @@ pub(crate) async fn run<H: Hasher + 'static>(
     outgoing_notifications: Sender<NotificationOut<H>>,
     ordered_batch_tx: Sender<OrderedBatch<H::Hash>>,
     spawn_handle: impl SpawnHandle,
-    _recovered_units: Vec<Unit<H>>,
     mut exit: oneshot::Receiver<()>,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
