@@ -40,10 +40,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
 
     let (creator_exit, exit_rx) = oneshot::channel();
     let mut creator_handle = spawn_handle
-        .spawn_essential(
-            "consensus/creator",
-            async move { creator.create(exit_rx).await },
-        )
+        .spawn_essential("consensus/creator", async move {
+            creator.create(exit_rx, 0).await
+        })
         .fuse();
 
     let mut terminal = Terminal::new(conf.node_ix, incoming_notifications, outgoing_notifications);

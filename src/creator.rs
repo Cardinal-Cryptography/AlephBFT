@@ -140,8 +140,8 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
-        for round in 0..self.max_round {
+    pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>, starting_round: Round) {
+        for round in starting_round..self.max_round {
             let mut delay = Delay::new(Duration::from_secs(30 * 60)).fuse();
             loop {
                 futures::select! {
@@ -267,7 +267,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit).await });
+            let handle = tokio::spawn(async move { creator.create(exit, 0).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -298,9 +298,74 @@ mod tests {
 
         let (mut test_controller, killers, handles, _) = start(n_members, 0, max_units).await;
         test_controller.control().await;
-        assert_eq!(
-            test_controller.n_candidates_by_round[rounds - 1],
-            test_controller.n_members
+        for round in 0..rounds {
+            assert_eq!(
+                test_controller.n_candidates_by_round[round],
+                n_members.into()
+            );
+        }
+        finish(killers, handles).await;
+    }
+
+    // Crash recovery test
+    #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+    async fn crashed_creators_should_create_dag() {
+        let n_members: usize = 7;
+        let mut rounds = 25;
+        let mut n_fallen_members: usize = 0;
+        let mut max_units: usize = n_members * rounds;
+
+        let (mut test_controller, mut killers, mut handles, to_test_controller) =
+            start(n_members, n_fallen_members, max_units).await;
+        test_controller.control().await;
+
+        n_fallen_members = 2;
+        rounds = 50;
+        for _ in 0..n_fallen_members {
+            test_controller.units_out.pop().unwrap();
+            killers.pop().unwrap().send(()).unwrap();
+            handles.pop().unwrap();
+        }
+
+        max_units = (n_members - n_fallen_members) * rounds + n_fallen_members * 25;
+        test_controller.max_units = max_units;
+        test_controller.control().await;
+
+        for node_ix in (n_members - n_fallen_members)..n_members {
+            let (units_out, from_test_controller) = mpsc::unbounded();
+
+            let mut creator = Creator::new(
+                gen_config(node_ix.into(), n_members.into()),
+                from_test_controller,
+                to_test_controller.clone(),
+            );
+            creator.n_candidates_by_round = test_controller.n_candidates_by_round.clone();
+            creator.candidates_by_round = test_controller.candidates_by_round.clone();
+
+            test_controller.units_out.push(units_out);
+
+            let (killer, exit) = oneshot::channel::<()>();
+
+            let handle = tokio::spawn(async move { creator.create(exit, 25).await });
+
+            killers.push(killer);
+            handles.push(handle);
+        }
+
+        rounds = 75;
+        max_units = n_members * rounds - n_fallen_members * 2;
+        test_controller.max_units = max_units;
+        test_controller.control().await;
+
+        for round in 0..(rounds - 2) {
+            assert_eq!(
+                test_controller.n_candidates_by_round[round],
+                n_members.into()
+            );
+        }
+        assert!(
+            test_controller.n_candidates_by_round[rounds - 1]
+                >= (n_members - n_fallen_members).into()
         );
         finish(killers, handles).await;
     }
@@ -339,18 +404,20 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit).await });
+            let handle = tokio::spawn(async move { creator.create(exit, 0).await });
 
             killers.push(killer);
             handles.push(handle);
         }
 
         test_controller.control().await;
+        for round in 0..(rounds - 2) {
+            assert_eq!(
+                test_controller.n_candidates_by_round[round],
+                (n_members + n_fallen_members).into()
+            );
+        }
         assert!(test_controller.n_candidates_by_round[rounds - 1] >= n_members.into());
-        assert_eq!(
-            test_controller.n_candidates_by_round[rounds - 3],
-            (n_members + n_fallen_members).into()
-        );
         finish(killers, handles).await;
     }
 }
