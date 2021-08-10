@@ -56,6 +56,10 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
                 .iter()
                 .map(|uu| uu.as_signable().data().clone())
                 .collect(),
+            Self::ResponseNewest(maybe_unit) => maybe_unit
+                .iter()
+                .map(|uu| uu.as_signable().data().clone())
+                .collect(),
             _ => Vec::new(),
         }
     }
@@ -166,7 +170,7 @@ impl<'a, H, D, DP, MK, SH> Member<'a, H, D, DP, MK, SH>
 where
     H: Hasher,
     D: Data,
-    DP: DataIO<D> + Send,
+    DP: DataIO<D>,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {
