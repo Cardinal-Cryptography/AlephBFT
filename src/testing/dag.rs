@@ -133,7 +133,15 @@ async fn run_consensus_on_dag(
     let spawner = Spawner::new();
     spawner.spawn(
         "consensus",
-        consensus::run(conf, rx_in, tx_out, batch_tx, spawner.clone(), exit_rx),
+        consensus::run(
+            conf,
+            rx_in,
+            tx_out,
+            batch_tx,
+            spawner.clone(),
+            Vec::new(),
+            exit_rx,
+        ),
     );
     spawner.spawn("feeder", feeder.run());
     let mut batches = Vec::new();

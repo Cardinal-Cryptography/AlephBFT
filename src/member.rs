@@ -1,7 +1,7 @@
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
-    pin_mut, FutureExt, StreamExt,
+    FutureExt, StreamExt,
 };
 use log::{debug, error, info, trace, warn};
 use rand::Rng;
@@ -18,7 +18,7 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
     Data, DataIO, Hasher, Index, MultiKeychain, Network, NodeCount, NodeIndex, NodeMap,
-    OrderedBatch, Sender, SpawnHandle,
+    OrderedBatch, Round, Sender, SpawnHandle,
 };
 
 use futures_timer::Delay;
@@ -42,24 +42,24 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
     RequestParents(NodeIndex, H::Hash),
     /// Response to a request for a full list of parents.
     ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, S>>),
-    /// Request the newest unit created by us (used to recover after crash)
+    /// Request by a node for the newest unit created by them
     RequestNewest(NodeIndex),
     ResponseNewest(Option<UncheckedSignedUnit<H, D, S>>),
+    /// Request by a node for units created by them in the given number of first rounds.
+    RequestCreatedUnits(NodeIndex, Round),
+    ResponseCreatedUnits(Vec<UncheckedSignedUnit<H, D, S>>),
 }
 
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
     pub(crate) fn included_data(&self) -> Vec<D> {
         match self {
             Self::NewUnit(uu) => vec![uu.as_signable().data().clone()],
-            Self::RequestCoord(_, _) => Vec::new(),
             Self::ResponseCoord(uu) => vec![uu.as_signable().data().clone()],
-            Self::RequestParents(_, _) => Vec::new(),
             Self::ResponseParents(_, units) => units
                 .iter()
                 .map(|uu| uu.as_signable().data().clone())
                 .collect(),
-            UnitMessage::RequestNewest(_) => Vec::new(),
-            UnitMessage::ResponseNewest(_) => Vec::new(),
+            _ => Vec::new(),
         }
     }
 }
@@ -168,7 +168,7 @@ impl<'a, H, D, DP, MK, SH> Member<'a, H, D, DP, MK, SH>
 where
     H: Hasher,
     D: Data,
-    DP: DataIO<D>,
+    DP: DataIO<D> + Send,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {
@@ -650,6 +650,12 @@ where
             ResponseNewest(_) => {
                 todo!();
             }
+            RequestCreatedUnits(_, _) => {
+                todo!();
+            }
+            ResponseCreatedUnits(_) => {
+                todo!();
+            }
         }
     }
 
@@ -685,16 +691,26 @@ where
         let (consensus_exit, exit_stream) = oneshot::channel();
         let config = self.config.clone();
         let sh = self.spawn_handle.clone();
+        let (_messages_for_recovery, messages_from_network) = mpsc::unbounded();
+        let (messages_for_network, _messages_from_recovery) = mpsc::unbounded();
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
+        let n_members = self.n_members;
         let mut consensus_handle = self
             .spawn_handle
             .spawn_essential("member/consensus", async move {
+                let recovered_units = recovery::recover_our_units::<H, D, MK::Signature, _, _>(
+                    n_members,
+                    messages_from_network,
+                    messages_for_network,
+                )
+                .await;
                 consensus::run(
                     config,
                     consensus_stream,
                     consensus_sink,
                     ordered_batch_tx,
                     sh,
+                    recovered_units,
                     exit_stream,
                 )
                 .await
@@ -748,17 +764,6 @@ where
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
 
-        let (_messages_for_recovery, messages_from_network) = mpsc::unbounded();
-        let (messages_for_network, mut messages_from_recovery) = mpsc::unbounded();
-        let recovered_units = recovery::recover_our_units::<H, D, MK, _, _>(
-            self.n_members,
-            messages_from_network,
-            messages_for_network,
-            self.keybox,
-        )
-        .fuse();
-        pin_mut!(recovered_units);
-
         let mut consensus_exited = false;
         let mut network_exited = false;
         let mut alerter_exited = false;
@@ -766,13 +771,6 @@ where
 
         loop {
             futures::select! {
-
-                _units = recovered_units => {
-                    // todo!("Send units to consensus");
-                }
-                _message = messages_from_recovery.next() => {
-                    todo!("handle messages from recovery");
-                }
                 notification = rx_consensus.next() => match notification {
                         Some(notification) => self.on_consensus_notification(notification).await,
                         None => {
