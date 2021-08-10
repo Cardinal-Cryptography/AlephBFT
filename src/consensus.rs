@@ -10,7 +10,7 @@ use crate::{
     extender::Extender,
     member::{NotificationIn, NotificationOut},
     terminal::Terminal,
-    Hasher, OrderedBatch, Receiver, Sender, SpawnHandle,
+    Hasher, OrderedBatch, Receiver, Round, Sender, SpawnHandle,
 };
 
 pub(crate) async fn run<H: Hasher + 'static>(
@@ -19,6 +19,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     outgoing_notifications: Sender<NotificationOut<H>>,
     ordered_batch_tx: Sender<OrderedBatch<H::Hash>>,
     spawn_handle: impl SpawnHandle,
+    start_round: Round,
     mut exit: oneshot::Receiver<()>,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
@@ -41,7 +42,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (creator_exit, exit_rx) = oneshot::channel();
     let mut creator_handle = spawn_handle
         .spawn_essential("consensus/creator", async move {
-            creator.create(exit_rx, 0).await
+            creator.create(exit_rx, start_round).await
         })
         .fuse();
 

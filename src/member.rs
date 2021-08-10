@@ -18,7 +18,7 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
     Data, DataIO, Hasher, Index, MultiKeychain, Network, NodeCount, NodeIndex, NodeMap,
-    OrderedBatch, Sender, SpawnHandle,
+    OrderedBatch, Round, Sender, SpawnHandle,
 };
 
 use futures_timer::Delay;
@@ -707,6 +707,10 @@ where
             our_index,
         )
         .await;
+        let start_round = recovered_unit
+            .as_ref()
+            .map_or(0, |unchecked| unchecked.as_signable().round() + 1)
+            as Round;
         if let Some(unchecked) = recovered_unit {
             self.on_unit_received(unchecked, false);
         }
@@ -719,6 +723,7 @@ where
                     consensus_sink,
                     ordered_batch_tx,
                     sh,
+                    start_round,
                     exit_stream,
                 )
                 .await
