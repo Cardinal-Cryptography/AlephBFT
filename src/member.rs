@@ -18,7 +18,7 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
     Data, DataIO, Hasher, Index, MultiKeychain, Network, NodeCount, NodeIndex, NodeMap,
-    OrderedBatch, Round, Sender, SpawnHandle,
+    OrderedBatch, Sender, SpawnHandle,
 };
 
 use futures_timer::Delay;
@@ -45,9 +45,6 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
     /// Request by a node for the newest unit created by them
     RequestNewest(NodeIndex),
     ResponseNewest(Option<UncheckedSignedUnit<H, D, S>>),
-    /// Request by a node for units created by them in the given number of first rounds.
-    RequestCreatedUnits(NodeIndex, Round),
-    ResponseCreatedUnits(Vec<UncheckedSignedUnit<H, D, S>>),
 }
 
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
@@ -161,6 +158,7 @@ where
     n_members: NodeCount,
     unit_messages_for_network: Option<Sender<(UnitMessage<H, D, MK::Signature>, Recipient)>>,
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
+    tx_recovery: Option<Sender<Option<UncheckedSignedUnit<H, D, MK::Signature>>>>,
     spawn_handle: SH,
 }
 
@@ -191,6 +189,7 @@ where
             n_members,
             unit_messages_for_network: None,
             alerts_for_alerter: None,
+            tx_recovery: None,
             spawn_handle,
         }
     }
@@ -644,17 +643,20 @@ where
                 trace!(target: "AlephBFT-member", "{:?} Response parents received {:?}.", self.index(), u_hash);
                 self.on_parents_response(u_hash, parents);
             }
-            RequestNewest(_) => {
-                todo!();
+            RequestNewest(index) => {
+                let unit = self.store.newest_unit(index);
+                self.unit_messages_for_network
+                    .as_ref()
+                    .unwrap()
+                    .unbounded_send((UnitMessage::ResponseNewest(unit), Recipient::Node(index)))
+                    .expect("sending message should succeed");
             }
-            ResponseNewest(_) => {
-                todo!();
-            }
-            RequestCreatedUnits(_, _) => {
-                todo!();
-            }
-            ResponseCreatedUnits(_) => {
-                todo!();
+            ResponseNewest(unit) => {
+                if let Some(tx) = &self.tx_recovery {
+                    if let Err(e) = tx.unbounded_send(unit) {
+                        trace!(target: "AlephBFT-member", "{:?} Error sending response newest {:?}", self.index(), e);
+                    }
+                }
             }
         }
     }
@@ -691,23 +693,21 @@ where
         let (consensus_exit, exit_stream) = oneshot::channel();
         let config = self.config.clone();
         let sh = self.spawn_handle.clone();
-        // let (_messages_for_recovery, messages_from_network) = mpsc::unbounded();
-        let (messages_for_network, _messages_from_recovery) =
-            mpsc::unbounded::<(Recipient, UnitMessage<H, D, MK::Signature>)>();
-        let (_responses_newest_tx, responses_newest_rx) = mpsc::unbounded();
-        let (_responses_created_units_tx, responses_created_units_rx) = mpsc::unbounded();
+        let (messages_for_network, mut messages_from_recovery) =
+            mpsc::unbounded::<(UnitMessage<H, D, MK::Signature>, Recipient)>();
+        let (responses_newest_tx, responses_newest_rx) = mpsc::unbounded();
+        self.tx_recovery = Some(responses_newest_tx);
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
         let n_members = self.n_members;
         let our_index = self.keybox.index();
-        let recovered_units = recovery::recover_our_units::<H, D, MK::Signature>(
+        let recovered_unit = recovery::recover_newest_unit::<H, D, MK::Signature>(
             n_members,
             responses_newest_rx,
-            responses_created_units_rx,
             messages_for_network,
             our_index,
         )
         .await;
-        for unchecked in recovered_units {
+        if let Some(unchecked) = recovered_unit {
             self.on_unit_received(unchecked, false);
         }
         let mut consensus_handle = self
@@ -808,6 +808,16 @@ where
                     None => {
                         error!(target: "AlephBFT-member", "{:?} Ordered batch stream closed.", self.index());
                         break;
+                    }
+                },
+                message = messages_from_recovery.next() => match message {
+                    Some(message) => {
+                            if let Err(e) = self.unit_messages_for_network.as_ref().unwrap().unbounded_send(message) {
+                                debug!(target: "AlephBFT-member", "{:?} error sending message for network: {}", self.index(), e)
+                            }
+                    }
+                    None => {
+                        debug!(target: "AlephBFT-member", "{:?} recovery finished", self.index());
                     }
                 },
                 _ = &mut ticker => {
