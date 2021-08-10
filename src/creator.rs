@@ -308,10 +308,12 @@ mod tests {
     }
 
     // Crash recovery test
+    // This test starts with 7 creators. After 25 rounds 2 of them are killed and start again after rest will get to round 50.
+    // Then it is checked if 5 creators achieve round 75 and rest round 73.
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn crashed_creators_should_create_dag() {
         let n_members: usize = 7;
-        let mut rounds = 25;
+        let mut rounds: usize = 25;
         let mut n_fallen_members: usize = 0;
         let mut max_units: usize = n_members * rounds;
 
@@ -321,17 +323,31 @@ mod tests {
 
         n_fallen_members = 2;
         rounds = 50;
-        for _ in 0..n_fallen_members {
+        let mut last_indexes: Vec<usize> = vec![];
+        for node_ix in 0..n_fallen_members {
             test_controller.units_out.pop().unwrap();
             killers.pop().unwrap().send(()).unwrap();
             handles.pop().unwrap();
+
+            let last_index: usize = test_controller
+                .candidates_by_round
+                .iter()
+                .enumerate()
+                .filter(|(_, val)| val[node_ix.into()].is_some())
+                .max_by_key(|&(i, _)| i)
+                .unwrap()
+                .0;
+            last_indexes.push(last_index);
         }
 
-        max_units = (n_members - n_fallen_members) * rounds + n_fallen_members * 25;
+        max_units = (n_members - n_fallen_members) * rounds
+            + last_indexes.iter().sum::<usize>()
+            + n_fallen_members;
         test_controller.max_units = max_units;
         test_controller.control().await;
 
-        for node_ix in (n_members - n_fallen_members)..n_members {
+        for (mut node_ix, last_index) in last_indexes.into_iter().enumerate() {
+            node_ix += 5;
             let (units_out, from_test_controller) = mpsc::unbounded();
 
             let mut creator = Creator::new(
@@ -346,7 +362,8 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit, 25).await });
+            let handle =
+                tokio::spawn(async move { creator.create(exit, last_index as u16 + 1).await });
 
             killers.push(killer);
             handles.push(handle);
