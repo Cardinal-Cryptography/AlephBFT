@@ -313,16 +313,16 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn crashed_creators_should_create_dag() {
         let n_members: usize = 7;
-        let mut rounds: usize = 25;
-        let mut n_fallen_members: usize = 0;
-        let mut max_units: usize = n_members * rounds;
+        let rounds: usize = 25;
+        let n_fallen_members: usize = 0;
+        let max_units: usize = n_members * rounds;
 
         let (mut test_controller, mut killers, mut handles, to_test_controller) =
             start(n_members, n_fallen_members, max_units).await;
         test_controller.control().await;
 
-        n_fallen_members = 2;
-        rounds = 50;
+        let n_fallen_members = 2;
+        let rounds = 50;
         let mut last_indexes: Vec<usize> = vec![];
         for node_ix in 0..n_fallen_members {
             test_controller.units_out.pop().unwrap();
@@ -340,7 +340,7 @@ mod tests {
             last_indexes.push(last_index);
         }
 
-        max_units = (n_members - n_fallen_members) * rounds
+        let max_units = (n_members - n_fallen_members) * rounds
             + last_indexes.iter().sum::<usize>()
             + n_fallen_members;
         test_controller.max_units = max_units;
@@ -369,8 +369,8 @@ mod tests {
             handles.push(handle);
         }
 
-        rounds = 75;
-        max_units = n_members * rounds - n_fallen_members * 2;
+        let rounds = 75;
+        let max_units = n_members * rounds - n_fallen_members * 2;
         test_controller.max_units = max_units;
         test_controller.control().await;
 
@@ -394,16 +394,16 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn asynchronous_creators_should_create_dag() {
         let n_members: usize = 5;
-        let mut rounds = 25;
+        let rounds = 25;
         let n_fallen_members: usize = 2;
-        let mut max_units: usize = n_members * rounds;
+        let max_units: usize = n_members * rounds;
 
         let (mut test_controller, mut killers, mut handles, to_test_controller) =
             start(n_members, n_fallen_members, max_units).await;
         test_controller.control().await;
 
-        rounds = 50;
-        max_units = (n_members + n_fallen_members) * rounds - n_fallen_members * 2;
+        let rounds = 50;
+        let max_units = (n_members + n_fallen_members) * rounds - n_fallen_members * 2;
         test_controller.max_units = max_units;
 
         for node_ix in n_members..(n_members + n_fallen_members) {
