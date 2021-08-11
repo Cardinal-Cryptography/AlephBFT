@@ -23,7 +23,6 @@ mod nodes;
 mod signed;
 pub use signed::*;
 mod config;
-mod recovery;
 pub mod rmc;
 mod terminal;
 #[cfg(test)]

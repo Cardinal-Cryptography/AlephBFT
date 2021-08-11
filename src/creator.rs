@@ -31,6 +31,7 @@ pub(crate) struct Creator<H: Hasher> {
     candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
     create_lag: DelaySchedule,
+    catch_up_delay: Duration,
     max_round: Round,
 }
 
@@ -49,6 +50,7 @@ impl<H: Hasher> Creator<H> {
             candidates_by_round: vec![NodeMap::new_with_len(n_members)],
             n_candidates_by_round: vec![NodeCount(0)],
             create_lag: conf.delay_config.unit_creation_delay,
+            catch_up_delay: conf.delay_config.catch_up_delay,
             max_round: conf.max_round,
         }
     }
@@ -140,7 +142,18 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>, starting_round: Round) {
+    pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
+        // wait for other nodes to inform us about the newest unit created by us (in case of crash)
+        futures_timer::Delay::new(self.catch_up_delay).await;
+
+        let starting_round = self
+            .candidates_by_round
+            .iter()
+            .enumerate()
+            .filter(|(_, candidates)| candidates[self.node_ix].is_some())
+            .last()
+            .map_or(0, |(round, _)| round as u16 + 1);
+
         for round in starting_round..self.max_round {
             let mut delay = Delay::new(Duration::from_secs(30 * 60)).fuse();
             loop {
@@ -267,7 +280,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit, 0).await });
+            let handle = tokio::spawn(async move { creator.create(exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -346,7 +359,7 @@ mod tests {
         test_controller.max_units = max_units;
         test_controller.control().await;
 
-        for (mut node_ix, last_index) in last_indexes.into_iter().enumerate() {
+        for (mut node_ix, _last_index) in last_indexes.into_iter().enumerate() {
             node_ix += 5;
             let (units_out, from_test_controller) = mpsc::unbounded();
 
@@ -362,8 +375,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle =
-                tokio::spawn(async move { creator.create(exit, last_index as u16 + 1).await });
+            let handle = tokio::spawn(async move { creator.create(exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -421,7 +433,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit, 0).await });
+            let handle = tokio::spawn(async move { creator.create(exit).await });
 
             killers.push(killer);
             handles.push(handle);
