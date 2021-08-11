@@ -154,6 +154,8 @@ impl<H: Hasher> Creator<H> {
             .last()
             .map_or(0, |(round, _)| round as u16 + 1);
 
+        log::debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
+
         for round in starting_round..self.max_round {
             let mut delay = Delay::new(Duration::from_secs(30 * 60)).fuse();
             loop {

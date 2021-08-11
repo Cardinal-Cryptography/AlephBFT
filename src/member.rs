@@ -647,6 +647,7 @@ where
                 self.on_parents_response(u_hash, parents);
             }
             RequestNewest(index) => {
+                debug!(target: "AlephBFT-member", "RequestNewest {:?} received", index);
                 let unit = self.store.newest_unit(index);
                 self.unit_messages_for_network
                     .as_ref()
@@ -655,6 +656,7 @@ where
                     .expect("sending message should succeed");
             }
             ResponseNewest(unit) => {
+                debug!(target: "AlephBFT-member", "ResponseNewest {:?} received", unit);
                 if let Some(tx) = &self.tx_recovery {
                     match unit
                         .map(|unchecked| unchecked.check(self.keybox))
@@ -748,6 +750,8 @@ where
             .unbounded_send((UnitMessage::RequestNewest(our_index), Recipient::Everyone))
         {
             debug!(target: "AlephBFT-member", "{:?} error sending message for network: {}", self.index(), e)
+        } else {
+            debug!(target: "AlephBFT-member", "{:?} requested newest", self.index());
         }
 
         self.unit_messages_for_network = Some(unit_messages_for_network);
