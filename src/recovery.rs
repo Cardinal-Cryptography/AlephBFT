@@ -1,6 +1,5 @@
 use crate::{
-    member::UnitMessage, units::UncheckedSignedUnit, Data, Hasher, NodeCount, NodeIndex, Recipient,
-    Signature,
+    member::UnitMessage, units::UncheckedSignedUnit, Data, Hasher, NodeIndex, Recipient, Signature,
 };
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -10,11 +9,8 @@ use futures::{
 
 const CATCH_UP_SECS: u64 = 5;
 
-// input:
-
-// Given network sink and stream, recovers all units created by us in this instance of consensus.
+/// Given network sink and stream, recovers the newest unit created by us in this instance of consensus.
 pub(crate) async fn recover_newest_unit<H: Hasher, D: Data, S: Signature>(
-    node_count: NodeCount,
     responses_newest: UnboundedReceiver<Option<UncheckedSignedUnit<H, D, S>>>,
     mut messages_for_peers: UnboundedSender<(UnitMessage<H, D, S>, Recipient)>,
     our_index: NodeIndex,
@@ -23,11 +19,9 @@ pub(crate) async fn recover_newest_unit<H: Hasher, D: Data, S: Signature>(
         .send((UnitMessage::RequestNewest(our_index), Recipient::Everyone))
         .await
         .expect("send should succeed");
-    // receive at most N responses for CATCH_UP_SECS seconds, ignore the invalid ones, and
+    // receive responses for CATCH_UP_SECS seconds, ignore the invalid ones, and
     // choose the one with highest round
-    // (we assume that we also receive the request and respond to it)
     responses_newest
-        .take(node_count.0)
         .take_until(futures_timer::Delay::new(std::time::Duration::from_secs(
             CATCH_UP_SECS,
         )))
@@ -44,5 +38,3 @@ pub(crate) async fn recover_newest_unit<H: Hasher, D: Data, S: Signature>(
         })
         .await
 }
-
-// select take and timeout

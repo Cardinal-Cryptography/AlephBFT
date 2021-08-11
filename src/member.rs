@@ -657,8 +657,20 @@ where
             }
             ResponseNewest(unit) => {
                 if let Some(tx) = &self.tx_recovery {
-                    if let Err(e) = tx.unbounded_send(unit) {
-                        trace!(target: "AlephBFT-member", "{:?} Error sending response newest {:?}", self.index(), e);
+                    match unit
+                        .map(|unchecked| unchecked.check(self.keybox))
+                        .transpose()
+                    {
+                        Err(e) => {
+                            trace!(target: "AlephBFT-member", "{:?} Invalid signature {:?}", self.index(), e);
+                        }
+                        Ok(maybe_unit) => {
+                            if let Err(e) =
+                                tx.unbounded_send(maybe_unit.map(|su| su.into_unchecked()))
+                            {
+                                trace!(target: "AlephBFT-member", "{:?} Error sending response newest {:?}", self.index(), e);
+                            }
+                        }
                     }
                 }
             }
@@ -702,10 +714,8 @@ where
         let (responses_newest_tx, responses_newest_rx) = mpsc::unbounded();
         self.tx_recovery = Some(responses_newest_tx);
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
-        let n_members = self.n_members;
         let our_index = self.keybox.index();
         let recovered_unit = recovery::recover_newest_unit::<H, D, MK::Signature>(
-            n_members,
             responses_newest_rx,
             messages_for_network,
             our_index,
