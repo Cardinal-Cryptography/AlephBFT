@@ -31,7 +31,7 @@ pub(crate) struct Creator<H: Hasher> {
     candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
     create_lag: DelaySchedule,
-    catch_up_delay: Duration,
+    _catch_up_delay: Duration,
     max_round: Round,
 }
 
@@ -50,7 +50,7 @@ impl<H: Hasher> Creator<H> {
             candidates_by_round: vec![NodeMap::new_with_len(n_members)],
             n_candidates_by_round: vec![NodeCount(0)],
             create_lag: conf.delay_config.unit_creation_delay,
-            catch_up_delay: conf.delay_config.catch_up_delay,
+            _catch_up_delay: conf.delay_config.catch_up_delay,
             max_round: conf.max_round,
         }
     }
@@ -144,13 +144,13 @@ impl<H: Hasher> Creator<H> {
 
     pub(crate) async fn create(
         &mut self,
-        starting_round: std::sync::Arc<parking_lot::Mutex<usize>>,
+        starting_round: oneshot::Receiver<usize>,
         mut exit: oneshot::Receiver<()>,
     ) {
         // wait for other nodes to inform us about the newest unit created by us (in case of crash)
-        futures_timer::Delay::new(self.catch_up_delay).await;
-
-        let starting_round = *starting_round.lock() as u16;
+        let starting_round = starting_round
+            .await
+            .expect("starting round should be provided") as u16;
 
         log::debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
 
@@ -280,11 +280,13 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move {
-                creator
-                    .create(std::sync::Arc::new(parking_lot::Mutex::new(0)), exit)
-                    .await
-            });
+            let starting_round = {
+                let (tx, rx) = oneshot::channel();
+                tx.send(0).unwrap();
+                rx
+            };
+
+            let handle = tokio::spawn(async move { creator.create(starting_round, exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -379,11 +381,13 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move {
-                creator
-                    .create(std::sync::Arc::new(parking_lot::Mutex::new(25)), exit)
-                    .await
-            });
+            let starting_round = {
+                let (tx, rx) = oneshot::channel();
+                tx.send(25).unwrap();
+                rx
+            };
+
+            let handle = tokio::spawn(async move { creator.create(starting_round, exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -440,12 +444,13 @@ mod tests {
             test_controller.units_out.push(units_out);
 
             let (killer, exit) = oneshot::channel::<()>();
+            let starting_round = {
+                let (tx, rx) = oneshot::channel();
+                tx.send(0).unwrap();
+                rx
+            };
 
-            let handle = tokio::spawn(async move {
-                creator
-                    .create(std::sync::Arc::new(parking_lot::Mutex::new(0)), exit)
-                    .await
-            });
+            let handle = tokio::spawn(async move { creator.create(starting_round, exit).await });
 
             killers.push(killer);
             handles.push(handle);

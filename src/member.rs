@@ -17,17 +17,40 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
     Data, DataIO, Hasher, Index, MultiKeychain, Network, NodeCount, NodeIndex, NodeMap,
-    OrderedBatch, Sender, SpawnHandle,
+    OrderedBatch, Sender, Signable, SpawnHandle, UncheckedSigned,
 };
 
 use futures_timer::Delay;
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
+    collections::{hash_map::DefaultHasher, BinaryHeap, HashSet},
     fmt::Debug,
+    hash::{Hash, Hasher as _},
     time,
     time::Duration,
 };
+
+#[derive(Debug, Encode, Decode, Clone)]
+pub(crate) struct NewestUnitResponse<H: Hasher, D: Data, S: Signature> {
+    requester: NodeIndex,
+    responder: NodeIndex,
+    unit: Option<UncheckedSignedUnit<H, D, S>>,
+    salt: u64,
+}
+
+impl<H: Hasher, D: Data, S: Signature> Signable for NewestUnitResponse<H, D, S> {
+    type Hash = Vec<u8>;
+
+    fn hash(&self) -> Self::Hash {
+        self.encode()
+    }
+}
+
+impl<H: Hasher, D: Data, S: Signature> crate::Index for NewestUnitResponse<H, D, S> {
+    fn index(&self) -> NodeIndex {
+        self.responder
+    }
+}
 
 /// A message concerning units, either about new units or some requests for them.
 #[derive(Debug, Encode, Decode, Clone)]
@@ -42,9 +65,10 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
     RequestParents(NodeIndex, H::Hash),
     /// Response to a request for a full list of parents.
     ResponseParents(H::Hash, Vec<UncheckedSignedUnit<H, D, S>>),
-    /// Request by a node for the newest unit created by them
-    RequestNewest(NodeIndex),
-    ResponseNewest(Option<UncheckedSignedUnit<H, D, S>>),
+    /// Request by a node for the newest unit created by them, together with a u64 salt
+    RequestNewest(NodeIndex, u64),
+    /// Response to RequestNewest: (our index, maybe unit, salt) signed by us
+    ResponseNewest(UncheckedSigned<NewestUnitResponse<H, D, S>, S>),
 }
 
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
@@ -56,7 +80,9 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
                 .iter()
                 .map(|uu| uu.as_signable().data().clone())
                 .collect(),
-            Self::ResponseNewest(maybe_unit) => maybe_unit
+            Self::ResponseNewest(signed_response) => signed_response
+                .as_signable()
+                .unit
                 .iter()
                 .map(|uu| uu.as_signable().data().clone())
                 .collect(),
@@ -162,7 +188,7 @@ where
     n_members: NodeCount,
     unit_messages_for_network: Option<Sender<(UnitMessage<H, D, MK::Signature>, Recipient)>>,
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
-    starting_round: std::sync::Arc<parking_lot::Mutex<usize>>,
+    starting_round_sender: Option<oneshot::Sender<usize>>,
     spawn_handle: SH,
 }
 
@@ -193,7 +219,7 @@ where
             n_members,
             unit_messages_for_network: None,
             alerts_for_alerter: None,
-            starting_round: std::sync::Arc::new(parking_lot::Mutex::new(0)),
+            starting_round_sender: None,
             spawn_handle,
         }
     }
@@ -464,11 +490,12 @@ where
             .collect();
         for unit in &units_to_move {
             if unit.creator() == self.index() {
-                let round = unit.round() as usize;
-                let mut starting_round = self.starting_round.lock();
-                if round + 1 > *starting_round {
-                    *starting_round = round + 1;
-                }
+                // TODO: properly handle a unit coming from ResponseNewest
+                self.starting_round_sender
+                    .take()
+                    .unwrap()
+                    .send(usize::from(unit.round() + 1))
+                    .unwrap();
             }
         }
         if !units_to_move.is_empty() {
@@ -634,7 +661,41 @@ where
         }
     }
 
-    fn on_unit_message(&mut self, message: UnitMessage<H, D, MK::Signature>) {
+    async fn on_request_newest(&mut self, requester: NodeIndex, salt: u64) {
+        let unit = self.store.newest_unit(requester);
+        let response = NewestUnitResponse {
+            requester,
+            responder: self.index(),
+            unit,
+            salt,
+        };
+        let signed_response = Signed::sign(response, self.keybox).await.into_unchecked();
+
+        self.unit_messages_for_network
+            .as_ref()
+            .unwrap()
+            .unbounded_send((
+                UnitMessage::ResponseNewest(signed_response),
+                Recipient::Node(requester),
+            ))
+            .expect("sending message should succeed");
+    }
+
+    fn on_newest_response(
+        &mut self,
+        response: UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
+    ) {
+        match response.check(self.keybox) {
+            Ok(_signed) => {
+                // TODO: handle incoming response
+            }
+            Err(e) => {
+                log::debug!(target: "AlephBFT-member", "incorrectly signed response: {:?}", e)
+            }
+        }
+    }
+
+    async fn on_unit_message(&mut self, message: UnitMessage<H, D, MK::Signature>) {
         use UnitMessage::*;
         match message {
             NewUnit(u) => {
@@ -656,20 +717,13 @@ where
                 trace!(target: "AlephBFT-member", "{:?} Response parents received {:?}.", self.index(), u_hash);
                 self.on_parents_response(u_hash, parents);
             }
-            RequestNewest(index) => {
+            RequestNewest(index, salt) => {
                 debug!(target: "AlephBFT-member", "RequestNewest {:?} received", index);
-                let unit = self.store.newest_unit(index);
-                self.unit_messages_for_network
-                    .as_ref()
-                    .unwrap()
-                    .unbounded_send((UnitMessage::ResponseNewest(unit), Recipient::Node(index)))
-                    .expect("sending message should succeed");
+                self.on_request_newest(index, salt).await;
             }
-            ResponseNewest(unit) => {
-                debug!(target: "AlephBFT-member", "ResponseNewest {:?} received", unit);
-                if let Some(unchecked) = unit {
-                    self.on_unit_received(unchecked, false);
-                }
+            ResponseNewest(signed_response) => {
+                debug!(target: "AlephBFT-member", "ResponseNewest {:?} received", signed_response);
+                self.on_newest_response(signed_response);
             }
         }
     }
@@ -708,7 +762,7 @@ where
         let sh = self.spawn_handle.clone();
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
         let our_index = self.keybox.index();
-        let starting_round = self.starting_round.clone();
+        let (starting_round_sender, starting_round) = oneshot::channel();
         let mut consensus_handle = self
             .spawn_handle
             .spawn_essential("member/consensus", async move {
@@ -725,6 +779,7 @@ where
             })
             .fuse();
         self.tx_consensus = Some(tx_consensus);
+        self.starting_round_sender = Some(starting_round_sender);
         let (alert_messages_for_alerter, alert_messages_from_network) = mpsc::unbounded();
         let (alert_messages_for_network, alert_messages_from_alerter) = mpsc::unbounded();
         let (unit_messages_for_units, mut unit_messages_from_network) = mpsc::unbounded();
@@ -746,9 +801,16 @@ where
             .fuse();
         // wait 5 secs for everyone to join the network
         Delay::new(Duration::from_secs(5)).await;
-        if let Err(e) = unit_messages_for_network
-            .unbounded_send((UnitMessage::RequestNewest(our_index), Recipient::Everyone))
-        {
+
+        let salt = {
+            let mut hasher = DefaultHasher::new();
+            std::time::Instant::now().hash(&mut hasher);
+            hasher.finish()
+        };
+        if let Err(e) = unit_messages_for_network.unbounded_send((
+            UnitMessage::RequestNewest(our_index, salt),
+            Recipient::Everyone,
+        )) {
             debug!(target: "AlephBFT-member", "{:?} error sending message for network: {}", self.index(), e)
         } else {
             debug!(target: "AlephBFT-member", "{:?} requested newest", self.index());
@@ -806,7 +868,7 @@ where
                 },
 
                 event = unit_messages_from_network.next() => match event {
-                    Some(event) => self.on_unit_message(event),
+                    Some(event) => self.on_unit_message(event).await,
                     None => {
                         error!(target: "AlephBFT-member", "{:?} Unit message stream closed.", self.index());
                         break;

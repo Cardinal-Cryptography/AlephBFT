@@ -131,6 +131,11 @@ async fn run_consensus_on_dag(
     let (_exit_tx, exit_rx) = oneshot::channel();
     let (batch_tx, mut batch_rx) = mpsc::unbounded();
     let spawner = Spawner::new();
+    let starting_round = {
+        let (tx, rx) = oneshot::channel();
+        tx.send(0).unwrap();
+        rx
+    };
     spawner.spawn(
         "consensus",
         consensus::run(
@@ -139,7 +144,7 @@ async fn run_consensus_on_dag(
             tx_out,
             batch_tx,
             spawner.clone(),
-            std::sync::Arc::new(parking_lot::Mutex::new(0)),
+            starting_round,
             exit_rx,
         ),
     );

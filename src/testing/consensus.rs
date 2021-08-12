@@ -38,6 +38,12 @@ async fn agree_on_first_batch() {
         exits.push(exit_tx);
         let (batch_tx, batch_rx) = mpsc::unbounded();
         batch_rxs.push(batch_rx);
+        let starting_round = {
+            let (tx, rx) = oneshot::channel();
+            tx.send(0).unwrap();
+            rx
+        };
+
         handles.push(spawner.spawn_essential(
             "consensus",
             run(
@@ -46,7 +52,7 @@ async fn agree_on_first_batch() {
                 tx,
                 batch_tx,
                 spawner.clone(),
-                std::sync::Arc::new(parking_lot::Mutex::new(0)),
+                starting_round,
                 exit_rx,
             ),
         ));
@@ -78,6 +84,11 @@ async fn catches_wrong_control_hash() {
     let conf = gen_config(NodeIndex(node_ix), n_nodes.into());
     let (exit_tx, exit_rx) = oneshot::channel();
     let (batch_tx, _batch_rx) = mpsc::unbounded();
+    let starting_round = {
+        let (tx, rx) = oneshot::channel();
+        tx.send(0).unwrap();
+        rx
+    };
 
     let consensus_handle = spawner.spawn_essential(
         "consensus",
@@ -87,7 +98,7 @@ async fn catches_wrong_control_hash() {
             tx_out,
             batch_tx,
             spawner.clone(),
-            std::sync::Arc::new(parking_lot::Mutex::new(0)),
+            starting_round,
             exit_rx,
         ),
     );
