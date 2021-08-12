@@ -681,8 +681,10 @@ where
         response: UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
     ) {
         match response.check(self.keybox) {
-            Ok(_signed) => {
-                // TODO: handle incoming response
+            Ok(signed) => {
+                if let Some(unchecked) = &signed.as_signable().unit {
+                    self.on_unit_received(unchecked.clone(), false);
+                }
             }
             Err(e) => {
                 log::debug!(target: "AlephBFT-member", "incorrectly signed response: {:?}", e)
