@@ -19,6 +19,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     outgoing_notifications: Sender<NotificationOut<H>>,
     ordered_batch_tx: Sender<OrderedBatch<H::Hash>>,
     spawn_handle: impl SpawnHandle,
+    starting_round: std::sync::Arc<parking_lot::Mutex<usize>>,
     mut exit: oneshot::Receiver<()>,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
@@ -40,10 +41,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
 
     let (creator_exit, exit_rx) = oneshot::channel();
     let mut creator_handle = spawn_handle
-        .spawn_essential(
-            "consensus/creator",
-            async move { creator.create(exit_rx).await },
-        )
+        .spawn_essential("consensus/creator", async move {
+            creator.create(starting_round, exit_rx).await
+        })
         .fuse();
 
     let mut terminal = Terminal::new(conf.node_ix, incoming_notifications, outgoing_notifications);

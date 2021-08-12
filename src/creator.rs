@@ -142,17 +142,15 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    pub(crate) async fn create(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub(crate) async fn create(
+        &mut self,
+        starting_round: std::sync::Arc<parking_lot::Mutex<usize>>,
+        mut exit: oneshot::Receiver<()>,
+    ) {
         // wait for other nodes to inform us about the newest unit created by us (in case of crash)
         futures_timer::Delay::new(self.catch_up_delay).await;
 
-        let starting_round = self
-            .candidates_by_round
-            .iter()
-            .enumerate()
-            .filter(|(_, candidates)| candidates[self.node_ix].is_some())
-            .last()
-            .map_or(0, |(round, _)| round as u16 + 1);
+        let starting_round = *starting_round.lock() as u16;
 
         log::debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
 
@@ -282,7 +280,11 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit).await });
+            let handle = tokio::spawn(async move {
+                creator
+                    .create(std::sync::Arc::new(parking_lot::Mutex::new(0)), exit)
+                    .await
+            });
 
             killers.push(killer);
             handles.push(handle);
@@ -377,7 +379,11 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit).await });
+            let handle = tokio::spawn(async move {
+                creator
+                    .create(std::sync::Arc::new(parking_lot::Mutex::new(25)), exit)
+                    .await
+            });
 
             killers.push(killer);
             handles.push(handle);
@@ -435,7 +441,11 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(exit).await });
+            let handle = tokio::spawn(async move {
+                creator
+                    .create(std::sync::Arc::new(parking_lot::Mutex::new(0)), exit)
+                    .await
+            });
 
             killers.push(killer);
             handles.push(handle);

@@ -26,6 +26,7 @@ use std::{
     collections::{BinaryHeap, HashSet},
     fmt::Debug,
     time,
+    time::Duration,
 };
 
 /// A message concerning units, either about new units or some requests for them.
@@ -161,7 +162,7 @@ where
     n_members: NodeCount,
     unit_messages_for_network: Option<Sender<(UnitMessage<H, D, MK::Signature>, Recipient)>>,
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
-    tx_recovery: Option<Sender<Option<UncheckedSignedUnit<H, D, MK::Signature>>>>,
+    starting_round: std::sync::Arc<parking_lot::Mutex<usize>>,
     spawn_handle: SH,
 }
 
@@ -192,7 +193,7 @@ where
             n_members,
             unit_messages_for_network: None,
             alerts_for_alerter: None,
-            tx_recovery: None,
+            starting_round: std::sync::Arc::new(parking_lot::Mutex::new(0)),
             spawn_handle,
         }
     }
@@ -461,6 +462,15 @@ where
             .into_iter()
             .map(|su| su.as_signable().unit())
             .collect();
+        for unit in &units_to_move {
+            if unit.creator() == self.index() {
+                let round = unit.round() as usize;
+                let mut starting_round = self.starting_round.lock();
+                if round + 1 > *starting_round {
+                    *starting_round = round + 1;
+                }
+            }
+        }
         if !units_to_move.is_empty() {
             self.send_consensus_notification(NotificationIn::NewUnits(units_to_move));
         }
@@ -657,22 +667,8 @@ where
             }
             ResponseNewest(unit) => {
                 debug!(target: "AlephBFT-member", "ResponseNewest {:?} received", unit);
-                if let Some(tx) = &self.tx_recovery {
-                    match unit
-                        .map(|unchecked| unchecked.check(self.keybox))
-                        .transpose()
-                    {
-                        Err(e) => {
-                            trace!(target: "AlephBFT-member", "{:?} Invalid signature {:?}", self.index(), e);
-                        }
-                        Ok(maybe_unit) => {
-                            if let Err(e) =
-                                tx.unbounded_send(maybe_unit.map(|su| su.into_unchecked()))
-                            {
-                                trace!(target: "AlephBFT-member", "{:?} Error sending response newest {:?}", self.index(), e);
-                            }
-                        }
-                    }
+                if let Some(unchecked) = unit {
+                    self.on_unit_received(unchecked, false);
                 }
             }
         }
@@ -712,6 +708,7 @@ where
         let sh = self.spawn_handle.clone();
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
         let our_index = self.keybox.index();
+        let starting_round = self.starting_round.clone();
         let mut consensus_handle = self
             .spawn_handle
             .spawn_essential("member/consensus", async move {
@@ -721,6 +718,7 @@ where
                     consensus_sink,
                     ordered_batch_tx,
                     sh,
+                    starting_round,
                     exit_stream,
                 )
                 .await
@@ -746,6 +744,8 @@ where
                 .await
             })
             .fuse();
+        // wait 5 secs for everyone to join the network
+        Delay::new(Duration::from_secs(5)).await;
         if let Err(e) = unit_messages_for_network
             .unbounded_send((UnitMessage::RequestNewest(our_index), Recipient::Everyone))
         {
