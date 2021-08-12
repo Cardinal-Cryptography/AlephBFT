@@ -144,13 +144,13 @@ impl<H: Hasher> Creator<H> {
 
     pub(crate) async fn create(
         &mut self,
-        starting_round: oneshot::Receiver<usize>,
+        starting_round: oneshot::Receiver<u16>,
         mut exit: oneshot::Receiver<()>,
     ) {
         // wait for other nodes to inform us about the newest unit created by us (in case of crash)
         let starting_round = starting_round
             .await
-            .expect("starting round should be provided") as u16;
+            .expect("starting round should be provided");
 
         log::debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
 

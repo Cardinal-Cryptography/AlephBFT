@@ -188,7 +188,7 @@ where
     n_members: NodeCount,
     unit_messages_for_network: Option<Sender<(UnitMessage<H, D, MK::Signature>, Recipient)>>,
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
-    starting_round_sender: Option<oneshot::Sender<usize>>,
+    starting_round_sender: Option<oneshot::Sender<u16>>,
     spawn_handle: SH,
 }
 
@@ -491,11 +491,6 @@ where
         for unit in &units_to_move {
             if unit.creator() == self.index() {
                 // TODO: properly handle a unit coming from ResponseNewest
-                self.starting_round_sender
-                    .take()
-                    .unwrap()
-                    .send(usize::from(unit.round() + 1))
-                    .unwrap();
             }
         }
         if !units_to_move.is_empty() {
@@ -778,8 +773,10 @@ where
                 .await
             })
             .fuse();
+        // TODO: get rid of it once we send the right starting round.
         self.tx_consensus = Some(tx_consensus);
         self.starting_round_sender = Some(starting_round_sender);
+        self.starting_round_sender.take().unwrap().send(0).unwrap();
         let (alert_messages_for_alerter, alert_messages_from_network) = mpsc::unbounded();
         let (alert_messages_for_network, alert_messages_from_alerter) = mpsc::unbounded();
         let (unit_messages_for_units, mut unit_messages_from_network) = mpsc::unbounded();

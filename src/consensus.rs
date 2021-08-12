@@ -19,7 +19,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     outgoing_notifications: Sender<NotificationOut<H>>,
     ordered_batch_tx: Sender<OrderedBatch<H::Hash>>,
     spawn_handle: impl SpawnHandle,
-    starting_round: oneshot::Receiver<usize>,
+    starting_round: oneshot::Receiver<u16>,
     mut exit: oneshot::Receiver<()>,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
