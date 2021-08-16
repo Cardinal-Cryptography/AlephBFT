@@ -27,7 +27,6 @@ use std::{
     fmt::Debug,
     hash::{Hash, Hasher as _},
     time,
-    time::Duration,
 };
 
 #[derive(Debug, Encode, Decode, Clone)]
@@ -124,6 +123,8 @@ enum Task<H: Hasher> {
     ParentsRequest(H::Hash),
     // Broadcast the unit with the given hash.
     UnitMulticast(H::Hash),
+    // Request the newest unit created by node itself.
+    RequestNewest(),
 }
 
 #[derive(Eq, PartialEq)]
@@ -190,6 +191,9 @@ where
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
     starting_round_sender: Option<oneshot::Sender<u16>>,
     spawn_handle: SH,
+    newest_counter: NodeCount,
+    starting_round_value: u16,
+    salts: Vec<u64>,
 }
 
 impl<'a, H, D, DP, MK, SH> Member<'a, H, D, DP, MK, SH>
@@ -207,6 +211,7 @@ where
         let n_members = config.n_members;
         let threshold = (n_members * 2) / 3 + NodeCount(1);
         let max_round = config.max_round;
+        let newest_counter = NodeCount(0);
         Member {
             config,
             tx_consensus: None,
@@ -221,6 +226,9 @@ where
             alerts_for_alerter: None,
             starting_round_sender: None,
             spawn_handle,
+            newest_counter,
+            starting_round_value: 0,
+            salts: vec![],
         }
     }
 
@@ -257,6 +265,20 @@ where
                 break;
             }
             let mut request = self.task_queue.pop().expect("The element was peeked");
+
+            // todo Time elapsed can be calculated based on request.counter, maybe other value here?
+            if request.task == Task::RequestNewest()
+                && self.newest_counter > self.threshold
+                && request.counter > 3
+            {
+                self.starting_round_sender
+                    .take()
+                    .unwrap()
+                    .send(self.starting_round_value)
+                    .unwrap();
+                continue;
+            }
+
             if let Some((message, recipient, delay)) =
                 self.task_details(&request.task, request.counter)
             {
@@ -330,6 +352,18 @@ where
                     .cloned()
                     .expect("Our units are in store.");
                 let message = UnitMessage::NewUnit(signed_unit.into());
+                let preferred_recipient = Recipient::Everyone;
+                (message, preferred_recipient)
+            }
+            Task::RequestNewest() => {
+                let salt = {
+                    let mut hasher = DefaultHasher::new();
+                    std::time::Instant::now().hash(&mut hasher);
+                    hasher.finish()
+                };
+                self.salts.push(salt);
+
+                let message = UnitMessage::RequestNewest(self.index(), salt);
                 let preferred_recipient = Recipient::Everyone;
                 (message, preferred_recipient)
             }
@@ -488,11 +522,12 @@ where
             .into_iter()
             .map(|su| su.as_signable().unit())
             .collect();
-        for unit in &units_to_move {
-            if unit.creator() == self.index() {
-                // TODO: properly handle a unit coming from ResponseNewest
-            }
-        }
+        // todo Moze ja czegos nie rozumiem, ale to chyba nie jest potrzebme, a przynajmniej gdzie indziej je obsluguje. Jezeli nie zrozumialem to przepraszam :/
+        //for unit in &units_to_move {
+        //    if unit.creator() == self.index() {
+        // TODO: properly handle a unit coming from ResponseNewest
+        //    }
+        //}
         if !units_to_move.is_empty() {
             self.send_consensus_notification(NotificationIn::NewUnits(units_to_move));
         }
@@ -657,6 +692,7 @@ where
     }
 
     async fn on_request_newest(&mut self, requester: NodeIndex, salt: u64) {
+        // todo Ta funkcja musi byc zepsuta, nie wiem jak ona moze zwrocic None
         let unit = self.store.newest_unit(requester);
         let response = NewestUnitResponse {
             requester,
@@ -664,6 +700,9 @@ where
             unit,
             salt,
         };
+
+        //todo to jest do debugu tego none, mozesz zachowac albo usunac ten debug
+        debug!(target: "AlephBFT-member", "ResponeNewest to {:?} with unit {:?} sent", requester, response.unit);
         let signed_response = Signed::sign(response, self.keybox).await.into_unchecked();
 
         self.unit_messages_for_network
@@ -682,8 +721,32 @@ where
     ) {
         match response.check(self.keybox) {
             Ok(signed) => {
-                if let Some(unchecked) = &signed.as_signable().unit {
-                    self.on_unit_received(unchecked.clone(), false);
+                if !self.salts.contains(&signed.as_signable().salt) {
+                    return;
+                    //todo log wrong salt
+                }
+                match &signed.as_signable().unit {
+                    Some(unchecked) => {
+                        // todo chyba musimy tez sprawdzac czy dany node juz nam wyslal odpowiedz, ale jezeli tak to dodaj do membera hashmap z nodami ktore nam odpowiedzialy
+                        if self
+                            .store
+                            .unit_by_hash(&unchecked.as_signable().hash())
+                            .is_none()
+                        {
+                            self.on_unit_received(unchecked.clone(), false);
+                            self.newest_counter += NodeCount(1);
+                            if self.starting_round_value < unchecked.as_signable().round() {
+                                self.starting_round_value = unchecked.as_signable().round();
+                            }
+                        } else {
+                            // todo log that we already have this unit
+                        }
+                    }
+
+                    // todo Musialem to dopisac by testy przechodzily, w szczegolnosci mysle, ze None powinnien byc na poczatku konsensusu
+                    None => {
+                        self.newest_counter += NodeCount(1);
+                    }
                 }
             }
             Err(e) => {
@@ -758,7 +821,6 @@ where
         let config = self.config.clone();
         let sh = self.spawn_handle.clone();
         info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", self.index());
-        let our_index = self.keybox.index();
         let (starting_round_sender, starting_round) = oneshot::channel();
         let mut consensus_handle = self
             .spawn_handle
@@ -775,10 +837,10 @@ where
                 .await
             })
             .fuse();
+
         // TODO: get rid of it once we send the right starting round.
         self.tx_consensus = Some(tx_consensus);
         self.starting_round_sender = Some(starting_round_sender);
-        self.starting_round_sender.take().unwrap().send(0).unwrap();
         let (alert_messages_for_alerter, alert_messages_from_network) = mpsc::unbounded();
         let (alert_messages_for_network, alert_messages_from_alerter) = mpsc::unbounded();
         let (unit_messages_for_units, mut unit_messages_from_network) = mpsc::unbounded();
@@ -798,22 +860,10 @@ where
                 .await
             })
             .fuse();
-        // wait 5 secs for everyone to join the network
-        Delay::new(Duration::from_secs(5)).await;
 
-        let salt = {
-            let mut hasher = DefaultHasher::new();
-            std::time::Instant::now().hash(&mut hasher);
-            hasher.finish()
-        };
-        if let Err(e) = unit_messages_for_network.unbounded_send((
-            UnitMessage::RequestNewest(our_index, salt),
-            Recipient::Everyone,
-        )) {
-            debug!(target: "AlephBFT-member", "{:?} error sending message for network: {}", self.index(), e)
-        } else {
-            debug!(target: "AlephBFT-member", "{:?} requested newest", self.index());
-        }
+        let curr_time = time::Instant::now();
+        let task = ScheduledTask::new(Task::RequestNewest(), curr_time);
+        self.task_queue.push(task);
 
         self.unit_messages_for_network = Some(unit_messages_for_network);
         let (alert_notifications_for_units, mut notifications_from_alerter) = mpsc::unbounded();
