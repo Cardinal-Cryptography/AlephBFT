@@ -362,6 +362,7 @@ where
                     hasher.finish()
                 };
                 self.salts.push(salt);
+                debug!(target: "AlephBFT-member", "Sending RequestNewest {}", salt);
 
                 let message = UnitMessage::RequestNewest(self.index(), salt);
                 let preferred_recipient = Recipient::Everyone;

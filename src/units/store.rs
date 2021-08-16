@@ -48,6 +48,10 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         &self,
         index: NodeIndex,
     ) -> Option<UncheckedSignedUnit<H, D, KB::Signature>> {
+        let created_units: Vec<_> = self.by_coord
+            .keys()
+            .collect();
+        log::trace!(target: "degu", "created_units: {:?}", created_units);
         Some(
             self.by_coord
                 .values()
@@ -105,6 +109,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         }
         self.by_hash.insert(hash, su.clone());
         self.by_coord.insert(su.as_signable().coord(), su.clone());
+        trace!(target: "degu", "insert {:?} {:?}", su.as_signable().coord(), su.as_signable());
 
         if alert || !self.is_forker[creator] {
             self.legit_buffer.push(su);
