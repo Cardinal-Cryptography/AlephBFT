@@ -273,11 +273,11 @@ where
             // we send the request periodically, and collect the responses. We stop sending the requests
             // once we have collected the required number of responses and the specified period of time
             // has passed. Currently, this required period of time is specified indirectly as
-            // "the time it takes until the request is broadcast 4 times".
+            // "the time it takes until the request is broadcast 2 times".
             // TODO: make this period of time specifiable in a more explicit way.
             if request.task == Task::RequestNewest()
                 && self.newest_unit_responders.len() + 1 >= self.threshold.0
-                && request.counter > 3
+                && request.counter > 0
             {
                 self.starting_round_sender
                     .take()
