@@ -191,9 +191,9 @@ where
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
     starting_round_sender: Option<oneshot::Sender<u16>>,
     spawn_handle: SH,
-    newest_counter: NodeCount,
+    newest_unit_responders: HashSet<NodeIndex>,
     starting_round_value: u16,
-    salts: Vec<u64>,
+    salt: u64,
 }
 
 impl<'a, H, D, DP, MK, SH> Member<'a, H, D, DP, MK, SH>
@@ -211,7 +211,11 @@ where
         let n_members = config.n_members;
         let threshold = (n_members * 2) / 3 + NodeCount(1);
         let max_round = config.max_round;
-        let newest_counter = NodeCount(0);
+        let salt = {
+            let mut hasher = DefaultHasher::new();
+            std::time::Instant::now().hash(&mut hasher);
+            hasher.finish()
+        };
         Member {
             config,
             tx_consensus: None,
@@ -226,9 +230,9 @@ where
             alerts_for_alerter: None,
             starting_round_sender: None,
             spawn_handle,
-            newest_counter,
+            newest_unit_responders: HashSet::new(),
             starting_round_value: 0,
-            salts: vec![],
+            salt,
         }
     }
 
@@ -266,9 +270,13 @@ where
             }
             let mut request = self.task_queue.pop().expect("The element was peeked");
 
-            // todo Time elapsed can be calculated based on request.counter, maybe other value here?
+            // we send the request periodically, and collect the responses. We stop sending the requests
+            // once we have collected the required number of responses and the specified period of time
+            // has passed. Currently, this required period of time is specified indirectly as
+            // "the time it takes until the request is broadcast 4 times".
+            // TODO: make this period of time specifiable in a more explicit way.
             if request.task == Task::RequestNewest()
-                && self.newest_counter > self.threshold
+                && self.newest_unit_responders.len() + 1 >= self.threshold.0
                 && request.counter > 3
             {
                 self.starting_round_sender
@@ -356,15 +364,7 @@ where
                 (message, preferred_recipient)
             }
             Task::RequestNewest() => {
-                let salt = {
-                    let mut hasher = DefaultHasher::new();
-                    std::time::Instant::now().hash(&mut hasher);
-                    hasher.finish()
-                };
-                self.salts.push(salt);
-                debug!(target: "AlephBFT-member", "Sending RequestNewest {}", salt);
-
-                let message = UnitMessage::RequestNewest(self.index(), salt);
+                let message = UnitMessage::RequestNewest(self.index(), self.salt);
                 let preferred_recipient = Recipient::Everyone;
                 (message, preferred_recipient)
             }
@@ -523,12 +523,6 @@ where
             .into_iter()
             .map(|su| su.as_signable().unit())
             .collect();
-        // todo Moze ja czegos nie rozumiem, ale to chyba nie jest potrzebme, a przynajmniej gdzie indziej je obsluguje. Jezeli nie zrozumialem to przepraszam :/
-        //for unit in &units_to_move {
-        //    if unit.creator() == self.index() {
-        // TODO: properly handle a unit coming from ResponseNewest
-        //    }
-        //}
         if !units_to_move.is_empty() {
             self.send_consensus_notification(NotificationIn::NewUnits(units_to_move));
         }
@@ -693,7 +687,6 @@ where
     }
 
     async fn on_request_newest(&mut self, requester: NodeIndex, salt: u64) {
-        // todo Ta funkcja musi byc zepsuta, nie wiem jak ona moze zwrocic None
         let unit = self.store.newest_unit(requester);
         let response = NewestUnitResponse {
             requester,
@@ -702,8 +695,6 @@ where
             salt,
         };
 
-        //todo to jest do debugu tego none, mozesz zachowac albo usunac ten debug
-        debug!(target: "AlephBFT-member", "ResponeNewest to {:?} with unit {:?} sent", requester, response.unit);
         let signed_response = Signed::sign(response, self.keybox).await.into_unchecked();
 
         self.unit_messages_for_network
@@ -722,33 +713,29 @@ where
     ) {
         match response.check(self.keybox) {
             Ok(signed) => {
-                if !self.salts.contains(&signed.as_signable().salt) {
+                let salt = signed.as_signable().salt;
+                if salt != self.salt {
+                    debug!(target: "AlephBFT-member", "Ignoring newest unit response with an unknown salt: {}", salt);
                     return;
-                    //todo log wrong salt
                 }
-                match &signed.as_signable().unit {
-                    Some(unchecked) => {
-                        // todo chyba musimy tez sprawdzac czy dany node juz nam wyslal odpowiedz, ale jezeli tak to dodaj do membera hashmap z nodami ktore nam odpowiedzialy
-                        if self
-                            .store
-                            .unit_by_hash(&unchecked.as_signable().hash())
-                            .is_none()
-                        {
-                            self.on_unit_received(unchecked.clone(), false);
-                            self.newest_counter += NodeCount(1);
-                            if self.starting_round_value < unchecked.as_signable().round() {
-                                self.starting_round_value = unchecked.as_signable().round();
-                            }
-                        } else {
-                            // todo log that we already have this unit
+
+                if let Some(unchecked) = &signed.as_signable().unit {
+                    if unchecked.as_signable().creator() != self.index() {
+                        return;
+                    }
+                    if self
+                        .store
+                        .unit_by_hash(&unchecked.as_signable().hash())
+                        .is_none()
+                    {
+                        self.on_unit_received(unchecked.clone(), false);
+                        if self.starting_round_value < unchecked.as_signable().round() {
+                            self.starting_round_value = unchecked.as_signable().round();
                         }
                     }
-
-                    // todo Musialem to dopisac by testy przechodzily, w szczegolnosci mysle, ze None powinnien byc na poczatku konsensusu
-                    None => {
-                        self.newest_counter += NodeCount(1);
-                    }
                 }
+                self.newest_unit_responders
+                    .insert(signed.as_signable().responder);
             }
             Err(e) => {
                 log::debug!(target: "AlephBFT-member", "incorrectly signed response: {:?}", e)
@@ -839,7 +826,6 @@ where
             })
             .fuse();
 
-        // TODO: get rid of it once we send the right starting round.
         self.tx_consensus = Some(tx_consensus);
         self.starting_round_sender = Some(starting_round_sender);
         let (alert_messages_for_alerter, alert_messages_from_network) = mpsc::unbounded();

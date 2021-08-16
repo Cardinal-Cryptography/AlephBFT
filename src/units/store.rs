@@ -48,9 +48,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         &self,
         index: NodeIndex,
     ) -> Option<UncheckedSignedUnit<H, D, KB::Signature>> {
-        let created_units: Vec<_> = self.by_coord
-            .keys()
-            .collect();
+        let created_units: Vec<_> = self.by_coord.keys().collect();
         log::trace!(target: "degu", "created_units: {:?}", created_units);
         Some(
             self.by_coord
