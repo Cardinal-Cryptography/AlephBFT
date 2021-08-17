@@ -31,7 +31,6 @@ pub(crate) struct Creator<H: Hasher> {
     candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
     n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
     create_lag: DelaySchedule,
-    _catch_up_delay: Duration,
     max_round: Round,
 }
 
@@ -50,7 +49,6 @@ impl<H: Hasher> Creator<H> {
             candidates_by_round: vec![NodeMap::new_with_len(n_members)],
             n_candidates_by_round: vec![NodeCount(0)],
             create_lag: conf.delay_config.unit_creation_delay,
-            _catch_up_delay: conf.delay_config.catch_up_delay,
             max_round: conf.max_round,
         }
     }
