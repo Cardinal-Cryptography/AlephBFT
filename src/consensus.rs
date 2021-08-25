@@ -42,6 +42,13 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (creator_exit, exit_rx) = oneshot::channel();
     let mut creator_handle = spawn_handle
         .spawn_essential("consensus/creator", async move {
+            let starting_round = match starting_round.await {
+                Ok(round) => round,
+                Err(e) => {
+                    log::warn!(target: "AlephBFT-creator", "Starting round not provided: {}", e);
+                    return;
+                }
+            };
             creator.create(starting_round, exit_rx).await
         })
         .fuse();

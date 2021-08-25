@@ -5,9 +5,12 @@ use crate::{
     units::{ControlHash, PreUnit, Unit},
     Hasher, Receiver, Round, Sender,
 };
-use futures::{channel::oneshot, FutureExt, StreamExt};
+use futures::{
+    channel::{mpsc::TrySendError, oneshot},
+    FutureExt, StreamExt,
+};
 use futures_timer::Delay;
-use log::{info, trace, warn};
+use log::{error, info, trace, warn};
 use std::time::Duration;
 
 /// A process responsible for creating new units. It receives all the units added locally to the Dag
@@ -63,7 +66,7 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    fn create_unit(&mut self, round: Round) {
+    fn create_unit(&mut self, round: Round) -> Result<(), TrySendError<NotificationOut<H>>> {
         let parents = {
             if round == 0 {
                 NodeMap::new_with_len(self.n_members)
@@ -76,12 +79,11 @@ impl<H: Hasher> Creator<H> {
         let parent_hashes: Vec<H::Hash> = parents.into_iter().flatten().collect();
 
         let new_preunit = PreUnit::new(self.node_ix, round, control_hash);
-        trace!(target: "AlephBFT-creator", "{:?} Created a new unit {:?} at round {:?}.", self.node_ix, new_preunit, round);
-        self.new_units_tx
-            .unbounded_send(NotificationOut::CreatedPreUnit(new_preunit, parent_hashes))
-            .expect("Notification channel should be open");
-
+        trace!(target: "AlephBFT-creator", "{:?} Creating a new unit {:?} at round {:?}.", self.node_ix, new_preunit, round);
+        let notification = NotificationOut::CreatedPreUnit(new_preunit, parent_hashes);
+        self.new_units_tx.unbounded_send(notification)?;
         self.init_round(round + 1);
+        Ok(())
     }
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
@@ -140,15 +142,8 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    pub(crate) async fn create(
-        &mut self,
-        starting_round: oneshot::Receiver<u16>,
-        mut exit: oneshot::Receiver<()>,
-    ) {
+    pub(crate) async fn create(&mut self, starting_round: Round, mut exit: oneshot::Receiver<()>) {
         // wait for other nodes to inform us about the newest unit created by us (in case of crash)
-        let starting_round = starting_round
-            .await
-            .expect("starting round should be provided");
 
         log::debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
 
@@ -169,7 +164,10 @@ impl<H: Hasher> Creator<H> {
                     }
                 }
             }
-            self.create_unit(round);
+            if let Err(e) = self.create_unit(round) {
+                error!(target: "AlepphBFT-creator", "{:?} Unable to create a unit: {}", self.node_ix, e);
+                return;
+            }
         }
         warn!(target: "AlephBFT-creator", "{:?} Maximum round reached. Not creating another unit.", self.node_ix);
     }
@@ -278,13 +276,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let starting_round = {
-                let (tx, rx) = oneshot::channel();
-                tx.send(0).unwrap();
-                rx
-            };
-
-            let handle = tokio::spawn(async move { creator.create(starting_round, exit).await });
+            let handle = tokio::spawn(async move { creator.create(0, exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -379,13 +371,7 @@ mod tests {
 
             let (killer, exit) = oneshot::channel::<()>();
 
-            let starting_round = {
-                let (tx, rx) = oneshot::channel();
-                tx.send(25).unwrap();
-                rx
-            };
-
-            let handle = tokio::spawn(async move { creator.create(starting_round, exit).await });
+            let handle = tokio::spawn(async move { creator.create(25, exit).await });
 
             killers.push(killer);
             handles.push(handle);
@@ -442,13 +428,8 @@ mod tests {
             test_controller.units_out.push(units_out);
 
             let (killer, exit) = oneshot::channel::<()>();
-            let starting_round = {
-                let (tx, rx) = oneshot::channel();
-                tx.send(0).unwrap();
-                rx
-            };
 
-            let handle = tokio::spawn(async move { creator.create(starting_round, exit).await });
+            let handle = tokio::spawn(async move { creator.create(0, exit).await });
 
             killers.push(killer);
             handles.push(handle);

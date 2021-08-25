@@ -17,7 +17,7 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
     Data, DataIO, Hasher, Index, MultiKeychain, Network, NodeCount, NodeIndex, NodeMap,
-    OrderedBatch, Sender, Signable, SpawnHandle, UncheckedSigned,
+    OrderedBatch, Round, Sender, Signable, SpawnHandle, UncheckedSigned,
 };
 
 use futures_timer::Delay;
@@ -189,10 +189,10 @@ where
     n_members: NodeCount,
     unit_messages_for_network: Option<Sender<(UnitMessage<H, D, MK::Signature>, Recipient)>>,
     alerts_for_alerter: Option<Sender<Alert<H, D, MK::Signature>>>,
-    starting_round_sender: Option<oneshot::Sender<u16>>,
+    starting_round_sender: Option<oneshot::Sender<Round>>,
     spawn_handle: SH,
     newest_unit_responders: HashSet<NodeIndex>,
-    starting_round_value: u16,
+    starting_round_value: Round,
     salt: u64,
 }
 
@@ -721,6 +721,11 @@ where
 
                 if let Some(unchecked) = &signed.as_signable().unit {
                     if unchecked.as_signable().creator() != self.index() {
+                        log::debug!(target: "AlephBFT-member", "Not our unit in a response:  {:?}", unchecked.as_signable());
+                        return;
+                    }
+                    if let Err(e) = unchecked.clone().check(self.keybox) {
+                        log::debug!(target: "AlephBFT-member", "incorrectly signed unit in a response: {:?}", e);
                         return;
                     }
                     if self
@@ -729,8 +734,9 @@ where
                         .is_none()
                     {
                         self.on_unit_received(unchecked.clone(), false);
-                        if self.starting_round_value < unchecked.as_signable().round() {
-                            self.starting_round_value = unchecked.as_signable().round();
+                        let round = unchecked.as_signable().round();
+                        if self.starting_round_value < round {
+                            self.starting_round_value = round;
                         }
                     }
                 }
