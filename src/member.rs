@@ -709,44 +709,46 @@ where
 
     fn on_newest_response(
         &mut self,
-        response: UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
+        unchecked_response: UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
     ) {
-        match response.check(self.keybox) {
-            Ok(signed) => {
-                let salt = signed.as_signable().salt;
-                if salt != self.salt {
-                    debug!(target: "AlephBFT-member", "Ignoring newest unit response with an unknown salt: {}", salt);
+        let response = match unchecked_response.check(self.keybox) {
+            Ok(checked) => checked.into_signable(),
+            Err(e) => {
+                log::debug!(target: "AlephBFT-member", "incorrectly signed response: {:?}", e);
+                return;
+            }
+        };
+
+        if response.salt != self.salt {
+            debug!(target: "AlephBFT-member", "Ignoring newest unit response with an unknown salt: {:?}", response);
+            return;
+        }
+
+        if let Some(unchecked_unit) = response.unit {
+            if unchecked_unit.as_signable().creator() != self.index() {
+                log::debug!(target: "AlephBFT-member", "Not our unit in a response:  {:?}", unchecked_unit.into_signable());
+                return;
+            }
+            let checked_unit = match unchecked_unit.check(self.keybox) {
+                Ok(checked) => checked,
+                Err(e) => {
+                    log::debug!(target: "AlephBFT-member", "incorrectly signed unit in a response: {:?}", e);
                     return;
                 }
-
-                if let Some(unchecked) = &signed.as_signable().unit {
-                    if unchecked.as_signable().creator() != self.index() {
-                        log::debug!(target: "AlephBFT-member", "Not our unit in a response:  {:?}", unchecked.as_signable());
-                        return;
-                    }
-                    if let Err(e) = unchecked.clone().check(self.keybox) {
-                        log::debug!(target: "AlephBFT-member", "incorrectly signed unit in a response: {:?}", e);
-                        return;
-                    }
-                    if self
-                        .store
-                        .unit_by_hash(&unchecked.as_signable().hash())
-                        .is_none()
-                    {
-                        self.on_unit_received(unchecked.clone(), false);
-                        let round = unchecked.as_signable().round();
-                        if self.starting_round_value < round {
-                            self.starting_round_value = round;
-                        }
-                    }
+            };
+            if self
+                .store
+                .unit_by_hash(&checked_unit.as_signable().hash())
+                .is_none()
+            {
+                let starting_round_candidate = checked_unit.as_signable().round() + 1;
+                self.on_unit_received(checked_unit.into(), false);
+                if starting_round_candidate > self.starting_round_value {
+                    self.starting_round_value = starting_round_candidate;
                 }
-                self.newest_unit_responders
-                    .insert(signed.as_signable().responder);
-            }
-            Err(e) => {
-                log::debug!(target: "AlephBFT-member", "incorrectly signed response: {:?}", e)
             }
         }
+        self.newest_unit_responders.insert(response.responder);
     }
 
     async fn on_unit_message(&mut self, message: UnitMessage<H, D, MK::Signature>) {

@@ -79,7 +79,7 @@ impl<H: Hasher> Creator<H> {
         let parent_hashes: Vec<H::Hash> = parents.into_iter().flatten().collect();
 
         let new_preunit = PreUnit::new(self.node_ix, round, control_hash);
-        trace!(target: "AlephBFT-creator", "{:?} Creating a new unit {:?} at round {:?}.", self.node_ix, new_preunit, round);
+        trace!(target: "AlephBFT-creator", "{:?} Created a new unit {:?} at round {:?}.", self.node_ix, new_preunit, round);
         let notification = NotificationOut::CreatedPreUnit(new_preunit, parent_hashes);
         self.new_units_tx.unbounded_send(notification)?;
         self.init_round(round + 1);
@@ -131,7 +131,8 @@ impl<H: Hasher> Creator<H> {
         // Additionally, our unit from previous round must be available.
         let threshold = (self.n_members * 2) / 3 + NodeCount(1);
 
-        while self.n_candidates_by_round[prev_round_index] < threshold
+        while self.n_candidates_by_round.len() <= prev_round_index
+            || self.n_candidates_by_round[prev_round_index] < threshold
             || self.candidates_by_round[prev_round_index][self.node_ix].is_none()
         {
             if let Some(u) = self.parents_rx.next().await {
@@ -165,7 +166,7 @@ impl<H: Hasher> Creator<H> {
                 }
             }
             if let Err(e) = self.create_unit(round) {
-                error!(target: "AlepphBFT-creator", "{:?} Unable to create a unit: {}", self.node_ix, e);
+                error!(target: "AlepphBFT-creator", "{:?} Unable to broadcast a unit: {}", self.node_ix, e);
                 return;
             }
         }
