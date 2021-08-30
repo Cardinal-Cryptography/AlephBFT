@@ -144,8 +144,6 @@ impl<H: Hasher> Creator<H> {
     }
 
     pub(crate) async fn create(&mut self, starting_round: Round, mut exit: oneshot::Receiver<()>) {
-        // wait for other nodes to inform us about the newest unit created by us (in case of crash)
-
         log::debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
 
         for round in starting_round..self.max_round {
