@@ -8,7 +8,7 @@ use crate::{
     config::Config,
     creator::Creator,
     extender::Extender,
-    runway::{NotificationIn, NotificationOut},
+    member::{NotificationIn, NotificationOut},
     terminal::Terminal,
     Hasher, OrderedBatch, Receiver, Sender, SpawnHandle,
 };

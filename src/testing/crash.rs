@@ -13,8 +13,7 @@ async fn honest_members_agree_on_batches(
 ) {
     init_log();
     let spawner = Spawner::new();
-    let mut exits = Vec::new();
-    let mut handles = Vec::new();
+    let mut exits = vec![];
     let mut batch_rxs = Vec::new();
     let (net_hub, networks) = configure_network(n_members, network_reliability);
     spawner.spawn("network-hub", net_hub);
@@ -22,11 +21,9 @@ async fn honest_members_agree_on_batches(
     for network in networks {
         let ix = network.index();
         if n_alive.into_range().contains(&ix) {
-            let (batch_rx, exit_tx, handle) =
-                spawn_honest_member(spawner.clone(), ix, n_members, network);
+            let (batch_rx, exit_tx) = spawn_honest_member(spawner.clone(), ix, n_members, network);
             batch_rxs.push(batch_rx);
             exits.push(exit_tx);
-            handles.push(handle);
         }
     }
 
@@ -42,12 +39,6 @@ async fn honest_members_agree_on_batches(
 
     for node_ix in n_alive.into_iterator().skip(1) {
         assert_eq!(batches[0], batches[node_ix.0]);
-    }
-    for exit in exits {
-        let _ = exit.send(());
-    }
-    for handle in handles {
-        let _ = handle.await;
     }
 }
 
