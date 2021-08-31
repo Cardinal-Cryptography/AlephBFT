@@ -689,6 +689,11 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
     let (consensus_exit, exit_stream) = oneshot::channel();
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
+    let starting_round = {
+        let (tx, rx) = oneshot::channel();
+        tx.send(0).unwrap();
+        rx
+    };
     let consensus_handle = spawn_handle.spawn_essential("runway/consensus", async move {
         consensus::run(
             consensus_config,
@@ -696,6 +701,7 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
             consensus_sink,
             ordered_batch_tx,
             consensus_spawner,
+            starting_round,
             exit_stream,
         )
         .await
