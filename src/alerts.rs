@@ -210,9 +210,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, MK::Signature>) {
         use ForkingNotification::Forker;
         self.known_forkers.insert(forker, proof.clone());
-        self.notifications_for_units
-            .unbounded_send(Forker(proof))
-            .expect("Channel should be open")
+        self.send_notification_for_units(Forker(proof));
     }
 
     // Correctness rules:
@@ -301,12 +299,10 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         let forker = alert.forker();
         self.known_forkers.insert(forker, alert.proof.clone());
         let alert = Signed::sign(alert, self.keychain).await;
-        self.messages_for_network
-            .unbounded_send((
-                AlertMessage::ForkAlert(alert.clone().into()),
-                Recipient::Everyone,
-            ))
-            .expect("Channel should be open");
+        self.send_message_for_network(
+            AlertMessage::ForkAlert(alert.clone().into()),
+            Recipient::Everyone,
+        );
         self.rmc_alert(forker, alert).await;
     }
 
@@ -346,9 +342,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
                 return;
             }
         };
-        self.messages_for_network
-            .unbounded_send((AlertMessage::ForkAlert(alert.into()), Recipient::Node(node)))
-            .expect("Channel should be open")
+        self.send_message_for_network(AlertMessage::ForkAlert(alert.into()), Recipient::Node(node));
     }
 
     fn on_rmc_message(
@@ -360,17 +354,17 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         if let Some(alert) = self.known_alerts.get(hash) {
             let alert_id = (alert.as_signable().sender, alert.as_signable().forker());
             if self.known_rmcs.get(&alert_id) == Some(hash) || message.is_complete() {
-                self.messages_for_rmc
-                    .unbounded_send(message)
-                    .expect("Channel should be open")
+                let result = self.messages_for_rmc.unbounded_send(message);
+                if result.is_err() {
+                    warn!(target: "AlephBFT-alerter", "{:?} Channel with messages for rmc should be open", self.index());
+                    self.exiting = true;
+                }
             }
         } else {
-            self.messages_for_network
-                .unbounded_send((
-                    AlertMessage::AlertRequest(self.index(), *hash),
-                    Recipient::Node(sender),
-                ))
-                .expect("Channel should be open")
+            self.send_message_for_network(
+                AlertMessage::AlertRequest(self.index(), *hash),
+                Recipient::Node(sender),
+            );
         }
     }
 
@@ -403,21 +397,47 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
             warn!(target: "AlephBFT-alerter","{:?} We have received an incorrect unit commitment from {:?}.", self.index(), alert.sender);
             return;
         }
-        self.notifications_for_units
-            .unbounded_send(ForkingNotification::Units(alert.legit_units.clone()))
-            .expect("Channel should be open")
+        let notification = ForkingNotification::Units(alert.legit_units.clone());
+        self.send_notification_for_units(notification);
     }
 
     fn rmc_message_to_network(
         &mut self,
         message: rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
-        self.messages_for_network
-            .unbounded_send((
-                AlertMessage::RmcMessage(self.index(), message),
-                Recipient::Everyone,
-            ))
-            .expect("Channel should be open")
+        self.send_message_for_network(
+            AlertMessage::RmcMessage(self.index(), message),
+            Recipient::Everyone,
+        );
+    }
+
+    fn send_notification_for_units(
+        &mut self,
+        notification: ForkingNotification<H, D, MK::Signature>,
+    ) {
+        if self
+            .notifications_for_units
+            .unbounded_send(notification)
+            .is_err()
+        {
+            warn!(target: "AlephBFT-alerter", "{:?} Channel with forking notifications should be open", self.index());
+            self.exiting = true;
+        }
+    }
+
+    fn send_message_for_network(
+        &mut self,
+        message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
+        recipient: Recipient,
+    ) {
+        if self
+            .messages_for_network
+            .unbounded_send((message, recipient))
+            .is_err()
+        {
+            warn!(target: "AlephBFT-alerter", "{:?} Channel with notifications for network should be open", self.index());
+            self.exiting = true;
+        }
     }
 
     async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
