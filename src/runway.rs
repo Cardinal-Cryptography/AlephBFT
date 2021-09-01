@@ -634,7 +634,10 @@ where
                     }
                 },
 
-                _ = &mut exit => break,
+                _ = &mut exit => {
+                    info!(target: "AlephBFT-runway", "{:?} received exit signal", self.index());
+                    self.exiting = true;
+                }
             };
             self.move_units_to_consensus();
 

@@ -309,7 +309,7 @@ impl<H: Hasher> Extender<H> {
                 }
                 _ = &mut exit => {
                     info!(target: "AlephBFT-extender", "{:?} received exit signal.", self.node_id);
-                    break
+                    self.exiting = true;
                 }
             }
             if self.exiting {

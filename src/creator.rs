@@ -162,11 +162,12 @@ impl<H: Hasher> Creator<H> {
                     }
                     _ = &mut exit => {
                         info!(target: "AlephBFT-creator", "{:?} received exit signal.", self.node_ix);
-                        return;
+                        self.exiting = true;
                     }
                 }
             }
             self.create_unit(round);
+
             if self.exiting {
                 info!(target: "AlephBFT-creator", "{:?} Creator decided to exit.", self.node_ix);
                 break;

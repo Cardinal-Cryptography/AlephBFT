@@ -330,7 +330,10 @@ where
                     ticker = Delay::new(ticker_delay).fuse();
                 },
 
-                _ = &mut exit => break,
+                _ = &mut exit => {
+                    info!(target: "AlephBFT-member", "{:?} received exit signal", self.index());
+                    self.exiting = true;
+                },
             }
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
@@ -466,12 +469,14 @@ pub async fn run_session<
     if !runway_handle.is_terminated() {
         runway_handle.await;
     }
+
     if member_exit.send(()).is_err() {
         debug!(target: "AlephBFT-member", "{:?} Member already stopped.", index);
     }
     if !member_handle.is_terminated() {
         member_handle.await;
     }
+
     if network_exit.send(()).is_err() {
         debug!(target: "AlephBFT-member", "{:?} Network-hub already stopped.", index);
     }

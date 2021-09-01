@@ -13,7 +13,7 @@ use futures::{
     channel::{mpsc, oneshot},
     FutureExt, StreamExt,
 };
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use parking_lot::RwLock;
 use std::{
     collections::{HashMap, HashSet},
@@ -152,6 +152,7 @@ struct Alerter<'a, H: Hasher, D: Data, MK: MultiKeychain> {
     rmc: ReliableMulticast<'a, H::Hash, MK>,
     messages_from_rmc: Receiver<rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>>,
     messages_for_rmc: Sender<rmc::Message<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    exiting: bool,
 }
 
 pub(crate) struct AlertConfig {
@@ -194,6 +195,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
             ),
             messages_from_rmc,
             messages_for_rmc,
+            exiting: false,
         }
     }
 
@@ -443,7 +445,14 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
                     }
                 },
                 multisigned = self.rmc.next_multisigned_hash().fuse() => self.alert_confirmed(multisigned),
-                _ = &mut exit => break,
+                _ = &mut exit => {
+                    info!(target: "AlephBFT-alerter", "{:?} received exit signal", self.index());
+                    self.exiting = true;
+                },
+            }
+            if self.exiting {
+                info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", self.index());
+                break;
             }
         }
     }

@@ -368,8 +368,8 @@ impl<H: Hasher> Terminal<H> {
                     }
                 }
                 _ = &mut exit => {
-                    info!(target: "AlephBFT-terminal", "{:?} received exit signal.", self.node_id);
-                    return
+                    info!(target: "AlephBFT-terminal", "{:?} received exit signal", self.node_id);
+                    self.exiting = true;
                 }
             }
             if self.exiting {
