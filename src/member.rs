@@ -19,7 +19,7 @@ use rand::Rng;
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
-    convert::TryFrom,
+    convert::TryInto,
     fmt::Debug,
     time,
 };
@@ -314,10 +314,9 @@ where
                 },
 
                 event = self.unit_messages_from_network.next() => match event {
-                    Some(message) => {
-                        if self.send_notification_to_runway(message).is_err() {
-                            error!(target: "AlephBFT-member", "{:?} Unable to convert a UnitMessage into an instance of RunwayNotificationIn.", self.index());
-                        }
+                    Some(message) => match message.try_into() {
+                        Ok(notification) => self.send_notification_to_runway(notification),
+                        Err(_) => error!(target: "AlephBFT-member", "{:?} Unable to convert a UnitMessage into an instance of RunwayNotificationIn.", self.index()),
                     },
                     None => {
                         error!(target: "AlephBFT-member", "{:?} Unit message stream from network closed.", self.index());
@@ -343,20 +342,14 @@ where
         debug!(target: "AlephBFT-member", "{:?} Member stopped.", self.index());
     }
 
-    fn send_notification_to_runway(&mut self, message: UnitMessage<H, D, S>) -> Result<(), ()> {
-        match RunwayNotificationIn::try_from(message) {
-            Ok(notification) => {
-                if self
-                    .notifications_for_runway
-                    .unbounded_send(notification)
-                    .is_err()
-                {
-                    warn!(target: "AlephBFT-member", "{:?} Sender to runway with RunwayNotificationIn messages should be open", self.index());
-                    self.exiting = true;
-                }
-                Ok(())
-            }
-            Err(_) => Err(()),
+    fn send_notification_to_runway(&mut self, notification: RunwayNotificationIn<H, D, S>) {
+        if self
+            .notifications_for_runway
+            .unbounded_send(notification)
+            .is_err()
+        {
+            warn!(target: "AlephBFT-member", "{:?} Sender to runway with RunwayNotificationIn messages should be open", self.index());
+            self.exiting = true;
         }
     }
 }
