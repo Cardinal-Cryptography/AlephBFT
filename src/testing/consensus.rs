@@ -1,7 +1,7 @@
 use crate::{
     consensus,
     runway::{NotificationIn, NotificationOut},
-    testing::mock::{gen_config, Hasher64, HonestHub, Spawner},
+    testing::mock::{complete_oneshot, gen_config, Hasher64, HonestHub, Spawner},
     units::{ControlHash, PreUnit, Unit},
     Hasher, NodeIndex, SpawnHandle,
 };
@@ -11,7 +11,6 @@ use futures::{
     stream::StreamExt,
 };
 use log::trace;
-use crate::testing::mock::complete_oneshot;
 
 fn init_log() {
     let _ = env_logger::builder()

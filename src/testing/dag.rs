@@ -16,8 +16,8 @@ use log::{debug, error, trace};
 use rand::{distributions::Open01, prelude::*};
 use std::{cmp, time::Duration};
 
-use std::collections::HashMap;
 use crate::testing::mock::complete_oneshot;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 struct UnitWithParents {

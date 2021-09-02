@@ -583,7 +583,7 @@ pub fn spawn_honest_member(
     (rx_batch, exit_tx, handle)
 }
 
-pub fn complete_oneshot<T>(t: T) -> oneshot::Receiver<T> {
+pub fn complete_oneshot<T: std::fmt::Debug>(t: T) -> oneshot::Receiver<T> {
     let (tx, rx) = oneshot::channel();
     tx.send(t).unwrap();
     rx

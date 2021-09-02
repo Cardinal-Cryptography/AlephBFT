@@ -18,9 +18,11 @@ use futures::{
     pin_mut, FutureExt, StreamExt,
 };
 use log::{debug, error, info, trace, warn};
-use std::time::Duration;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher as _},
+    time::Duration,
+};
 
 /// Type for incoming notifications: Runway to Consensus.
 #[derive(Clone, PartialEq)]
@@ -874,7 +876,7 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
         session_id: config.session_id,
         n_members: config.n_members,
         max_round: config.max_round,
-        salt
+        salt,
     };
     let (runway_exit, exit_stream) = oneshot::channel();
     let runway = Runway::new(runway_config);
