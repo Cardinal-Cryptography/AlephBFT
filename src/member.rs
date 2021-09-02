@@ -359,7 +359,7 @@ where
                     Some(request) => match request {
                         Request::Coord(coord) => { self.not_resolved_coords.remove(&coord); },
                         Request::Parents(u_hash) => { self.not_resolved_parents.remove(&u_hash); },
-                        Request::NewestUnit(_salt) => {
+                        Request::NewestUnit(_) => {
                             // TODO: ensure that the salt is right?
                             self.newest_unit_resolved = true;
                         }

@@ -17,6 +17,7 @@ use rand::{distributions::Open01, prelude::*};
 use std::{cmp, time::Duration};
 
 use std::collections::HashMap;
+use crate::testing::mock::complete_oneshot;
 
 #[derive(Clone)]
 struct UnitWithParents {
@@ -131,11 +132,7 @@ async fn run_consensus_on_dag(
     let (_exit_tx, exit_rx) = oneshot::channel();
     let (batch_tx, mut batch_rx) = mpsc::unbounded();
     let spawner = Spawner::new();
-    let starting_round = {
-        let (tx, rx) = oneshot::channel();
-        tx.send(0).unwrap();
-        rx
-    };
+    let starting_round = complete_oneshot(0);
     spawner.spawn(
         "consensus",
         consensus::run(

@@ -19,6 +19,8 @@ use futures::{
 };
 use log::{debug, error, info, trace, warn};
 use std::time::Duration;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 /// Type for incoming notifications: Runway to Consensus.
 #[derive(Clone, PartialEq)]
@@ -850,6 +852,12 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
 
     let index = config.node_ix;
 
+    let salt = {
+        let mut hasher = DefaultHasher::new();
+        std::time::Instant::now().hash(&mut hasher);
+        hasher.finish()
+    };
+
     let runway_config = RunwayConfig {
         keychain: &keychain,
         data_io,
@@ -866,7 +874,7 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
         session_id: config.session_id,
         n_members: config.n_members,
         max_round: config.max_round,
-        salt: 0,
+        salt
     };
     let (runway_exit, exit_stream) = oneshot::channel();
     let runway = Runway::new(runway_config);
