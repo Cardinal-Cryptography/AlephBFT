@@ -360,7 +360,6 @@ where
                         Request::Coord(coord) => { self.not_resolved_coords.remove(&coord); },
                         Request::Parents(u_hash) => { self.not_resolved_parents.remove(&u_hash); },
                         Request::NewestUnit(_) => {
-                            // TODO: ensure that the salt is right?
                             self.newest_unit_resolved = true;
                         }
                     },
