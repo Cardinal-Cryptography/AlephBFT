@@ -494,13 +494,10 @@ where
         &mut self,
         unchecked_response: UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
     ) {
-        let starting_round_sender = match self.starting_round_sender.take() {
-            Some(sender) => sender,
-            None => {
-                log::debug!(target: "AlephBFT-member", "Starting round already sent, ignoring newest unit response");
-                return;
-            }
-        };
+        if self.starting_round_sender.is_none() {
+            log::debug!(target: "AlephBFT-member", "Starting round already sent, ignoring newest unit response");
+            return;
+        }
         let response = match unchecked_response.check(self.keybox) {
             Ok(checked) => checked.into_signable(),
             Err(e) => {
@@ -515,17 +512,17 @@ where
         }
 
         if let Some(unchecked_unit) = response.unit {
-            if unchecked_unit.as_signable().creator() != self.index() {
-                log::debug!(target: "AlephBFT-member", "Not our unit in a response:  {:?}", unchecked_unit.into_signable());
-                return;
-            }
-            let checked_unit = match unchecked_unit.check(self.keybox) {
-                Ok(checked) => checked,
-                Err(e) => {
-                    log::debug!(target: "AlephBFT-member", "incorrectly signed unit in a response: {:?}", e);
+            let checked_unit = match self.validate_unit(unchecked_unit) {
+                Some(unit) => unit,
+                None => {
+                    log::debug!(target: "AlephBFT-member", "ivalid unit in response");
                     return;
                 }
             };
+            if checked_unit.as_signable().creator() != self.index() {
+                log::debug!(target: "AlephBFT-member", "Not our unit in a response:  {:?}", checked_unit.into_signable());
+                return;
+            }
             if self
                 .store
                 .unit_by_hash(&checked_unit.as_signable().hash())
@@ -540,21 +537,35 @@ where
         }
         self.newest_unit_responders.insert(response.responder);
         if self.is_starting_round_ready() {
-            trace!(target: "AlephBFT-runway", "sending starting round to creator: {}", self.starting_round_value);
-            if starting_round_sender
-                .send(self.starting_round_value)
-                .is_err()
-            {
-                error!(target: "AlephBFT-runway", "unable to send starting round to creator");
-            }
-        } else {
-            trace!(target: "AlephBFT-runway", "starting round not ready yet, continue collecting newest unit responses");
-            self.starting_round_sender = Some(starting_round_sender);
+            self.resolve_starting_round();
         }
     }
 
     fn is_starting_round_ready(&self) -> bool {
         self.after_catch_up_delay && self.newest_unit_responders.len() + 1 >= self.threshold.0
+    }
+
+    fn resolve_starting_round(&mut self) {
+        let starting_round_sender = match self.starting_round_sender.take() {
+            Some(sender) => sender,
+            None => {
+                warn!(target: "AlephBFT-runway", "Trying to resolve starting round after resolving it earlier");
+                return;
+            }
+        };
+        if starting_round_sender
+            .send(self.starting_round_value)
+            .is_err()
+        {
+            error!(target: "AlephBFT-runway", "unable to send starting round to creator");
+            return;
+        }
+        if let Err(e) = self
+            .resolved_requests
+            .unbounded_send(Request::NewestUnit(self.salt))
+        {
+            error!(target: "AlephBFT-runway", "unable to send resolved request:  {}", e);
+        }
     }
 
     fn resolve_missing_parents(&mut self, u_hash: &H::Hash) {
@@ -750,6 +761,9 @@ where
 
                 _ = catch_up_delay => {
                     self.after_catch_up_delay = true;
+                    if self.is_starting_round_ready() {
+                        self.resolve_starting_round();
+                    }
                 }
 
                 _ = &mut exit => break,
