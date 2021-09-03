@@ -131,6 +131,7 @@ where
     starting_round_value: Round,
     newest_unit_responders: HashSet<NodeIndex>,
     salt: u64,
+    exiting: bool,
 }
 
 struct RunwayConfig<'a, H: Hasher, D: Data, DP: DataIO<D>, MK: MultiKeychain> {
@@ -188,6 +189,7 @@ where
             n_members: config.n_members,
             newest_unit_responders: HashSet::new(),
             salt: config.salt,
+            exiting: false,
         }
     }
 
@@ -246,9 +248,7 @@ where
 
     fn resolve_missing_coord(&mut self, coord: &UnitCoord) {
         if self.missing_coords.remove(coord) {
-            self.resolved_requests
-                .unbounded_send(Request::Coord(*coord))
-                .expect("resolved_requests channel should be open")
+            self.send_resolved_request_notification(Request::RequestCoord(*coord));
         }
     }
 
@@ -341,9 +341,10 @@ where
     fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, MK::Signature>) {
         let alerted_units = self.store.mark_forker(forker);
         let alert = self.form_alert(proof, alerted_units);
-        self.alerts_for_alerter
-            .unbounded_send(alert)
-            .expect("Channel to alerter should be open")
+        if self.alerts_for_alerter.unbounded_send(alert).is_err() {
+            warn!(target: "AlephBFT-runway", "{:?} Channel to alerter should be open", self.index());
+            self.exiting = true;
+        }
     }
 
     fn form_alert(
@@ -364,12 +365,10 @@ where
 
         if let Some(su) = maybe_su {
             trace!(target: "AlephBFT-runway", "{:?} Answering fetch request for coord {:?} from {:?}.", self.index(), coord, node_id);
-            self.unit_messages_for_network
-                .unbounded_send(RunwayNotificationOut::Response(
-                    Response::Coord(su.into()),
-                    node_id,
-                ))
-                .expect("unit_messages_for_network channel should be open")
+            self.send_message_for_network(RunwayNotificationOut::Response(
+                Response::ResponseCoord(su.into()),
+                node_id,
+            ));
         } else {
             trace!(target: "AlephBFT-runway", "{:?} Not answering fetch request for coord {:?}. Unit not in store.", self.index(), coord);
         }
@@ -395,12 +394,10 @@ where
                     return;
                 }
             }
-            self.unit_messages_for_network
-                .unbounded_send(RunwayNotificationOut::Response(
-                    Response::Parents(u_hash, full_units),
-                    node_id,
-                ))
-                .expect("unit_messages_for_network channel should be open")
+            self.send_message_for_network(RunwayNotificationOut::Response(
+                Response::ResponseParents(u_hash, full_units),
+                node_id,
+            ));
         } else {
             trace!(target: "AlephBFT-runway", "{:?} Not answering parents request for hash {:?}. Unit not in DAG yet.", self.index(), u_hash);
         }
@@ -574,16 +571,8 @@ where
 
     fn resolve_missing_parents(&mut self, u_hash: &H::Hash) {
         if self.missing_parents.remove(u_hash) {
-            self.resolved_requests
-                .unbounded_send(Request::Parents(*u_hash))
-                .expect("resolved_requests channel should be open")
+            self.send_resolved_request_notification(Request::RequestParents(*u_hash));
         }
-    }
-
-    fn send_consensus_notification(&mut self, notification: NotificationIn<H>) {
-        self.tx_consensus
-            .unbounded_send(notification)
-            .expect("Channel to consensus should be open")
     }
 
     async fn on_create(&mut self, u: PreUnit<H>) {
@@ -595,9 +584,7 @@ where
         self.store.add_unit(signed_unit.clone(), false);
 
         trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), hash);
-        self.unit_messages_for_network
-            .unbounded_send(RunwayNotificationOut::NewUnit(signed_unit.into()))
-            .expect("network's channel should be open")
+        self.send_message_for_network(RunwayNotificationOut::NewUnit(signed_unit.into()));
     }
 
     fn on_alert_notification(&mut self, notification: ForkingNotification<H, D, MK::Signature>) {
@@ -646,12 +633,10 @@ where
         coords.retain(|coord| !self.store.contains_coord(coord));
         for coord in coords {
             if self.missing_coords.insert(coord) {
-                self.unit_messages_for_network
-                    .unbounded_send(RunwayNotificationOut::Request(
-                        Request::Coord(coord),
-                        Recipient::Node(coord.creator()),
-                    ))
-                    .expect("unit_messages_for_network channel should be open")
+                self.send_message_for_network(RunwayNotificationOut::Request(
+                    Request::RequestCoord(coord),
+                    Recipient::Node(coord.creator()),
+                ));
             }
         }
     }
@@ -676,12 +661,10 @@ where
                 Recipient::Everyone
             };
             if self.missing_parents.insert(u_hash) {
-                self.unit_messages_for_network
-                    .unbounded_send(RunwayNotificationOut::Request(
-                        Request::Parents(u_hash),
-                        recipient,
-                    ))
-                    .expect("unit_messages_for_network channel should be open")
+                self.send_message_for_network(RunwayNotificationOut::Request(
+                    Request::RequestParents(u_hash),
+                    recipient,
+                ));
             }
         }
     }
@@ -700,6 +683,34 @@ where
             .collect::<OrderedBatch<D>>();
         if let Err(e) = self.data_io.send_ordered_batch(batch) {
             error!(target: "AlephBFT-runway", "{:?} Error when sending batch {:?}.", self.index(), e);
+        }
+    }
+
+    fn send_message_for_network(
+        &mut self,
+        notification: RunwayNotificationOut<H, D, MK::Signature>,
+    ) {
+        if self
+            .unit_messages_for_network
+            .unbounded_send(notification)
+            .is_err()
+        {
+            warn!(target: "AlephBFT-runway", "{:?} unit_messages_for_network channel should be open", self.index());
+            self.exiting = true;
+        }
+    }
+
+    fn send_resolved_request_notification(&mut self, notification: Request<H>) {
+        if self.resolved_requests.unbounded_send(notification).is_err() {
+            warn!(target: "AlephBFT-runway", "{:?} resolved_requests channel should be open", self.index());
+            self.exiting = true;
+        }
+    }
+
+    fn send_consensus_notification(&mut self, notification: NotificationIn<H>) {
+        if self.tx_consensus.unbounded_send(notification).is_err() {
+            warn!(target: "AlephBFT-runway", "{:?} Channel to consensus should be open", self.index());
+            self.exiting = true;
         }
     }
 
@@ -770,9 +781,17 @@ where
                     }
                 }
 
-                _ = &mut exit => break,
+                _ = &mut exit => {
+                    info!(target: "AlephBFT-runway", "{:?} received exit signal", self.index());
+                    self.exiting = true;
+                }
             };
             self.move_units_to_consensus();
+
+            if self.exiting {
+                info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
+                break;
+            }
         }
 
         info!(target: "AlephBFT-runway", "{:?} Run ended.", index);
@@ -898,24 +917,25 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
 
     info!(target: "AlephBFT-runway", "{:?} Ending run.", index);
 
-    if runway_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Runway already stopped.", index);
-    }
-    if alerter_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
-    }
     if consensus_exit.send(()).is_err() {
         debug!(target: "AlephBFT-runway", "{:?} Consensus already stopped.", index);
     }
+    if !consensus_handle.is_terminated() {
+        consensus_handle.await.unwrap();
+    }
 
-    if !runway_handle.is_terminated() {
-        runway_handle.await;
+    if alerter_exit.send(()).is_err() {
+        debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
     }
     if !alerter_handle.is_terminated() {
         alerter_handle.await.unwrap();
     }
-    if !consensus_handle.is_terminated() {
-        consensus_handle.await.unwrap();
+
+    if runway_exit.send(()).is_err() {
+        debug!(target: "AlephBFT-runway", "{:?} Runway already stopped.", index);
+    }
+    if !runway_handle.is_terminated() {
+        runway_handle.await;
     }
 
     info!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
