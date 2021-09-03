@@ -248,7 +248,7 @@ where
 
     fn resolve_missing_coord(&mut self, coord: &UnitCoord) {
         if self.missing_coords.remove(coord) {
-            self.send_resolved_request_notification(Request::RequestCoord(*coord));
+            self.send_resolved_request_notification(Request::Coord(*coord));
         }
     }
 
@@ -366,7 +366,7 @@ where
         if let Some(su) = maybe_su {
             trace!(target: "AlephBFT-runway", "{:?} Answering fetch request for coord {:?} from {:?}.", self.index(), coord, node_id);
             self.send_message_for_network(RunwayNotificationOut::Response(
-                Response::ResponseCoord(su.into()),
+                Response::Coord(su.into()),
                 node_id,
             ));
         } else {
@@ -395,7 +395,7 @@ where
                 }
             }
             self.send_message_for_network(RunwayNotificationOut::Response(
-                Response::ResponseParents(u_hash, full_units),
+                Response::Parents(u_hash, full_units),
                 node_id,
             ));
         } else {
@@ -571,7 +571,7 @@ where
 
     fn resolve_missing_parents(&mut self, u_hash: &H::Hash) {
         if self.missing_parents.remove(u_hash) {
-            self.send_resolved_request_notification(Request::RequestParents(*u_hash));
+            self.send_resolved_request_notification(Request::Parents(*u_hash));
         }
     }
 
@@ -634,7 +634,7 @@ where
         for coord in coords {
             if self.missing_coords.insert(coord) {
                 self.send_message_for_network(RunwayNotificationOut::Request(
-                    Request::RequestCoord(coord),
+                    Request::Coord(coord),
                     Recipient::Node(coord.creator()),
                 ));
             }
@@ -662,7 +662,7 @@ where
             };
             if self.missing_parents.insert(u_hash) {
                 self.send_message_for_network(RunwayNotificationOut::Request(
-                    Request::RequestParents(u_hash),
+                    Request::Parents(u_hash),
                     recipient,
                 ));
             }

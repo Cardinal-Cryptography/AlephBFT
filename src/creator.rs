@@ -171,15 +171,14 @@ impl<H: Hasher> Creator<H> {
                         self.exiting = true;
                     }
                 }
+                if self.exiting {
+                    info!(target: "AlephBFT-creator", "{:?} Creator decided to exit.", self.node_ix);
+                    return;
+                }
             }
             if let Err(e) = self.create_unit(round) {
                 error!(target: "AlephBFT-creator", "{:?} Unable to broadcast new unit: {}", self.node_ix, e);
                 return;
-            }
-
-            if self.exiting {
-                info!(target: "AlephBFT-creator", "{:?} Creator decided to exit.", self.node_ix);
-                break;
             }
         }
         warn!(target: "AlephBFT-creator", "{:?} Maximum round reached. Not creating another unit.", self.node_ix);
@@ -289,7 +288,7 @@ mod tests {
 
             let (killer, i) = oneshot::channel::<()>();
 
-            let handle = tokio::spawn(async move { creator.create(0, exit).await });
+            let handle = tokio::spawn(async move { creator.create(0, i).await });
 
             killers.push(killer);
             handles.push(handle);
