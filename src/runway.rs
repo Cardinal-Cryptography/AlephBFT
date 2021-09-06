@@ -559,6 +559,7 @@ where
             .is_err()
         {
             error!(target: "AlephBFT-runway", "unable to send starting round to creator");
+            self.exiting = true;
             return;
         }
         if let Err(e) = self
@@ -733,6 +734,7 @@ where
             RunwayNotificationOut::Request(Request::NewestUnit(self.salt), Recipient::Everyone);
         if let Err(e) = self.unit_messages_for_network.unbounded_send(notification) {
             error!(target: "AlephBFT-runway", "{:?} Unable to send the newest unit request: {}", index, e);
+            self.exiting = true
         };
 
         let mut catch_up_delay = futures_timer::Delay::new(Duration::from_secs(5)).fuse();

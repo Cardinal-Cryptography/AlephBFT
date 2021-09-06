@@ -5,12 +5,9 @@ use crate::{
     units::{ControlHash, PreUnit, Unit},
     Hasher, Receiver, Round, Sender,
 };
-use futures::{
-    channel::{mpsc::TrySendError, oneshot},
-    FutureExt, StreamExt,
-};
+use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
-use log::{error, info, trace, warn};
+use log::{info, trace, warn};
 use std::time::Duration;
 
 /// A process responsible for creating new units. It receives all the units added locally to the Dag
@@ -68,7 +65,7 @@ impl<H: Hasher> Creator<H> {
         }
     }
 
-    fn create_unit(&mut self, round: Round) -> Result<(), TrySendError<NotificationOut<H>>> {
+    fn create_unit(&mut self, round: Round) {
         let parents = {
             if round == 0 {
                 NodeMap::new_with_len(self.n_members)
@@ -92,7 +89,6 @@ impl<H: Hasher> Creator<H> {
         }
 
         self.init_round(round + 1);
-        Ok(())
     }
 
     fn add_unit(&mut self, round: Round, pid: NodeIndex, hash: H::Hash) {
@@ -176,10 +172,7 @@ impl<H: Hasher> Creator<H> {
                     return;
                 }
             }
-            if let Err(e) = self.create_unit(round) {
-                error!(target: "AlephBFT-creator", "{:?} Unable to broadcast new unit: {}", self.node_ix, e);
-                return;
-            }
+            self.create_unit(round);
         }
         warn!(target: "AlephBFT-creator", "{:?} Maximum round reached. Not creating another unit.", self.node_ix);
     }
