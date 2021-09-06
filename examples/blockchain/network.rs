@@ -372,8 +372,14 @@ impl NetworkManager {
                     }
                 }
                 event = self.swarm.next().fuse() => {
-                    // called only to poll inner future
-                    panic!("Unexpected event: {:?}", event);
+                    match event {
+                        Some(event) => {
+                            debug!("Received a swarm event: {:?}", event);
+                        }
+                        None => {
+                            panic!("Swarm stream ended");
+                        }
+                    }
                 }
                _ = &mut exit  => break,
             }
