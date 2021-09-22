@@ -237,6 +237,7 @@ where
 
     fn on_unit_received(&mut self, uu: UncheckedSignedUnit<H, D, MK::Signature>, alert: bool) {
         if let Some(su) = self.validate_unit(uu) {
+            self.resolve_missing_coord(&su.as_signable().coord());
             if alert {
                 // Units from alerts explicitly come from forkers, and we want them anyway.
                 self.store.add_unit(su, true);
@@ -254,7 +255,7 @@ where
 
     // TODO: we should return an error and handle it outside
     fn validate_unit(
-        &self,
+        &mut self,
         uu: UncheckedSignedUnit<H, D, MK::Signature>,
     ) -> Option<SignedUnit<'a, H, D, MK>> {
         let su = match uu.check(self.keybox) {
@@ -478,6 +479,7 @@ where
             p_hashes_node_map[ix] = Some(p_hash);
             // There might be some optimization possible here to not validate twice, but overall
             // this piece of code should be executed extremely rarely.
+            self.resolve_missing_coord(&su.as_signable().coord());
             self.add_unit_to_store_unless_fork(su);
         }
 
