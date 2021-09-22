@@ -255,7 +255,7 @@ where
 
     // TODO: we should return an error and handle it outside
     fn validate_unit(
-        &mut self,
+        &self,
         uu: UncheckedSignedUnit<H, D, MK::Signature>,
     ) -> Option<SignedUnit<'a, H, D, MK>> {
         let su = match uu.check(self.keybox) {
@@ -619,7 +619,6 @@ where
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
                     let coord = su.as_signable().coord();
-                    self.resolve_missing_coord(&coord);
                     if coord.creator() == self.index() {
                         trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), h);
                         self.send_message_for_network(RunwayNotificationOut::NewUnit(su.into()));
