@@ -618,8 +618,7 @@ where
                 self.store.add_parents(h, p_hashes);
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
-                    let coord = su.as_signable().coord();
-                    if coord.creator() == self.index() {
+                    if su.as_signable().creator() == self.index() {
                         trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), h);
                         self.send_message_for_network(RunwayNotificationOut::NewUnit(su.into()));
                     }
