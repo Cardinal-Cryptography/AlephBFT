@@ -467,10 +467,22 @@ impl<S: Signature> Decode for SignatureSet<S> {
 
 impl<S: Signature> SignatureSet<S> {
     /// Construct an empty set of signatures for a committee of a given size.
-    pub(crate) fn new(len: NodeCount) -> Self {
+    pub fn new(len: NodeCount) -> Self {
         SignatureSet {
             signatures: NodeMap::new_with_len(len),
         }
+    }
+
+    /// Returns an iterator over all present signatures.
+    pub fn iter(&self) -> impl Iterator<Item = &S> {
+        self.signatures.iter().flatten()
+    }
+
+    /// Returns an iterator over all present signatures by node index.
+    pub fn enumerate(&self) -> impl Iterator<Item = (NodeIndex, &S)> {
+        self.signatures
+            .enumerate()
+            .filter_map(|(id, maybe_sig)| maybe_sig.as_ref().map(|sig| (id, sig)))
     }
 }
 
@@ -538,13 +550,12 @@ impl<KB: KeyBox> MultiKeychain for DefaultMultiKeychain<KB> {
     }
 
     fn is_complete(&self, msg: &[u8], partial: &Self::PartialMultisignature) -> bool {
-        let signature_count = partial.signatures.iter().flatten().count();
+        let signature_count = partial.iter().count();
         if signature_count < self.quorum() {
             return false;
         }
-        partial.signatures.enumerate().all(|(i, sgn)| {
-            sgn.as_ref()
-                .map_or(true, |sgn| self.key_box.verify(msg, sgn, i))
-        })
+        partial
+            .enumerate()
+            .all(|(i, sgn)| self.key_box.verify(msg, sgn, i))
     }
 }
