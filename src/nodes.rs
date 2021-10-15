@@ -1,7 +1,6 @@
 use codec::{Decode, Encode, Error, Input, Output};
 use derive_more::{Add, AddAssign, From, Into, Sub, SubAssign, Sum};
 use std::{
-    iter::FromIterator,
     ops::{Div, Index, IndexMut, Mul},
     vec,
 };
@@ -62,50 +61,65 @@ impl NodeCount {
     }
 }
 
+/// A container keeping items indexed by NodeIndex.
 #[derive(Clone, Debug, Eq, PartialEq, From, Encode, Decode)]
-pub(crate) struct NodeMap<T>(Vec<T>);
+pub struct NodeMap<T>(Vec<Option<T>>);
 
 impl<T> NodeMap<T> {
     /// Constructs a new node map with a given length.
-    pub(crate) fn new_with_len(len: NodeCount) -> Self
+    pub fn new_with_len(len: NodeCount) -> Self
     where
-        T: Default + Clone,
+        T: Clone,
     {
-        let v: Vec<T> = vec![T::default(); len.into()];
+        let v = vec![None; len.into()];
         NodeMap(v)
     }
 
-    /// Returns an iterator over all values.
-    pub(crate) fn iter(&self) -> impl Iterator<Item = &T> {
-        self.0.iter()
+    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (NodeIndex, &'a T)> + 'a> {
+        Box::new(self.0.iter().enumerate().filter_map(|(idx, maybe_value)| {
+            maybe_value.as_ref().map(|value| (NodeIndex(idx), value))
+        }))
     }
 
-    /// Returns an iterator over all values, by node index.
-    pub(crate) fn enumerate(&self) -> impl Iterator<Item = (NodeIndex, &T)> {
-        self.iter()
-            .enumerate()
-            .map(|(idx, value)| (NodeIndex(idx), value))
+    pub fn into_iter(self) -> Box<dyn Iterator<Item = (NodeIndex, T)>>
+    where
+        T: 'static,
+    {
+        Box::new(
+            self.0
+                .into_iter()
+                .enumerate()
+                .filter_map(|(idx, maybe_value)| maybe_value.map(|value| (NodeIndex(idx), value))),
+        )
     }
 }
 
-impl<T> IntoIterator for NodeMap<T> {
-    type Item = T;
-    type IntoIter = vec::IntoIter<T>;
+impl<T: 'static> IntoIterator for NodeMap<T> {
+    type Item = (NodeIndex, T);
+    type IntoIter = Box<dyn Iterator<Item = (NodeIndex, T)>>;
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        self.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a NodeMap<T> {
+    type Item = (NodeIndex, &'a T);
+    type IntoIter = Box<dyn Iterator<Item = (NodeIndex, &'a T)> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
 impl<T> Index<NodeIndex> for NodeMap<T> {
-    type Output = T;
+    type Output = Option<T>;
 
-    fn index(&self, vidx: NodeIndex) -> &T {
+    fn index(&self, vidx: NodeIndex) -> &Option<T> {
         &self.0[vidx.0 as usize]
     }
 }
 
 impl<T> IndexMut<NodeIndex> for NodeMap<T> {
-    fn index_mut(&mut self, vidx: NodeIndex) -> &mut T {
+    fn index_mut(&mut self, vidx: NodeIndex) -> &mut Option<T> {
         &mut self.0[vidx.0 as usize]
     }
 }
@@ -113,7 +127,6 @@ impl<T> IndexMut<NodeIndex> for NodeMap<T> {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct BoolNodeMap(bit_vec::BitVec<u32>);
 
-#[cfg(test)]
 impl BoolNodeMap {
     pub(crate) fn with_capacity(capacity: NodeCount) -> Self {
         BoolNodeMap(bit_vec::BitVec::from_elem(capacity.0, false))
@@ -122,9 +135,7 @@ impl BoolNodeMap {
     pub(crate) fn set(&mut self, i: NodeIndex) {
         self.0.set(i.0, true);
     }
-}
 
-impl BoolNodeMap {
     pub(crate) fn capacity(&self) -> usize {
         self.0.len()
     }
@@ -167,9 +178,9 @@ impl Decode for BoolNodeMap {
     }
 }
 
-impl FromIterator<bool> for BoolNodeMap {
-    fn from_iter<T: IntoIterator<Item = bool>>(iter: T) -> Self {
-        BoolNodeMap(bit_vec::BitVec::from_iter(iter))
+impl<T> From<&NodeMap<T>> for BoolNodeMap {
+    fn from(node_map: &NodeMap<T>) -> Self {
+        BoolNodeMap(node_map.0.iter().map(Option::is_some).collect())
     }
 }
 

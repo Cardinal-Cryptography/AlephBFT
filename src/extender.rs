@@ -11,7 +11,7 @@ use crate::{
 pub(crate) struct ExtenderUnit<H: Hasher> {
     creator: NodeIndex,
     round: Round,
-    parents: NodeMap<Option<H::Hash>>,
+    parents: NodeMap<H::Hash>,
     hash: H::Hash,
     vote: bool,
 }
@@ -21,7 +21,7 @@ impl<H: Hasher> ExtenderUnit<H> {
         creator: NodeIndex,
         round: Round,
         hash: H::Hash,
-        parents: NodeMap<Option<H::Hash>>,
+        parents: NodeMap<H::Hash>,
     ) -> Self {
         ExtenderUnit {
             creator,
@@ -142,7 +142,7 @@ impl<H: Hasher> Extender<H> {
         queue.push_back(self.units.remove(head).unwrap());
         while let Some(u) = queue.pop_front() {
             batch.push(u.hash);
-            for u_hash in u.parents.into_iter().flatten() {
+            for (_, u_hash) in u.parents.into_iter() {
                 if let Some(v) = self.units.remove(&u_hash) {
                     queue.push_back(v);
                 }
@@ -185,7 +185,7 @@ impl<H: Hasher> Extender<H> {
         let mut n_votes_true = NodeCount(0);
         let mut n_votes_false = NodeCount(0);
 
-        for p_hash in voter.parents.iter().flatten() {
+        for (_, p_hash) in voter.parents.iter() {
             let p = self.units.get(p_hash).unwrap();
             if p.vote {
                 n_votes_true += NodeCount(1);

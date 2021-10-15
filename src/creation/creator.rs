@@ -8,7 +8,7 @@ use log::trace;
 pub(super) struct Creator<H: Hasher> {
     node_id: NodeIndex,
     n_members: NodeCount,
-    candidates_by_round: Vec<NodeMap<Option<H::Hash>>>,
+    candidates_by_round: Vec<NodeMap<H::Hash>>,
     n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
 }
 
@@ -52,7 +52,7 @@ impl<H: Hasher> Creator<H> {
         };
 
         let control_hash = ControlHash::new(&parents);
-        let parent_hashes: Vec<H::Hash> = parents.into_iter().flatten().collect();
+        let parent_hashes = parents.into_iter().map(|(_, hash)| hash).collect();
 
         let new_preunit = PreUnit::new(self.node_id, round, control_hash);
         trace!(target: "AlephBFT-creator", "Created a new unit {:?} at round {:?}.", new_preunit, round);

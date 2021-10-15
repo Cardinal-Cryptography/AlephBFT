@@ -39,17 +39,14 @@ pub(crate) struct ControlHash<H: Hasher> {
 }
 
 impl<H: Hasher> ControlHash<H> {
-    pub(crate) fn new(parent_map: &NodeMap<Option<H::Hash>>) -> Self {
-        let hash = Self::combine_hashes(parent_map);
-        let parents = parent_map.iter().map(Option::is_some).collect();
-
+    pub(crate) fn new(parent_map: &NodeMap<H::Hash>) -> Self {
         ControlHash {
-            parents_mask: parents,
-            combined_hash: hash,
+            parents_mask: parent_map.into(),
+            combined_hash: Self::combine_hashes(parent_map),
         }
     }
 
-    pub(crate) fn combine_hashes(parent_map: &NodeMap<Option<H::Hash>>) -> H::Hash {
+    pub(crate) fn combine_hashes(parent_map: &NodeMap<H::Hash>) -> H::Hash {
         parent_map.using_encoded(H::hash)
     }
 

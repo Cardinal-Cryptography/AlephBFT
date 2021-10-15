@@ -10,7 +10,7 @@ pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
     by_hash: HashMap<H::Hash, SignedUnit<'a, H, D, KB>>,
     parents: HashMap<H::Hash, Vec<H::Hash>>,
     //the number of unique nodes that we hold units for a given round
-    is_forker: NodeMap<bool>,
+    is_forker: BoolNodeMap,
     legit_buffer: Vec<SignedUnit<'a, H, D, KB>>,
     max_round: Round,
 }
@@ -22,7 +22,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             by_hash: HashMap::new(),
             parents: HashMap::new(),
             // is_forker is initialized with default values for bool, i.e., false
-            is_forker: NodeMap::new_with_len(n_nodes),
+            is_forker: BoolNodeMap::with_capacity(n_nodes),
             legit_buffer: Vec::new(),
             max_round,
         }
@@ -81,7 +81,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         if self.is_forker[forker] {
             warn!(target: "AlephBFT-unit-store", "Trying to mark the node {:?} as forker for the second time.", forker);
         }
-        self.is_forker[forker] = true;
+        self.is_forker.set(forker);
         (0..=self.max_round)
             .filter_map(|r| self.unit_by_coord(UnitCoord::new(r, forker)).cloned())
             .collect()

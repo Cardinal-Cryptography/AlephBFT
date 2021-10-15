@@ -28,7 +28,7 @@ pub struct TerminalUnit<H: Hasher> {
     // and hashes of parents are being added at the time we receive a given coord. Once the parents map is complete
     // we test whether the hash of parents agains the control_hash in the unit. If the check fails, we request hashes
     // of parents of this unit via a NotificationOut.
-    parents: NodeMap<Option<H::Hash>>,
+    parents: NodeMap<H::Hash>,
     n_miss_par_decoded: NodeCount,
     n_miss_par_dag: NodeCount,
     status: UnitStatus,
@@ -247,7 +247,7 @@ impl<H: Hasher> Terminal<H> {
             }
         }
         let mut parent_hashes = Vec::new();
-        for p_hash in u.parents.iter().flatten() {
+        for (_, p_hash) in u.parents.iter() {
             parent_hashes.push(*p_hash);
         }
 
@@ -283,7 +283,7 @@ impl<H: Hasher> Terminal<H> {
     fn inspect_parents_in_dag(&mut self, u_hash: &H::Hash) {
         let u_parents = self.unit_store.get(u_hash).unwrap().parents.clone();
         let mut n_parents_in_dag = NodeCount(0);
-        for p_hash in u_parents.into_iter().flatten() {
+        for (_, p_hash) in u_parents.into_iter() {
             let maybe_p = self.unit_store.get(&p_hash);
             // p might not be even in store because u might be a unit with wrong control hash
             match maybe_p {
