@@ -66,7 +66,7 @@ impl<H: Hasher> Creator<H> {
         self.init_round(round);
         if self.candidates_by_round[round as usize].get(pid).is_none() {
             // passing the check above means that we do not have any unit for the pair (round, pid) yet
-            self.candidates_by_round[round as usize].set(pid, hash);
+            self.candidates_by_round[round as usize].insert(pid, hash);
             self.n_candidates_by_round[round as usize] += NodeCount(1);
         }
     }

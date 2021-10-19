@@ -72,7 +72,7 @@ impl<'a> MaliciousMember<'a> {
             let coord = UnitCoord::new(round - 1, ix);
             if let Some(su) = self.unit_store.get(&coord) {
                 let hash: <Hasher64 as Hasher>::Hash = su.as_signable().hash();
-                parents.set(ix, hash);
+                parents.insert(ix, hash);
                 count += 1;
             }
         }

@@ -441,7 +441,7 @@ impl<S: Signature> PartialMultisignature for SignatureSet<S> {
     type Signature = S;
 
     fn add_signature(mut self, signature: &Self::Signature, index: NodeIndex) -> Self {
-        self.set(index, signature.clone());
+        self.insert(index, signature.clone());
         self
     }
 }

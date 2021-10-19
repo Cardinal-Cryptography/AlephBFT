@@ -177,7 +177,7 @@ impl<H: Hasher> Extender<H> {
         let relative_round = voter.round - candidate_round;
         if relative_round == 1 {
             return (
-                voter.parents.get(candidate_creator) == &Some(*candidate_hash),
+                voter.parents.get(candidate_creator) == Some(candidate_hash),
                 None,
             );
         }
@@ -338,7 +338,7 @@ mod tests {
         let mut parents = NodeMap::with_size(n_members);
         if round > 0 {
             for i in n_members.into_iterator() {
-                parents.set(i, coord_to_number(i, round - 1, n_members).to_ne_bytes());
+                parents.insert(i, coord_to_number(i, round - 1, n_members).to_ne_bytes());
             }
         }
 

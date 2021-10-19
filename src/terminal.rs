@@ -153,7 +153,7 @@ impl<H: Hasher> Terminal<H> {
         let u = self.unit_store.get_mut(u_hash).unwrap();
         // the above unwraps must succeed, should probably add some debug messages here...
 
-        u.parents.set(pid, *p_hash);
+        u.parents.insert(pid, *p_hash);
         u.n_miss_par_decoded -= NodeCount(1);
         if u.n_miss_par_decoded == NodeCount(0) {
             self.event_queue
@@ -265,7 +265,7 @@ impl<H: Hasher> Terminal<H> {
             return;
         }
         for (counter, i) in u.unit.control_hash().parents().enumerate() {
-            u.parents.set(i, p_hashes[counter]);
+            u.parents.insert(i, p_hashes[counter]);
         }
         trace!(target: "AlephBFT-terminal", "{:?} Updating parent hashes for wrong control hash unit {:?}", self.node_id, u_hash);
         u.n_miss_par_decoded = NodeCount(0);

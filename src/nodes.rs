@@ -110,11 +110,11 @@ impl<T> NodeMap<T> {
         self.into_iter().map(|(_, value)| value)
     }
 
-    pub fn get(&self, node_id: NodeIndex) -> &Option<T> {
-        &self.0[node_id.0]
+    pub fn get(&self, node_id: NodeIndex) -> Option<&T> {
+        self.0[node_id.0].as_ref()
     }
 
-    pub fn set(&mut self, node_id: NodeIndex, value: T) {
+    pub fn insert(&mut self, node_id: NodeIndex, value: T) {
         self.0[node_id.0] = Some(value)
     }
 
