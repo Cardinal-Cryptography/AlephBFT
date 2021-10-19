@@ -243,7 +243,7 @@ fn generate_random_dag(n_members: NodeCount, height: Round, seed: u64) -> Vec<Un
                         let parent = dag[previous_round_index][parent_ix.0]
                             .choose(&mut rng)
                             .unwrap();
-                        parents[*parent_ix] = Some(parent.hash());
+                        parents.set(*parent_ix, parent.hash());
                         curr_n_parents += 1.into();
                         if curr_n_parents == n_parents {
                             break;

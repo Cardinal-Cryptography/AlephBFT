@@ -64,9 +64,9 @@ impl<H: Hasher> Creator<H> {
         let pid = unit.creator();
         let hash = unit.hash();
         self.init_round(round);
-        if self.candidates_by_round[round as usize][pid].is_none() {
+        if self.candidates_by_round[round as usize].get(pid).is_none() {
             // passing the check above means that we do not have any unit for the pair (round, pid) yet
-            self.candidates_by_round[round as usize][pid] = Some(hash);
+            self.candidates_by_round[round as usize].set(pid, hash);
             self.n_candidates_by_round[round as usize] += NodeCount(1);
         }
     }
@@ -81,7 +81,9 @@ impl<H: Hasher> Creator<H> {
 
         self.n_candidates_by_round.len() > prev_round
             && self.n_candidates_by_round[prev_round] >= threshold
-            && self.candidates_by_round[prev_round][self.node_id].is_some()
+            && self.candidates_by_round[prev_round]
+                .get(self.node_id)
+                .is_some()
     }
 }
 

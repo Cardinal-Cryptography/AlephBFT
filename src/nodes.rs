@@ -1,7 +1,7 @@
 use codec::{Decode, Encode, Error, Input, Output};
 use derive_more::{Add, AddAssign, From, Into, Sub, SubAssign, Sum};
 use std::{
-    ops::{Div, Index, IndexMut, Mul},
+    ops::{Div, Index, Mul},
     vec,
 };
 
@@ -110,6 +110,14 @@ impl<T> NodeMap<T> {
         self.into_iter().map(|(_, value)| value)
     }
 
+    pub fn get(&self, node_id: NodeIndex) -> &Option<T> {
+        &self.0[node_id.0]
+    }
+
+    pub fn set(&mut self, node_id: NodeIndex, value: T) {
+        self.0[node_id.0] = Some(value)
+    }
+
     pub(crate) fn to_subset(&self) -> NodeSubset {
         NodeSubset(self.0.iter().map(Option::is_some).collect())
     }
@@ -136,20 +144,6 @@ impl<'a, T> IntoIterator for &'a mut NodeMap<T> {
     type IntoIter = Box<dyn Iterator<Item = (NodeIndex, &'a mut T)> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
         Box::new(self.iter_mut())
-    }
-}
-
-impl<T> Index<NodeIndex> for NodeMap<T> {
-    type Output = Option<T>;
-
-    fn index(&self, vidx: NodeIndex) -> &Option<T> {
-        &self.0[vidx.0 as usize]
-    }
-}
-
-impl<T> IndexMut<NodeIndex> for NodeMap<T> {
-    fn index_mut(&mut self, vidx: NodeIndex) -> &mut Option<T> {
-        &mut self.0[vidx.0 as usize]
     }
 }
 

@@ -476,7 +476,7 @@ where
             }
             let p_hash = full_unit.hash();
             let ix = full_unit.creator();
-            p_hashes_node_map[ix] = Some(p_hash);
+            p_hashes_node_map.set(ix, p_hash);
             // There might be some optimization possible here to not validate twice, but overall
             // this piece of code should be executed extremely rarely.
             self.resolve_missing_coord(&su.as_signable().coord());
