@@ -109,6 +109,10 @@ impl<T> NodeMap<T> {
     {
         self.into_iter().map(|(_, value)| value)
     }
+
+    pub(crate) fn to_subset(&self) -> NodeSubset {
+        NodeSubset(self.0.iter().map(Option::is_some).collect())
+    }
 }
 
 impl<T: 'static> IntoIterator for NodeMap<T> {
@@ -200,12 +204,6 @@ impl Decode for NodeSubset {
         }
         bv.truncate(capacity);
         Ok(NodeSubset(bv))
-    }
-}
-
-impl<T> From<&NodeMap<T>> for NodeSubset {
-    fn from(node_map: &NodeMap<T>) -> Self {
-        NodeSubset(node_map.0.iter().map(Option::is_some).collect())
     }
 }
 

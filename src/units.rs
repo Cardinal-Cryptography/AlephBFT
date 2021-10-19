@@ -41,7 +41,7 @@ pub(crate) struct ControlHash<H: Hasher> {
 impl<H: Hasher> ControlHash<H> {
     pub(crate) fn new(parent_map: &NodeMap<H::Hash>) -> Self {
         ControlHash {
-            parents_mask: parent_map.into(),
+            parents_mask: parent_map.to_subset(),
             combined_hash: Self::combine_hashes(parent_map),
         }
     }
