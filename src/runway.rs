@@ -456,7 +456,7 @@ where
             return;
         }
 
-        let mut p_hashes_node_map = NodeMap::new_with_len(self.n_members);
+        let mut p_hashes_node_map = NodeMap::with_size(self.n_members);
         for (i, uu) in parents.into_iter().enumerate() {
             let su = match self.validate_unit(uu) {
                 None => {
@@ -487,10 +487,7 @@ where
             warn!(target: "AlephBFT-runway", "{:?} In received parent response the control hash is incorrect {:?}.", self.index(), p_hashes_node_map);
             return;
         }
-        let p_hashes: Vec<_> = p_hashes_node_map
-            .into_iter()
-            .map(|(_, hash)| hash)
-            .collect();
+        let p_hashes: Vec<_> = p_hashes_node_map.into_values().collect();
         self.store.add_parents(u_hash, p_hashes.clone());
         trace!(target: "AlephBFT-runway", "{:?} Succesful parents response for {:?}.", self.index(), u_hash);
         self.send_consensus_notification(NotificationIn::UnitParents(u_hash, p_hashes));

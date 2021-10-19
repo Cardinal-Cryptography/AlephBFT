@@ -1,5 +1,5 @@
 use crate::{
-    nodes::BoolNodeMap,
+    nodes::NodeSubset,
     signed::{Signable, Signed, UncheckedSigned},
     Data, Hasher, Index, KeyBox, NodeCount, NodeIndex, NodeMap, Round, SessionId,
 };
@@ -34,7 +34,7 @@ impl UnitCoord {
 /// parents
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub(crate) struct ControlHash<H: Hasher> {
-    pub(crate) parents_mask: BoolNodeMap,
+    pub(crate) parents_mask: NodeSubset,
     pub(crate) combined_hash: H::Hash,
 }
 
@@ -51,7 +51,7 @@ impl<H: Hasher> ControlHash<H> {
     }
 
     pub(crate) fn parents(&self) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.parents_mask.true_indices()
+        self.parents_mask.elements()
     }
 
     pub(crate) fn n_parents(&self) -> NodeCount {
@@ -59,7 +59,7 @@ impl<H: Hasher> ControlHash<H> {
     }
 
     pub(crate) fn n_members(&self) -> NodeCount {
-        NodeCount(self.parents_mask.capacity())
+        NodeCount(self.parents_mask.size())
     }
 }
 

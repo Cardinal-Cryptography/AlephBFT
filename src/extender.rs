@@ -142,7 +142,7 @@ impl<H: Hasher> Extender<H> {
         queue.push_back(self.units.remove(head).unwrap());
         while let Some(u) = queue.pop_front() {
             batch.push(u.hash);
-            for (_, u_hash) in u.parents.into_iter() {
+            for u_hash in u.parents.into_values() {
                 if let Some(v) = self.units.remove(&u_hash) {
                     queue.push_back(v);
                 }
@@ -185,7 +185,7 @@ impl<H: Hasher> Extender<H> {
         let mut n_votes_true = NodeCount(0);
         let mut n_votes_false = NodeCount(0);
 
-        for (_, p_hash) in voter.parents.iter() {
+        for p_hash in voter.parents.values() {
             let p = self.units.get(p_hash).unwrap();
             if p.vote {
                 n_votes_true += NodeCount(1);
@@ -335,7 +335,7 @@ mod tests {
         round: Round,
         n_members: NodeCount,
     ) -> ExtenderUnit<Hasher64> {
-        let mut parents = NodeMap::new_with_len(n_members);
+        let mut parents = NodeMap::with_size(n_members);
         if round > 0 {
             for i in n_members.into_iterator() {
                 parents[i] = Some(coord_to_number(i, round - 1, n_members).to_ne_bytes());

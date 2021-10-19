@@ -67,7 +67,7 @@ pub struct NodeMap<T>(Vec<Option<T>>);
 
 impl<T> NodeMap<T> {
     /// Constructs a new node map with a given length.
-    pub fn new_with_len(len: NodeCount) -> Self
+    pub fn with_size(len: NodeCount) -> Self
     where
         T: Clone,
     {
@@ -75,22 +75,39 @@ impl<T> NodeMap<T> {
         NodeMap(v)
     }
 
-    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (NodeIndex, &'a T)> + 'a> {
-        Box::new(self.0.iter().enumerate().filter_map(|(idx, maybe_value)| {
-            maybe_value.as_ref().map(|value| (NodeIndex(idx), value))
-        }))
+    pub fn iter(&self) -> impl Iterator<Item = (NodeIndex, &T)> {
+        self.0
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, maybe_value)| Some((NodeIndex(idx), maybe_value.as_ref()?)))
     }
 
-    pub fn into_iter(self) -> Box<dyn Iterator<Item = (NodeIndex, T)>>
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (NodeIndex, &mut T)> {
+        self.0
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(idx, maybe_value)| Some((NodeIndex(idx), maybe_value.as_mut()?)))
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = (NodeIndex, T)>
     where
         T: 'static,
     {
-        Box::new(
-            self.0
-                .into_iter()
-                .enumerate()
-                .filter_map(|(idx, maybe_value)| maybe_value.map(|value| (NodeIndex(idx), value))),
-        )
+        self.0
+            .into_iter()
+            .enumerate()
+            .filter_map(|(idx, maybe_value)| Some((NodeIndex(idx), maybe_value?)))
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.iter().map(|(_, value)| value)
+    }
+
+    pub fn into_values(self) -> impl Iterator<Item = T>
+    where
+        T: 'static,
+    {
+        self.into_iter().map(|(_, value)| value)
     }
 }
 
@@ -98,7 +115,7 @@ impl<T: 'static> IntoIterator for NodeMap<T> {
     type Item = (NodeIndex, T);
     type IntoIter = Box<dyn Iterator<Item = (NodeIndex, T)>>;
     fn into_iter(self) -> Self::IntoIter {
-        self.into_iter()
+        Box::new(self.into_iter())
     }
 }
 
@@ -106,7 +123,15 @@ impl<'a, T> IntoIterator for &'a NodeMap<T> {
     type Item = (NodeIndex, &'a T);
     type IntoIter = Box<dyn Iterator<Item = (NodeIndex, &'a T)> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        self.iter()
+        Box::new(self.iter())
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut NodeMap<T> {
+    type Item = (NodeIndex, &'a mut T);
+    type IntoIter = Box<dyn Iterator<Item = (NodeIndex, &'a mut T)> + 'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        Box::new(self.iter_mut())
     }
 }
 
@@ -125,22 +150,22 @@ impl<T> IndexMut<NodeIndex> for NodeMap<T> {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) struct BoolNodeMap(bit_vec::BitVec<u32>);
+pub(crate) struct NodeSubset(bit_vec::BitVec<u32>);
 
-impl BoolNodeMap {
-    pub(crate) fn with_capacity(capacity: NodeCount) -> Self {
-        BoolNodeMap(bit_vec::BitVec::from_elem(capacity.0, false))
+impl NodeSubset {
+    pub(crate) fn with_size(capacity: NodeCount) -> Self {
+        NodeSubset(bit_vec::BitVec::from_elem(capacity.0, false))
     }
 
-    pub(crate) fn set(&mut self, i: NodeIndex) {
+    pub(crate) fn insert(&mut self, i: NodeIndex) {
         self.0.set(i.0, true);
     }
 
-    pub(crate) fn capacity(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.0.len()
     }
 
-    pub(crate) fn true_indices(&self) -> impl Iterator<Item = NodeIndex> + '_ {
+    pub(crate) fn elements(&self) -> impl Iterator<Item = NodeIndex> + '_ {
         self.0
             .iter()
             .enumerate()
@@ -148,14 +173,14 @@ impl BoolNodeMap {
     }
 }
 
-impl Encode for BoolNodeMap {
+impl Encode for NodeSubset {
     fn encode_to<T: Output + ?Sized>(&self, dest: &mut T) {
         (self.0.len() as u32).encode_to(dest);
         self.0.to_bytes().encode_to(dest);
     }
 }
 
-impl Decode for BoolNodeMap {
+impl Decode for NodeSubset {
     fn decode<I: Input>(input: &mut I) -> Result<Self, Error> {
         let capacity = u32::decode(input)? as usize;
         let bytes = Vec::decode(input)?;
@@ -174,17 +199,17 @@ impl Decode for BoolNodeMap {
             }
         }
         bv.truncate(capacity);
-        Ok(BoolNodeMap(bv))
+        Ok(NodeSubset(bv))
     }
 }
 
-impl<T> From<&NodeMap<T>> for BoolNodeMap {
+impl<T> From<&NodeMap<T>> for NodeSubset {
     fn from(node_map: &NodeMap<T>) -> Self {
-        BoolNodeMap(node_map.0.iter().map(Option::is_some).collect())
+        NodeSubset(node_map.0.iter().map(Option::is_some).collect())
     }
 }
 
-impl Index<NodeIndex> for BoolNodeMap {
+impl Index<NodeIndex> for NodeSubset {
     type Output = bool;
 
     fn index(&self, vidx: NodeIndex) -> &bool {
@@ -195,7 +220,7 @@ impl Index<NodeIndex> for BoolNodeMap {
 #[cfg(test)]
 mod tests {
 
-    use crate::nodes::{BoolNodeMap, NodeIndex};
+    use crate::nodes::{NodeIndex, NodeSubset};
     use codec::{Decode, Encode};
     #[test]
     fn decoding_node_index_works() {
@@ -211,15 +236,15 @@ mod tests {
     fn bool_node_map_decoding_works() {
         for len in 0..12 {
             for mask in 0..(1 << len) {
-                let mut bnm = BoolNodeMap::with_capacity(len.into());
+                let mut bnm = NodeSubset::with_size(len.into());
                 for i in 0..len {
                     if (1 << i) & mask != 0 {
-                        bnm.set(i.into());
+                        bnm.insert(i.into());
                     }
                 }
                 let encoded: Vec<_> = bnm.encode();
                 let decoded =
-                    BoolNodeMap::decode(&mut encoded.as_slice()).expect("decode should work");
+                    NodeSubset::decode(&mut encoded.as_slice()).expect("decode should work");
                 assert!(decoded == bnm);
             }
         }
@@ -230,13 +255,13 @@ mod tests {
         let mut encoded = vec![1, 0, 0, 0];
         encoded.extend(vec![128u8].encode());
         //128 encodes bit-vec 10000000
-        let decoded = BoolNodeMap::decode(&mut encoded.as_slice()).expect("decode should work");
-        assert_eq!(decoded, BoolNodeMap([true].iter().cloned().collect()));
+        let decoded = NodeSubset::decode(&mut encoded.as_slice()).expect("decode should work");
+        assert_eq!(decoded, NodeSubset([true].iter().cloned().collect()));
 
         let mut encoded = vec![1, 0, 0, 0];
         encoded.extend(vec![129u8].encode());
         //129 encodes bit-vec 10000001
-        assert!(BoolNodeMap::decode(&mut encoded.as_slice()).is_err());
+        assert!(NodeSubset::decode(&mut encoded.as_slice()).is_err());
     }
 
     #[test]
@@ -244,22 +269,22 @@ mod tests {
         let mut encoded = vec![1, 0, 0, 0];
         encoded.extend(vec![128u8, 0].encode());
         //[128, 0] encodes bit-vec 1000000000000000
-        assert!(BoolNodeMap::decode(&mut encoded.as_slice()).is_err());
+        assert!(NodeSubset::decode(&mut encoded.as_slice()).is_err());
     }
 
     #[test]
     fn decoding_bool_node_map_works() {
-        let bool_node_map = BoolNodeMap([true, false, true, true, true].iter().cloned().collect());
+        let bool_node_map = NodeSubset([true, false, true, true, true].iter().cloned().collect());
         let encoded: Vec<_> = bool_node_map.encode();
-        let decoded = BoolNodeMap::decode(&mut encoded.as_slice()).expect("decode should work");
+        let decoded = NodeSubset::decode(&mut encoded.as_slice()).expect("decode should work");
         assert_eq!(decoded, bool_node_map);
     }
 
     #[test]
     fn test_bool_node_map_has_efficient_encoding() {
-        let mut bnm = BoolNodeMap::with_capacity(100.into());
+        let mut bnm = NodeSubset::with_size(100.into());
         for i in 0..50 {
-            bnm.set(i.into())
+            bnm.insert(i.into())
         }
         assert!(bnm.encode().len() < 20);
     }

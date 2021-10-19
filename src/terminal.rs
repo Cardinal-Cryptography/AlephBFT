@@ -53,7 +53,7 @@ impl<H: Hasher> TerminalUnit<H> {
         let n_parents = unit.control_hash().n_parents();
         TerminalUnit {
             unit: unit.clone(),
-            parents: NodeMap::new_with_len(n_members),
+            parents: NodeMap::with_size(n_members),
             n_miss_par_decoded: n_parents,
             n_miss_par_dag: n_parents,
             status: UnitStatus::ReconstructingParents,
@@ -247,8 +247,8 @@ impl<H: Hasher> Terminal<H> {
             }
         }
         let mut parent_hashes = Vec::new();
-        for (_, p_hash) in u.parents.iter() {
-            parent_hashes.push(*p_hash);
+        for p_hash in u.parents.into_values() {
+            parent_hashes.push(p_hash);
         }
 
         self.send_notification(NotificationOut::AddedToDag(*u_hash, parent_hashes));
@@ -283,7 +283,7 @@ impl<H: Hasher> Terminal<H> {
     fn inspect_parents_in_dag(&mut self, u_hash: &H::Hash) {
         let u_parents = self.unit_store.get(u_hash).unwrap().parents.clone();
         let mut n_parents_in_dag = NodeCount(0);
-        for (_, p_hash) in u_parents.into_iter() {
+        for p_hash in u_parents.into_values() {
             let maybe_p = self.unit_store.get(&p_hash);
             // p might not be even in store because u might be a unit with wrong control hash
             match maybe_p {

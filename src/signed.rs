@@ -497,11 +497,7 @@ impl<KB: KeyBox> MultiKeychain for DefaultMultiKeychain<KB> {
         signature: &Self::Signature,
         index: NodeIndex,
     ) -> Self::PartialMultisignature {
-        SignatureSet::add_signature(
-            SignatureSet::new_with_len(self.node_count()),
-            signature,
-            index,
-        )
+        SignatureSet::add_signature(SignatureSet::with_size(self.node_count()), signature, index)
     }
 
     fn is_complete(&self, msg: &[u8], partial: &Self::PartialMultisignature) -> bool {

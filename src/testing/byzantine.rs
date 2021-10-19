@@ -58,7 +58,7 @@ impl<'a> MaliciousMember<'a> {
 
     fn pick_parents(&self, round: Round) -> Option<NodeMap<Hash64>> {
         // Outputs a parent map if there are enough of them to create a new unit.
-        let mut parents = NodeMap::new_with_len(self.n_members);
+        let mut parents = NodeMap::with_size(self.n_members);
         if round == 0 {
             return Some(parents);
         }

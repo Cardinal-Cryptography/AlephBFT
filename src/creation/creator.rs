@@ -17,7 +17,7 @@ impl<H: Hasher> Creator<H> {
         Creator {
             node_id,
             n_members,
-            candidates_by_round: vec![NodeMap::new_with_len(n_members)],
+            candidates_by_round: vec![NodeMap::with_size(n_members)],
             n_candidates_by_round: vec![NodeCount(0)],
         }
     }
@@ -31,7 +31,7 @@ impl<H: Hasher> Creator<H> {
         if round > self.current_round() {
             let new_size = (round + 1).into();
             self.candidates_by_round
-                .resize(new_size, NodeMap::new_with_len(self.n_members));
+                .resize(new_size, NodeMap::with_size(self.n_members));
             self.n_candidates_by_round.resize(new_size, NodeCount(0));
         }
     }
@@ -45,14 +45,14 @@ impl<H: Hasher> Creator<H> {
         }
         let parents = {
             if round == 0 {
-                NodeMap::new_with_len(self.n_members)
+                NodeMap::with_size(self.n_members)
             } else {
                 self.candidates_by_round[(round - 1) as usize].clone()
             }
         };
 
         let control_hash = ControlHash::new(&parents);
-        let parent_hashes = parents.into_iter().map(|(_, hash)| hash).collect();
+        let parent_hashes = parents.into_values().collect();
 
         let new_preunit = PreUnit::new(self.node_id, round, control_hash);
         trace!(target: "AlephBFT-creator", "Created a new unit {:?} at round {:?}.", new_preunit, round);
