@@ -35,9 +35,7 @@ pub type SessionId = u64;
 
 /// The source of data items that consensus should order.
 ///
-/// AlephBFT internally calls [`DataIO::get_data`] whenever a new unit is created and data needs to be placed inside.
-/// The [`DataIO::send_ordered_batch`] method is called whenever a new round has been decided and thus a new batch of units
-/// (or more precisely the data they carry) is available.
+/// AlephBFT internally calls [`DataProvider::get_data`] whenever a new unit is created and data needs to be placed inside.
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html for a discussion
 /// and examples of how this trait can be implemented.
@@ -46,10 +44,15 @@ pub trait DataProvider<Data> {
     fn get_data(&self) -> Data;
 }
 
+/// The source of finalization of the units that consensus produces.
+///
+/// The [`FinalizationProvider::data_finalized`] method is called whenever a new unit
+/// (or more precisely the data they carry) is available.
 pub trait FinalizationProvider<Data> {
     type Error: Debug + 'static;
 
-    fn data_finalized(&self, d: Data) -> Result<(), Self::Error>;
+    /// Data has been finalized. The calls to this function are ordered by the same order as the units.
+    fn data_finalized(&self, data: Data) -> Result<(), Self::Error>;
 }
 
 /// Indicates that an implementor has been assigned some index.

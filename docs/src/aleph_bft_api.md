@@ -2,19 +2,29 @@
 
 ### 3.1 Required Trait Implementations.
 
-#### 3.1.1 DataIO.
+#### 3.1.1 DataProvider & FinalizationProvider.
 
-The DataIO trait is an abstraction for a component that provides data items and allows to input ordered data items. `DataIO` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
+The DataProvider trait is an abstraction for a component that provides data items and allows to input ordered data items. `DataProvider` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
 
 ```rust
-pub trait DataIO<Data> {
-    type Error: Debug;
+pub trait DataProvider<Data> {
     fn get_data(&self) -> Data;
-    fn send_ordered_batch(&mut self, batch: Vec<Data>) -> Result<(), Self::Error>;
 }
 ```
 
-AlephBFT internally calls `get_data()` whenever a new unit is created and data needs to be placed inside. The `send_ordered_batch` method is called whenever a new round has been decided and thus a new batch of units (or more precisely the data they carry) is available.
+AlephBFT internally calls `get_data()` whenever a new unit is created and data needs to be placed inside.
+
+The FinalizationProvider trait is an abstraction for a component that should handle finalized items. Same as `DataProvider` is parametrized with a `Data` generic type.
+
+```rust
+pub trait FinalizationProvider<Data> {
+    type Error: Debug + 'static;
+    fn data_finalized(&self, data: Data) -> Result<(), Self::Error>;
+}
+```
+
+Calls to function `data_finalized` represent the order of the units that AlephBft produced.
+
 
 #### 3.1.2 Network.
 
@@ -60,11 +70,11 @@ A typical implementation of KeyBox would be a collection of `N` public keys, an 
 
 ### 3.2 Examples
 
-While the implementations of `KeyBox` and `Network` are pretty much universal, the implementation of `DataIO` depends on the specific application. We consider two examples here.
+While the implementations of `KeyBox` and `Network` are pretty much universal, the implementation of `DataProvider` and `FinalizationProvider` depends on the specific application. We consider two examples here.
 
 #### 3.2.1 Blockchain Finality Gadget.
 
-Consider a blockchain that does not have an intrinsic finality mechanism, so for instance it might be a PoW chain with probabilistic finality or a chain based on PoS that uses some probabilistic or round-robin block proposal mechanism. Each of the `N` nodes in the network has its own view of the chain and at certain moments in time there might be conflicts on what the given nodes consider as the "tip" of the blockchain (because of possible forks or network delays). We would like to design a finality mechanism based on AlephBFT that will allow the nodes to have agreement on what the "tip" is. Towards this end we just need to implement a suitable `DataIO` object and filtering of network messages for AlephBFT.
+Consider a blockchain that does not have an intrinsic finality mechanism, so for instance it might be a PoW chain with probabilistic finality or a chain based on PoS that uses some probabilistic or round-robin block proposal mechanism. Each of the `N` nodes in the network has its own view of the chain and at certain moments in time there might be conflicts on what the given nodes consider as the "tip" of the blockchain (because of possible forks or network delays). We would like to design a finality mechanism based on AlephBFT that will allow the nodes to have agreement on what the "tip" is. Towards this end we just need to implement a suitable `DataProvider` object and filtering of network messages for AlephBFT.
 
 For concreteness, suppose each node holds the genesis block `B[0]` and its hash `hash(B[0])` and treats it as the highest finalized block so far.
 
@@ -126,7 +136,7 @@ Since (because of AlephBFT's guarantees) all the nodes locally observe the same 
 
 #### 3.2.2 State Machine Replication (Standalone Blockchain).
 
-Suppose the set of `N` nodes would like to implement State Machine Replication, so roughly speaking, a blockchain. Each of the nodes keeps a local transaction pool: transactions it received from users, and the goal is to keep producing blocks with transactions, or in other words produce a linear ordering of these transactions. As previously, we demonstrate how one should go about implementing the `DataIO` object for this application.
+Suppose the set of `N` nodes would like to implement State Machine Replication, so roughly speaking, a blockchain. Each of the nodes keeps a local transaction pool: transactions it received from users, and the goal is to keep producing blocks with transactions, or in other words produce a linear ordering of these transactions. As previously, we demonstrate how one should go about implementing the `DataProvider` and `FinalizationProvider` objects for this application.
 
 First of all, `Data` in this case is `Vec<Transaction>`, i.e., a list of transactions.
 
@@ -142,7 +152,7 @@ def get_data():
 We simply fetch at most 100 transactions from the local pool and return such a list of transactions.
 
 ```
-def send_ordered_batch(batch):
+def data_finalized(batch):
 	let k be the number of the previous block
 	let tx_list = concatenation of all lists in batch
 	remove duplicated from tx_list
@@ -160,7 +170,7 @@ When it comes to availability, in this case `Data` is not a cryptographic finger
 Let `round_delay` be the average delay between two consecutive rounds in the Dag that can be configured in AlephBFT (default value: 0.5 sec). Under the assumption that there are at most `floor(N/3)` dishonest nodes in the committee and the network behaves reasonably well (we do not specify the details here, but roughly speaking, a weak form of partial synchrony is required) AlephBFT guarantees that:
 
 1. Each honest node will make progress in producing to the `out` stream at a pace of roughly `1` ordered batch per `round_delay` seconds (by default, two batches per second).
-2. For honest nodes that are not "falling behind" significantly (because of network delays or other issues) it is guaranteed that the data items they input in the protocol (from their local `DataIO` object) will be part of the output stream with a delay of roughly `~round_delay*4` from the time of inputting it. It is hard to define what "falling behind" exactly means, but think of a situation where a node's round `r` unit is always arriving much later then the expected time for round `r` to start. When a node is falling behind from time to time, then there is no issue and its data will be still included in the output stream, however if this problem is chronic, then this node's data might not find its way into the output stream at all. If something like that happens, it most likely means that the `round_delay` is configured too aggresively and one should consider extending the delay.
+2. For honest nodes that are not "falling behind" significantly (because of network delays or other issues) it is guaranteed that the data items they input in the protocol (from their local `DataProvider` object) will be part of the output stream with a delay of roughly `~round_delay*4` from the time of inputting it. It is hard to define what "falling behind" exactly means, but think of a situation where a node's round `r` unit is always arriving much later then the expected time for round `r` to start. When a node is falling behind from time to time, then there is no issue and its data will be still included in the output stream, however if this problem is chronic, then this node's data might not find its way into the output stream at all. If something like that happens, it most likely means that the `round_delay` is configured too aggresively and one should consider extending the delay.
 
 We note that the issue of an honest node's data not being included in the stream is not too dangerous for most of the applications. For instance, for the two example scenarios:
 
