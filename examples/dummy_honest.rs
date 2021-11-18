@@ -1,4 +1,4 @@
-use aleph_bft::{run_session, NodeCount, NodeIndex, OrderedBatch, Recipient, TaskHandle};
+use aleph_bft::{run_session, NodeCount, NodeIndex, Recipient, TaskHandle};
 use async_trait::async_trait;
 use codec::{Decode, Encode};
 use futures::{
@@ -8,7 +8,7 @@ use futures::{
     },
     Future, FutureExt, StreamExt,
 };
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use parking_lot::Mutex;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
@@ -62,7 +62,8 @@ async fn main() {
     let (close_network, exit) = oneshot::channel();
     tokio::spawn(async move { manager.run(exit).await });
 
-    let (data_io, mut to_finalize) = DataIO::new();
+    let data_io = DataProvider::new();
+    let (finalization_provider, mut finalized_rx) = FinalizationProvider::new();
 
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
@@ -71,15 +72,22 @@ async fn main() {
             index: my_id.into(),
         };
         let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
-        run_session(config, network, data_io, keybox, Spawner {}, exit).await
+        run_session(
+            config,
+            network,
+            data_io,
+            finalization_provider,
+            keybox,
+            Spawner {},
+            exit,
+        )
+        .await
     });
 
     let mut finalized = HashSet::new();
-    while let Some(batch) = to_finalize.next().await {
-        for data in batch {
-            if !finalized.contains(&data) {
-                finalized.insert(data);
-            }
+    while let Some(data) = finalized_rx.next().await {
+        if !finalized.contains(&data) {
+            finalized.insert(data);
         }
         debug!(target: "dummy-honest", "Got new batch. Finalized = {:?}", finalized.len());
         if finalized.len() == n_finalized {
@@ -105,34 +113,46 @@ impl aleph_bft::Hasher for Hasher64 {
 }
 
 type Data = u64;
-struct DataIO {
+struct DataProvider {
     next_data: Arc<Mutex<u64>>,
-    finalized_tx: UnboundedSender<OrderedBatch<Data>>,
 }
 
-impl aleph_bft::DataIO<Data> for DataIO {
-    type Error = ();
+impl aleph_bft::DataProvider<Data> for DataProvider {
     fn get_data(&self) -> Data {
         let mut data = self.next_data.lock();
         *data += 1;
 
         *data
     }
-    fn send_ordered_batch(&mut self, data: OrderedBatch<Data>) -> Result<(), Self::Error> {
-        self.finalized_tx.unbounded_send(data).map_err(|_| ())
+}
+
+impl DataProvider {
+    fn new() -> Self {
+        Self {
+            next_data: Arc::new(Mutex::new(0)),
+        }
     }
 }
 
-impl DataIO {
-    fn new() -> (Self, UnboundedReceiver<OrderedBatch<Data>>) {
-        let (finalized_tx, finalized_rx) = mpsc::unbounded();
-        (
-            DataIO {
-                next_data: Arc::new(Mutex::new(0)),
-                finalized_tx,
-            },
-            finalized_rx,
-        )
+pub(crate) struct FinalizationProvider {
+    tx: UnboundedSender<Data>,
+}
+
+impl aleph_bft::FinalizationProvider<Data> for FinalizationProvider {
+    type Error = ();
+
+    fn data_finalized(&self, d: Data) -> Result<(), Self::Error> {
+        self.tx.unbounded_send(d).map_err(|e| {
+            error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
+        })
+    }
+}
+
+impl FinalizationProvider {
+    pub(crate) fn new() -> (Self, UnboundedReceiver<Data>) {
+        let (tx, rx) = mpsc::unbounded();
+
+        (Self { tx }, rx)
     }
 }
 

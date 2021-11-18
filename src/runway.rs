@@ -9,8 +9,8 @@ use crate::{
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
-    Config, Data, DataIO, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, OrderedBatch,
-    Receiver, Round, Sender, SessionId, Signature, Signed, SpawnHandle, UncheckedSigned,
+    Config, Data, DataProvider, FinalizationProvider, Hasher, Index, MultiKeychain, NodeCount,
+    NodeIndex, Receiver, Round, Sender, SessionId, Signature, Signed, SpawnHandle, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -102,12 +102,13 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-struct Runway<'a, H, D, MK, DP>
+struct Runway<'a, H, D, MK, DP, FP>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    DP: DataIO<D>,
+    DP: DataProvider<D>,
+    FP: FinalizationProvider<D>,
 {
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
@@ -125,7 +126,8 @@ where
     tx_consensus: Sender<NotificationIn<H>>,
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
-    data_io: DP,
+    data_provider: DP,
+    finalization_provider: FP,
     after_catch_up_delay: bool,
     starting_round_sender: Option<oneshot::Sender<Round>>,
     starting_round_value: Round,
@@ -134,13 +136,21 @@ where
     exiting: bool,
 }
 
-struct RunwayConfig<'a, H: Hasher, D: Data, DP: DataIO<D>, MK: MultiKeychain> {
+struct RunwayConfig<
+    'a,
+    H: Hasher,
+    D: Data,
+    DP: DataProvider<D>,
+    FP: FinalizationProvider<D>,
+    MK: MultiKeychain,
+> {
     node_ix: NodeIndex,
     session_id: SessionId,
     n_members: NodeCount,
     max_round: Round,
     keychain: &'a MK,
-    data_io: DP,
+    data_provider: DP,
+    finalization_provider: FP,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -153,14 +163,15 @@ struct RunwayConfig<'a, H: Hasher, D: Data, DP: DataIO<D>, MK: MultiKeychain> {
     salt: u64,
 }
 
-impl<'a, H, D, MK, DP> Runway<'a, H, D, MK, DP>
+impl<'a, H, D, MK, DP, FP> Runway<'a, H, D, MK, DP, FP>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    DP: DataIO<D>,
+    DP: DataProvider<D>,
+    FP: FinalizationProvider<D>,
 {
-    fn new(config: RunwayConfig<'a, H, D, DP, MK>) -> Self {
+    fn new(config: RunwayConfig<'a, H, D, DP, FP, MK>) -> Self {
         let n_members = config.n_members;
         let threshold = (n_members * 2) / 3 + NodeCount(1);
         let max_round = config.max_round;
@@ -180,7 +191,8 @@ where
             tx_consensus: config.tx_consensus,
             rx_consensus: config.rx_consensus,
             ordered_batch_rx: config.ordered_batch_rx,
-            data_io: config.data_io,
+            data_provider: config.data_provider,
+            finalization_provider: config.finalization_provider,
             after_catch_up_delay: false,
             starting_round_sender: Some(config.starting_round_sender),
             starting_round_value: 0,
@@ -580,7 +592,7 @@ where
 
     async fn on_create(&mut self, u: PreUnit<H>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
-        let data = self.data_io.get_data();
+        let data = self.data_provider.get_data();
         let full_unit = FullUnit::new(u, data, self.session_id);
         let signed_unit = Signed::sign(full_unit, self.keybox).await;
         self.store.add_unit(signed_unit.clone(), false);
@@ -671,7 +683,7 @@ where
     }
 
     fn on_ordered_batch(&mut self, batch: Vec<H::Hash>) {
-        let batch = batch
+        batch
             .iter()
             .map(|h| {
                 self.store
@@ -680,11 +692,11 @@ where
                     .as_signable()
                     .data()
                     .clone()
-            })
-            .collect::<OrderedBatch<D>>();
-        if let Err(e) = self.data_io.send_ordered_batch(batch) {
-            error!(target: "AlephBFT-runway", "{:?} Error when sending batch {:?}.", self.index(), e);
-        }
+            }).for_each(|d| {
+                 if let Err(e) = self.finalization_provider.data_finalized(d) {
+                     error!(target: "AlephBFT-runway", "{:?} Error when sending data {:?}.", self.index(), e);
+                 }
+        });
     }
 
     fn send_message_for_network(
@@ -812,10 +824,11 @@ pub(crate) struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
     pub(crate) resolved_requests: Sender<Request<H>>,
 }
 
-pub(crate) async fn run<H, D, MK, DP, SH>(
+pub(crate) async fn run<H, D, MK, DP, FP, SH>(
     config: Config,
     keychain: MK,
-    data_io: DP,
+    data_provider: DP,
+    finalization_provider: FP,
     spawn_handle: SH,
     runway_io: RunwayIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
@@ -823,7 +836,8 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    DP: DataIO<D>,
+    DP: DataProvider<D>,
+    FP: FinalizationProvider<D>,
     SH: SpawnHandle,
 {
     let (tx_consensus, consensus_stream) = mpsc::unbounded();
@@ -883,7 +897,8 @@ pub(crate) async fn run<H, D, MK, DP, SH>(
 
     let runway_config = RunwayConfig {
         keychain: &keychain,
-        data_io,
+        data_provider,
+        finalization_provider,
         alerts_for_alerter,
         notifications_from_alerter,
         tx_consensus,

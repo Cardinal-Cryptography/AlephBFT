@@ -41,12 +41,15 @@ pub type SessionId = u64;
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html for a discussion
 /// and examples of how this trait can be implemented.
-pub trait DataIO<Data> {
-    type Error: Debug + 'static;
+pub trait DataProvider<Data> {
     /// Outputs a new data item to be ordered
     fn get_data(&self) -> Data;
-    /// Takes a new ordered batch of data item.
-    fn send_ordered_batch(&mut self, data: OrderedBatch<Data>) -> Result<(), Self::Error>;
+}
+
+pub trait FinalizationProvider<Data> {
+    type Error: Debug + 'static;
+
+    fn data_finalized(&self, d: Data) -> Result<(), Self::Error>;
 }
 
 /// Indicates that an implementor has been assigned some index.
