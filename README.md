@@ -4,13 +4,11 @@
 [![Apache 2.0 Licensed][license-image]][license-link]
 ![Rust Stable][rustc-image]
 
-### Aleph Consensus
-
-![aleph logo](logo.jpg "Aleph logo")
+![aleph logo](https://alephzero.org/wp-content/uploads/A0_logotype_bft_dark.png)
 
 ### Overview
 
-Aleph is an asynchronous and Byzantine fault tolerant consensus protocol aimed
+AlephBFT is an asynchronous and Byzantine fault tolerant consensus protocol aimed
 at ordering arbitrary messages (transactions). It has been designed to operate
 continuously under conditions where there is no bound on message-delivery delay
 and under the assumption that there is a significant probability of malicious
