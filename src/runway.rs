@@ -9,7 +9,7 @@ use crate::{
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
-    Config, Data, DataProvider, FinalizationProvider, Hasher, Index, MultiKeychain, NodeCount,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
     NodeIndex, Receiver, Round, Sender, SessionId, Signature, Signed, SpawnHandle, UncheckedSigned,
 };
 use futures::{
@@ -102,13 +102,13 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-struct Runway<'a, H, D, MK, DP, FP>
+struct Runway<'a, H, D, MK, DP, FH>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    FP: FinalizationProvider<D>,
+    FH: FinalizationHandler<D>,
 {
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
@@ -127,7 +127,7 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     data_provider: DP,
-    finalization_provider: FP,
+    finalization_handler: FH,
     after_catch_up_delay: bool,
     starting_round_sender: Option<oneshot::Sender<Round>>,
     starting_round_value: Round,
@@ -141,7 +141,7 @@ struct RunwayConfig<
     H: Hasher,
     D: Data,
     DP: DataProvider<D>,
-    FP: FinalizationProvider<D>,
+    FH: FinalizationHandler<D>,
     MK: MultiKeychain,
 > {
     node_ix: NodeIndex,
@@ -150,7 +150,7 @@ struct RunwayConfig<
     max_round: Round,
     keychain: &'a MK,
     data_provider: DP,
-    finalization_provider: FP,
+    finalization_handler: FH,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -163,15 +163,15 @@ struct RunwayConfig<
     salt: u64,
 }
 
-impl<'a, H, D, MK, DP, FP> Runway<'a, H, D, MK, DP, FP>
+impl<'a, H, D, MK, DP, FH> Runway<'a, H, D, MK, DP, FH>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    FP: FinalizationProvider<D>,
+    FH: FinalizationHandler<D>,
 {
-    fn new(config: RunwayConfig<'a, H, D, DP, FP, MK>) -> Self {
+    fn new(config: RunwayConfig<'a, H, D, DP, FH, MK>) -> Self {
         let n_members = config.n_members;
         let threshold = (n_members * 2) / 3 + NodeCount(1);
         let max_round = config.max_round;
@@ -192,7 +192,7 @@ where
             rx_consensus: config.rx_consensus,
             ordered_batch_rx: config.ordered_batch_rx,
             data_provider: config.data_provider,
-            finalization_provider: config.finalization_provider,
+            finalization_handler: config.finalization_handler,
             after_catch_up_delay: false,
             starting_round_sender: Some(config.starting_round_sender),
             starting_round_value: 0,
@@ -692,11 +692,10 @@ where
                     .as_signable()
                     .data()
                     .clone()
-            }).for_each(|d| {
-                 if let Err(e) = self.finalization_provider.data_finalized(d) {
-                     error!(target: "AlephBFT-runway", "{:?} Error when sending data {:?}.", self.index(), e);
-                 }
-        });
+            })
+            .for_each(|d| {
+                self.finalization_handler.data_finalized(d);
+            });
     }
 
     fn send_message_for_network(
@@ -824,11 +823,11 @@ pub(crate) struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
     pub(crate) resolved_requests: Sender<Request<H>>,
 }
 
-pub(crate) async fn run<H, D, MK, DP, FP, SH>(
+pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     config: Config,
     keychain: MK,
     data_provider: DP,
-    finalization_provider: FP,
+    finalization_handler: FH,
     spawn_handle: SH,
     runway_io: RunwayIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
@@ -837,7 +836,7 @@ pub(crate) async fn run<H, D, MK, DP, FP, SH>(
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    FP: FinalizationProvider<D>,
+    FH: FinalizationHandler<D>,
     SH: SpawnHandle,
 {
     let (tx_consensus, consensus_stream) = mpsc::unbounded();
@@ -898,7 +897,7 @@ pub(crate) async fn run<H, D, MK, DP, FP, SH>(
     let runway_config = RunwayConfig {
         keychain: &keychain,
         data_provider,
-        finalization_provider,
+        finalization_handler,
         alerts_for_alerter,
         notifications_from_alerter,
         tx_consensus,

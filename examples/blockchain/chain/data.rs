@@ -132,13 +132,11 @@ pub(crate) struct FinalizationProvider {
     tx: UnboundedSender<Data>,
 }
 
-impl aleph_bft::FinalizationProvider<Data> for FinalizationProvider {
-    type Error = ();
-
-    fn data_finalized(&self, d: Data) -> Result<(), Self::Error> {
-        self.tx.unbounded_send(d).map_err(|e| {
+impl aleph_bft::FinalizationHandler<Data> for FinalizationProvider {
+    fn data_finalized(&self, d: Data) {
+        if let Err(e) = self.tx.unbounded_send(d) {
             error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
-        })
+        }
     }
 }
 

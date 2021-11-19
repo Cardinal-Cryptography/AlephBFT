@@ -63,7 +63,7 @@ async fn main() {
     tokio::spawn(async move { manager.run(exit).await });
 
     let data_io = DataProvider::new();
-    let (finalization_provider, mut finalized_rx) = FinalizationProvider::new();
+    let (finalization_provider, mut finalized_rx) = FinalizationHandler::new();
 
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
@@ -134,21 +134,19 @@ impl DataProvider {
     }
 }
 
-pub(crate) struct FinalizationProvider {
+pub(crate) struct FinalizationHandler {
     tx: UnboundedSender<Data>,
 }
 
-impl aleph_bft::FinalizationProvider<Data> for FinalizationProvider {
-    type Error = ();
-
-    fn data_finalized(&self, d: Data) -> Result<(), Self::Error> {
-        self.tx.unbounded_send(d).map_err(|e| {
-            error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
-        })
+impl aleph_bft::FinalizationHandler<Data> for FinalizationHandler {
+    fn data_finalized(&self, d: Data) {
+        if let Err(e) = self.tx.unbounded_send(d) {
+            error!(target: "finalization-provider", "Error when sending data from FinalizationHandler {:?}.", e);
+        }
     }
 }
 
-impl FinalizationProvider {
+impl FinalizationHandler {
     pub(crate) fn new() -> (Self, UnboundedReceiver<Data>) {
         let (tx, rx) = mpsc::unbounded();
 

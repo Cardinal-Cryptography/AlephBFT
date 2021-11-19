@@ -26,7 +26,7 @@ use crate::{
     runway::{NotificationIn, NotificationOut},
     units::{Unit, UnitCoord},
     Config, DataProvider as DataProviderT, DelayConfig,
-    FinalizationProvider as FinalizationProviderT, Hasher, Index, KeyBox as KeyBoxT,
+    FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT,
     MultiKeychain as MultiKeychainT, Network as NetworkT, NodeCount, NodeIndex,
     PartialMultisignature as PartialMultisignatureT, Receiver, Recipient, Round, Sender,
     SpawnHandle, TaskHandle,
@@ -472,21 +472,19 @@ impl DataProvider {
     }
 }
 
-pub(crate) struct FinalizationProvider {
+pub(crate) struct FinalizationHandler {
     tx: Sender<Data>,
 }
 
-impl FinalizationProviderT<Data> for FinalizationProvider {
-    type Error = ();
-
-    fn data_finalized(&self, d: Data) -> Result<(), Self::Error> {
-        self.tx.unbounded_send(d).map_err(|e| {
+impl FinalizationHandlerT<Data> for FinalizationHandler {
+    fn data_finalized(&self, d: Data) {
+        if let Err(e) = self.tx.unbounded_send(d) {
             error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
-        })
+        }
     }
 }
 
-impl FinalizationProvider {
+impl FinalizationHandler {
     pub(crate) fn new() -> (Self, Receiver<Data>) {
         let (tx, rx) = unbounded();
 
@@ -546,7 +544,7 @@ pub(crate) async fn run_honest_member<
     config: Config,
     network: N,
     data_provider: DataProvider,
-    finalization_provider: FinalizationProvider,
+    finalization_provider: FinalizationHandler,
     keybox: KeyBox,
     spawn_handle: Spawner,
     exit: oneshot::Receiver<()>,
@@ -585,7 +583,7 @@ pub fn spawn_honest_member(
 ) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
     let data_provider = DataProvider::new(node_index);
 
-    let (finalization_provider, finalization_rx) = FinalizationProvider::new();
+    let (finalization_provider, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();

@@ -46,13 +46,11 @@ pub trait DataProvider<Data> {
 
 /// The source of finalization of the units that consensus produces.
 ///
-/// The [`FinalizationProvider::data_finalized`] method is called whenever a new unit
+/// The [`FinalizationHandler::data_finalized`] method is called whenever a new unit
 /// (or more precisely the data they carry) is available.
-pub trait FinalizationProvider<Data> {
-    type Error: Debug + 'static;
-
+pub trait FinalizationHandler<Data> {
     /// Data has been finalized. The calls to this function are ordered by the same order as the units.
-    fn data_finalized(&self, data: Data) -> Result<(), Self::Error>;
+    fn data_finalized(&self, data: Data);
 }
 
 /// Indicates that an implementor has been assigned some index.
