@@ -46,10 +46,11 @@ pub trait DataProvider<Data> {
 
 /// The source of finalization of the units that consensus produces.
 ///
-/// The [`FinalizationHandler::data_finalized`] method is called whenever a new unit
-/// (or more precisely the data they carry) is available.
+/// The [`FinalizationHandler::data_finalized`] method is called whenever a piece of data input to the algorithm
+/// using [DataProvider::get_data] has been finalized, in order of finalization.
 pub trait FinalizationHandler<Data> {
-    /// Data has been finalized. The calls to this function are ordered by the same order as the units.
+    /// Data, provided by [DataProvider::get_data], has been finalized.
+    /// The calls to this function follow the order of finalization.
     fn data_finalized(&self, data: Data);
 }
 
