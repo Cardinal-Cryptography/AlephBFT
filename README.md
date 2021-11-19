@@ -13,7 +13,7 @@ at ordering arbitrary messages (transactions). It has been designed to operate
 continuously under conditions where there is no bound on message-delivery delay
 and under the assumption that there is a significant probability of malicious
 behavior, making it an excellent fit for blockchain-related applications.
-For more information, check [the paper][paper-link]
+For more information, check [the paper][paper-link].
 
 This repository contains a Rust implementation of AlephBFT that offers a convenient
 API enabling seamless application to various problems. The prime application of
@@ -90,7 +90,7 @@ please refer to the [detailed version][reference-link].
 ### Dependencies
 
 The repository is mainly self-contained. It is implemented using Rust's async features and depends only on the
-`futures` create from the standard library. Moreover, it has some usual dependencies like
+`futures` crate from the standard library. Moreover, it has some usual dependencies like
 `log` and `rand` and one bigger for encoding, namely `parity-scale-codec`. In future work, we plan to get
 rid of this dependency.
 
@@ -177,9 +177,9 @@ tools with `install_cov_tools.sh`.
 
 AlephBFT is licensed under the terms of the the Apache License 2.0.
 
-### Founding
+### Funding
 
-The implementation in this repository is founded by [Aleph Zero Foundation][webpage-link].
+The implementation in this repository is funded by [Aleph Zero Foundation][webpage-link].
 
 [//]: ### "badges"
 [dataio-link]: https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html#311-dataio
