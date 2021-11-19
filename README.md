@@ -4,7 +4,11 @@
 [![Apache 2.0 Licensed][license-image]][license-link]
 ![Rust Stable][rustc-image]
 
-![aleph logo](https://alephzero.org/wp-content/uploads/A0_logotype_bft_dark.png)
+<p align="center">
+  <a href="https://alephzero.org" target="_blank">
+  <img src="https://alephzero.org/wp-content/uploads/A0_logotype_bft_dark.png" />
+  </a>
+</p>
 
 ### Overview
 
