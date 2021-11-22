@@ -4,7 +4,7 @@
 
 #### 3.1.1 DataProvider & FinalizationHandler.
 
-The DataProvider trait is an abstraction for a component that provides data items and allows to input ordered data items. `DataProvider` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
+The DataProvider trait is an abstraction for a component that provides data items. `DataProvider` is parametrized with a `Data` generic type representing the type of items we would like to order. Below we give examples of what these might be.
 
 ```rust
 pub trait DataProvider<Data> {

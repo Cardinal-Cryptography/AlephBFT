@@ -1,6 +1,8 @@
 use crate::{chain::BlockNum, network::NetworkData};
-use futures::channel::{mpsc, mpsc::UnboundedSender};
-use libp2p::futures::channel::mpsc::UnboundedReceiver;
+use futures::channel::{
+    mpsc,
+    mpsc::{UnboundedReceiver, UnboundedSender},
+};
 use log::{debug, error};
 use parking_lot::Mutex;
 use std::{
