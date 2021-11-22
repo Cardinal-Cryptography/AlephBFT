@@ -683,7 +683,7 @@ where
     }
 
     fn on_ordered_batch(&mut self, batch: Vec<H::Hash>) {
-        batch
+        let data_iter: Vec<_> = batch
             .iter()
             .map(|h| {
                 self.store
@@ -693,9 +693,11 @@ where
                     .data()
                     .clone()
             })
-            .for_each(|d| {
-                self.finalization_handler.data_finalized(d);
-            });
+            .collect();
+
+        for d in data_iter {
+            self.finalization_handler.data_finalized(d);
+        }
     }
 
     fn send_message_for_network(

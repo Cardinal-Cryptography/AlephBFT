@@ -51,7 +51,7 @@ pub trait DataProvider<Data> {
 pub trait FinalizationHandler<Data> {
     /// Data, provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
-    fn data_finalized(&self, data: Data);
+    fn data_finalized(&mut self, data: Data);
 }
 
 /// Indicates that an implementor has been assigned some index.
