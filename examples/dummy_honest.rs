@@ -9,12 +9,10 @@ use futures::{
     Future, FutureExt, StreamExt,
 };
 use log::{debug, error, info, warn};
-use parking_lot::Mutex;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     error::Error,
     hash::Hasher as StdHasher,
-    sync::Arc,
     time::Duration,
 };
 
@@ -129,9 +127,7 @@ impl aleph_bft::DataProvider<Data> for DataProvider {
 
 impl DataProvider {
     fn new() -> Self {
-        Self {
-            next_data: 0,
-        }
+        Self { next_data: 0 }
     }
 }
 
