@@ -8,7 +8,7 @@ The DataProvider trait is an abstraction for a component that provides data item
 
 ```rust
 pub trait DataProvider<Data> {
-    fn get_data(&mut self) -> Data;
+    async fn get_data(&mut self) -> Data;
 }
 ```
 
