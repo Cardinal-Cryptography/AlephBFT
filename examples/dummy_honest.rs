@@ -114,23 +114,23 @@ impl aleph_bft::Hasher for Hasher64 {
 
 type Data = u64;
 struct DataProvider {
-    next_data: Arc<Mutex<u64>>,
+    next_data: Data,
 }
 
 #[async_trait]
 impl aleph_bft::DataProvider<Data> for DataProvider {
     async fn get_data(&mut self) -> Data {
-        let mut data = self.next_data.lock();
-        *data += 1;
+        let d = self.next_data;
+        self.next_data += 1;
 
-        *data
+        d
     }
 }
 
 impl DataProvider {
     fn new() -> Self {
         Self {
-            next_data: Arc::new(Mutex::new(0)),
+            next_data: 0,
         }
     }
 }
