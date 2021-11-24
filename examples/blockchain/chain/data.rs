@@ -1,4 +1,5 @@
 use crate::{chain::BlockNum, network::NetworkData};
+use async_trait::async_trait;
 use futures::channel::{
     mpsc,
     mpsc::{UnboundedReceiver, UnboundedSender},
@@ -112,8 +113,9 @@ pub(crate) struct DataProvider {
     current_block: Arc<Mutex<BlockNum>>,
 }
 
+#[async_trait]
 impl aleph_bft::DataProvider<Data> for DataProvider {
-    fn get_data(&self) -> Data {
+    async fn get_data(&mut self) -> Data {
         *self.current_block.lock()
     }
 }
@@ -134,8 +136,9 @@ pub(crate) struct FinalizationProvider {
     tx: UnboundedSender<Data>,
 }
 
+#[async_trait]
 impl aleph_bft::FinalizationHandler<Data> for FinalizationProvider {
-    fn data_finalized(&mut self, d: Data) {
+    async fn data_finalized(&mut self, d: Data) {
         if let Err(e) = self.tx.unbounded_send(d) {
             error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
         }

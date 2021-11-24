@@ -592,7 +592,7 @@ where
 
     async fn on_create(&mut self, u: PreUnit<H>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
-        let data = self.data_provider.get_data();
+        let data = self.data_provider.get_data().await;
         let full_unit = FullUnit::new(u, data, self.session_id);
         let signed_unit = Signed::sign(full_unit, self.keybox).await;
         self.store.add_unit(signed_unit.clone(), false);
@@ -682,7 +682,7 @@ where
         }
     }
 
-    fn on_ordered_batch(&mut self, batch: Vec<H::Hash>) {
+    async fn on_ordered_batch(&mut self, batch: Vec<H::Hash>) {
         let data_iter: Vec<_> = batch
             .iter()
             .map(|h| {
@@ -696,7 +696,7 @@ where
             .collect();
 
         for d in data_iter {
-            self.finalization_handler.data_finalized(d);
+            self.finalization_handler.data_finalized(d).await;
         }
     }
 
@@ -782,7 +782,7 @@ where
                 },
 
                 batch = self.ordered_batch_rx.next() => match batch {
-                    Some(batch) => self.on_ordered_batch(batch),
+                    Some(batch) => self.on_ordered_batch(batch).await,
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Ordered batch stream closed.", index);
                         break;

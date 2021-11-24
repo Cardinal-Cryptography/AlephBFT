@@ -117,8 +117,9 @@ struct DataProvider {
     next_data: Arc<Mutex<u64>>,
 }
 
+#[async_trait]
 impl aleph_bft::DataProvider<Data> for DataProvider {
-    fn get_data(&self) -> Data {
+    async fn get_data(&mut self) -> Data {
         let mut data = self.next_data.lock();
         *data += 1;
 
@@ -138,8 +139,9 @@ pub(crate) struct FinalizationHandler {
     tx: UnboundedSender<Data>,
 }
 
+#[async_trait]
 impl aleph_bft::FinalizationHandler<Data> for FinalizationHandler {
-    fn data_finalized(&mut self, d: Data) {
+    async fn data_finalized(&mut self, d: Data) {
         if let Err(e) = self.tx.unbounded_send(d) {
             error!(target: "finalization-provider", "Error when sending data from FinalizationHandler {:?}.", e);
         }

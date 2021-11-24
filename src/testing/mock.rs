@@ -12,7 +12,7 @@ use futures::{
 };
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{hash_map::DefaultHasher, HashMap},
     hash::Hasher as StdHasher,
     pin::Pin,
@@ -452,13 +452,14 @@ impl PartialMultisignatureT for PartialMultisignature {
 
 pub(crate) struct DataProvider {
     ix: NodeIndex,
-    round_counter: Cell<Round>,
+    round_counter: Round,
 }
 
+#[async_trait]
 impl DataProviderT<Data> for DataProvider {
-    fn get_data(&self) -> Data {
-        let coord = UnitCoord::new(self.round_counter.get(), self.ix);
-        self.round_counter.set(self.round_counter.get() + 1);
+    async fn get_data(&mut self) -> Data {
+        let coord = UnitCoord::new(self.round_counter, self.ix);
+        self.round_counter += 1;
         Data { coord, variant: 0 }
     }
 }
@@ -467,7 +468,7 @@ impl DataProvider {
     pub(crate) fn new(ix: NodeIndex) -> Self {
         Self {
             ix,
-            round_counter: Cell::new(0),
+            round_counter: 0,
         }
     }
 }
@@ -476,8 +477,9 @@ pub(crate) struct FinalizationHandler {
     tx: Sender<Data>,
 }
 
+#[async_trait]
 impl FinalizationHandlerT<Data> for FinalizationHandler {
-    fn data_finalized(&mut self, d: Data) {
+    async fn data_finalized(&mut self, d: Data) {
         if let Err(e) = self.tx.unbounded_send(d) {
             error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
         }

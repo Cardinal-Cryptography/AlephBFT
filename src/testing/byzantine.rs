@@ -285,7 +285,7 @@ async fn small_byzantine_two_forkers() {
     honest_members_agree_on_batches_byzantine(7.into(), 5.into(), 5, 1.0).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn medium_byzantine_ten_forkers() {
     honest_members_agree_on_batches_byzantine(31.into(), 21.into(), 5, 1.0).await;
 }

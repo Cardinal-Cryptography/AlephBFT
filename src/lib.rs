@@ -1,7 +1,7 @@
 //! Implements the Aleph BFT Consensus protocol as a "finality gadget". The [Member] struct
 //! requires access to a network layer, a cryptographic primitive, and a data provider that
 //! gives appropriate access to the set of available data that we need to make consensus on.
-
+use async_trait::async_trait;
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, Future};
 use std::{fmt::Debug, hash::Hash as StdHash, pin::Pin};
@@ -39,19 +39,21 @@ pub type SessionId = u64;
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html for a discussion
 /// and examples of how this trait can be implemented.
+#[async_trait]
 pub trait DataProvider<Data> {
     /// Outputs a new data item to be ordered
-    fn get_data(&self) -> Data;
+    async fn get_data(&mut self) -> Data;
 }
 
 /// The source of finalization of the units that consensus produces.
 ///
 /// The [`FinalizationHandler::data_finalized`] method is called whenever a piece of data input to the algorithm
 /// using [`DataProvider::get_data`] has been finalized, in order of finalization.
+#[async_trait]
 pub trait FinalizationHandler<Data> {
     /// Data, provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
-    fn data_finalized(&mut self, data: Data);
+    async fn data_finalized(&mut self, data: Data);
 }
 
 /// Indicates that an implementor has been assigned some index.
