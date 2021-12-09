@@ -11,7 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}}
     steps:
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: credentials
+        uses: actions-rs/cargo@v1
+        with:
+          command: login
+          args: ${{ secrets.CRATES_IO_TOKEN }}
       - name: publish
         run: |
+          echo 'Uploading to crates.io'
           cargo publish
 

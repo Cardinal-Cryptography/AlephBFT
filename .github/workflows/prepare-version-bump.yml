@@ -1,0 +1,58 @@
+name: Autobump version
+
+on:
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  prepare-new-version:
+    environment: Autobump version
+    runs-on: ubuntu-latest
+    # if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}}
+    steps:
+      - name: cargo-next-install
+        run: |
+          cargo install cargo-next --locked
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+      - name: check-and-bump
+        run: |
+          old_version=`cargo next --get`
+          # If version on PR branch and main branch have no differences in version -> bump it.
+          # Set version in README.md, commit, tag and push to PR branch.
+          # Assuming nominal version for us is the one in the top level Cargo.toml. 
+          if ! git diff ${{ github.head_ref }} ${{ github.base_ref }} -- Cargo.toml | grep -q '^+version ='; then
+            echo 'Version $old_version has NOT been changed manually between ${{ github.head_ref }} and ${{ github.base_ref }}, patching it now.'
+            cargo next --patch
+            new_version=`cargo next --get`
+            echo 'New version is $new_version.'
+            git add Cargo.toml
+          fi
+          new_version=`cargo next --get`
+          # Make sure README has the same version as Cargo.toml.
+          sed -i "s/^version = \"$version\"$/version = \"$new_version\"/" Cargo.toml
+          git add README.md
+          # Publishing changes to PR branch
+          git config user.email "<>"
+          git config user.name "Version autobump"
+          git commit -m "Setting version to $new_version"
+          git tag -a $new_version -m "Version $new_version created at PR ${{ github.base_ref }} -> ${{ github.head_ref }}"
+      - name: push-to-PR
+        run: |
+          git push origin ${{ github.head_ref }}
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: credentials
+        uses: actions-rs/cargo@v1
+        with:
+          command: login
+          args: ${{ secrets.CRATES_IO_TOKEN }}
+      - name: publish
+        run: |
+          if [ -f publishMe ]; then
+            cargo publish
+          fi
