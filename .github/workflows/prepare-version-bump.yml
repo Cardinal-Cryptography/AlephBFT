@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
     - main
+    - test_main
 
 jobs:
   prepare-new-version:
