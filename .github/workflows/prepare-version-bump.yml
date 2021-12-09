@@ -9,7 +9,7 @@ jobs:
   prepare-new-version:
     environment: Autobump version
     runs-on: ubuntu-latest
-    # if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}}
+    # if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}} #TODO: disabled for testing
     steps:
       - name: cargo-next-install
         run: |
