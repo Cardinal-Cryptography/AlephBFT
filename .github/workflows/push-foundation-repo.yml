@@ -20,3 +20,14 @@ jobs:
           token: ${{ secrets.SYNCAZF }}
       - name: Push to Aleph-Zero-Foundation
         run: git push https://x-access-token:${{ secrets.SYNCAZF }}@github.com/aleph-zero-foundation/AlephBFT.git
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: credentials
+        uses: actions-rs/cargo@v1
+        with:
+          command: login
+          args: ${{ secrets.CRATES_IO_TOKEN }}
+      - name: publish
+        run: |
+            cargo publish
