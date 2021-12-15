@@ -1,4 +1,4 @@
-name: Publish AlephBFT main to crates.io.
+name: Sync Cardinal-Cryptography repo with Aleph-Zero-Foundation repo and publishes AlephBFT main to crates.io.
 
 on:
   # NOTE: changed to "manual workflow dispatch" for now.
