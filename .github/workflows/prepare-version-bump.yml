@@ -42,7 +42,10 @@ jobs:
           git config user.email "<>"
           git config user.name "Version autobump"
           git commit -m "Setting version to $new_version"
-          git tag -a $new_version -m "Version $new_version created at PR ${{ github.base_ref }} -> ${{ github.head_ref }}"
+          # Create tag with version if it not exist.
+          if ! git rev-parse "$new_version" >/dev/null 2>&1; then
+            git tag -a $new_version -m "Version $new_version created at PR ${{ github.base_ref }} -> ${{ github.head_ref }}"
+          fi
       - name: push-to-PR
         run: |
           git push --follow-tags
