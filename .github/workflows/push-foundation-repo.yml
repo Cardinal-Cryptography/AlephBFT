@@ -17,6 +17,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: "main"
-          token: ${{ secrets.SYNCAZF || secrets.MY_TOKEN || github.token }}
+          token: ${{ secrets.SYNCAZF }}
       - name: Push to Aleph-Zero-Foundation
         run: git push https://x-access-token:${{ secrets.SYNCAZF }}@github.com/aleph-zero-foundation/AlephBFT.git
