@@ -45,4 +45,4 @@ jobs:
           git tag -a $new_version -m "Version $new_version created at PR ${{ github.base_ref }} -> ${{ github.head_ref }}"
       - name: push-to-PR
         run: |
-          git push
+          git push --follow-tags
