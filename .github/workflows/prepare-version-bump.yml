@@ -1,16 +1,15 @@
-name: Autobump version
+name: Autobump version on PR
 
 on:
   pull_request:
     branches:
     - main
-    - test_main #TODO: disable
 
 jobs:
   prepare-new-version:
     environment: Autobump version
     runs-on: ubuntu-latest
-    # if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}} #TODO: disabled for testing
+    if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}}
     steps:
       - name: cargo-next-install
         run: |
@@ -28,10 +27,10 @@ jobs:
           # Set version in README.md, commit, tag and push to PR branch.
           # Assuming nominal version for us is the one in the top level Cargo.toml. 
           if ! git diff ${{ github.head_ref }} ${{ github.base_ref }} -- Cargo.toml | grep -q '^+version ='; then
-            echo 'Version $old_version has NOT been changed manually between ${{ github.head_ref }} and ${{ github.base_ref }}, patching it now.'
+            echo "Version $old_version has NOT been changed manually between ${{ github.head_ref }} and ${{ github.base_ref }}, patching it now."
             cargo next --patch
             new_version=`cargo next --get`
-            echo 'New version is $new_version.'
+            echo "New version is $new_version."
             git add Cargo.toml
           fi
           new_version=`cargo next --get`
@@ -44,7 +43,7 @@ jobs:
           git commit -m "Setting version to $new_version"
           # Create tag with version if it not exist.
           if ! git rev-parse "$new_version" >/dev/null 2>&1; then
-            git tag -a $new_version -m "Version $new_version created at PR ${{ github.base_ref }} -> ${{ github.head_ref }}"
+            git tag -a $new_version -m "Version $new_version created at PR ${{ github.head_ref }} -> ${{ github.base_ref }}"
           fi
       - name: push-to-PR
         run: |
