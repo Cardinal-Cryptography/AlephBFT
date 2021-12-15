@@ -1,7 +1,11 @@
 name: Sync Cardinal-Cryptography repo with Aleph-Zero-Foundation repo
 
 on:
+  # NOTE: changed to "manual workflow dispatch" for now.
+  # TODO: To be automated again, when workflows stabilize
+  # and pushes to main origin will be forbidden.
   workflow_dispatch:
+
 #  workflow_run:
 #    workflows: ["Autobump version"]
 #    branches: [main]
