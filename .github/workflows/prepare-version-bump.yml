@@ -43,7 +43,7 @@ jobs:
           git tag -a $new_version -m "Version $new_version created at PR ${{ github.base_ref }} -> ${{ github.head_ref }}"
       - name: push-to-PR
         run: |
-          git push origin ${{ github.head_ref }}
+          git push
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
