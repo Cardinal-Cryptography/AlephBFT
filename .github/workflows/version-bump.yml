@@ -1,9 +1,15 @@
 name: Autobump version
 
 on:
-  push:
-    branches:
-    - main
+  workflow_dispatch:
+  # NOTE: changed to "manual workflow dispatch" for now.
+  # TODO: To be automated again, when workflows stabilize
+  # and pushes to main origin will be forbidden.
+  #  push:
+  #    branches:
+  #    - main
+
+
 
 jobs:
   autobump:
