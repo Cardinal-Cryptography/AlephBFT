@@ -1,0 +1,38 @@
+name: Publish to crates.io
+
+on:
+  push:
+    branches:
+      main
+
+jobs:
+  publish:
+    # need to rename environment name after this is merged
+    environment: Autobump version
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'Cardinal-Cryptography/AlephBFT'}}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 2
+      - name: force publish if version bumped
+        run: |
+          if [ -n "$(git diff HEAD~ -- Cargo.toml | grep '^+version =')" ]; then
+            echo "Version in Cargo.toml was bumped in this PR, publishing to crates.io."
+            touch publishMe
+          fi
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - name: credentials
+        uses: actions-rs/cargo@v1
+        with:
+          command: login
+          args: ${{ secrets.CRATES_IO_TOKEN }}
+      - name: publish
+        run: |
+          if [ -f publishMe ]; then
+            echo "Publishing to cargo.io"
+            cargo publish
+          fi

@@ -1,0 +1,21 @@
+name: Check if PR has bumbed versions in Cargo.toml for code changes and if README is synchronized
+
+on:
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  check-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: check-cargo-toml-version-bumped
+        run: ./.github/scripts/check-cargo-toml-version-bumped.sh
+        shell: bash
+      - name: cargo-toml-match-readme-version
+        run: ./.github/scripts/cargo-toml-match-readme-version.sh
+        shell: bash
