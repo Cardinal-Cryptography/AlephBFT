@@ -42,6 +42,7 @@ pub trait KeyBox: Index + Clone + Send + Sync + 'static {
 pub trait PartialMultisignature: Signature {
     type Signature: Signature;
     /// Adds the signature.
+    #[must_use]
     fn add_signature(self, signature: &Self::Signature, index: NodeIndex) -> Self;
 }
 
@@ -440,6 +441,7 @@ pub type SignatureSet<S> = NodeMap<S>;
 impl<S: Signature> PartialMultisignature for SignatureSet<S> {
     type Signature = S;
 
+    #[must_use]
     fn add_signature(mut self, signature: &Self::Signature, index: NodeIndex) -> Self {
         self.insert(index, signature.clone());
         self
