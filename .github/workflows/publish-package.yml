@@ -3,7 +3,9 @@ name: Publish to crates.io
 on:
   push:
     branches:
-      main
+      - main
+    paths:
+      - 'Cargo.toml'
 
 jobs:
   publish:
@@ -16,12 +18,6 @@ jobs:
         uses: actions/checkout@v2
         with:
           fetch-depth: 2
-      - name: force publish if version bumped
-        run: |
-          if [ -n "$(git diff HEAD~ -- Cargo.toml | grep '^+version =')" ]; then
-            echo "Version in Cargo.toml was bumped in this PR, publishing to crates.io."
-            touch publishMe
-          fi
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -32,7 +28,7 @@ jobs:
           args: ${{ secrets.CRATES_IO_TOKEN }}
       - name: publish
         run: |
-          if [ -f publishMe ]; then
-            echo "Publishing to cargo.io"
+          if git diff HEAD~ -- Cargo.toml | grep -q '^+version ='; then
+            echo "Version in Cargo.toml was bumped in this PR, publishing to crates.io."
             cargo publish
           fi
