@@ -107,7 +107,7 @@ pub async fn run<H: Hasher>(
         outgoing_units,
     } = io;
     let starting_round = futures::select! {
-        round =  starting_round => match round {
+        maybe_round =  starting_round => match maybe_round {
             Ok(round) => round,
             Err(e) => {
                 error!(target: "AlephBFT-creator", "Starting round not provided: {}", e);
