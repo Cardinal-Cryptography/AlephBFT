@@ -1,5 +1,5 @@
 use aleph_bft::{
-    DataIO as DataIOT, Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NetworkData,
+    Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NetworkData,
     OrderedBatch, PartialMultisignature as PartialMultisignatureT, Recipient,
 };
 use futures::task::Poll;
@@ -11,7 +11,8 @@ use std::{
 
 use aleph_bft::{DelayConfig, NodeCount, NodeIndex, SpawnHandle, TaskHandle};
 use aleph_mock::{
-    configure_network, gen_config, init_log, spawn_honest_member_with_config, NetworkHook,
+    configure_network, gen_config, Hasher64, init_log, spawn_honest_member_with_config, NetworkHook,
+    Spawner as MSpawner,
 };
 
 use codec::{Decode, Encode, IoReader};
@@ -143,7 +144,7 @@ impl MultiKeychainT for KeyBox {
 }
 
 pub type FuzzNetworkData =
-    NetworkData<aleph_mock::Hasher64, Data, Signature, PartialMultisignature>;
+    NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
 
 struct SpyingNetworkHook<W: Write> {
     node: NodeIndex,
@@ -161,7 +162,7 @@ impl<W: Write> SpyingNetworkHook<W> {
     }
 }
 
-impl<W: Write + Send> NetworkHook<aleph_mock::Hasher64, Data, Signature, PartialMultisignature>
+impl<W: Write + Send> NetworkHook<Hasher64, Data, Signature, PartialMultisignature>
     for SpyingNetworkHook<W>
 {
     fn update_state(&mut self, data: &mut FuzzNetworkData, _: NodeIndex, recipient: NodeIndex) {
@@ -238,7 +239,7 @@ impl<I, C> PlaybackNetwork<I, C> {
 
 #[async_trait::async_trait]
 impl<I: Iterator<Item = FuzzNetworkData> + Send, C: FnOnce() + Send>
-    aleph_bft::Network<aleph_mock::Hasher64, Data, Signature, PartialMultisignature>
+    aleph_bft::Network<Hasher64, Data, Signature, PartialMultisignature>
     for PlaybackNetwork<I, C>
 {
     fn send(&self, _: FuzzNetworkData, _: Recipient) {}
@@ -294,7 +295,7 @@ impl<R: Read> Iterator for ReadToNetworkDataIterator<R> {
 
 #[derive(Clone)]
 struct Spawner {
-    spawner: Arc<aleph_mock::Spawner>,
+    spawner: Arc<MSpawner>,
     idle_mx: Arc<Mutex<()>>,
     wake_flag: Arc<AtomicBool>,
     delay: Duration,
@@ -357,7 +358,7 @@ impl Spawner {
 
     pub fn new(delay_config: &DelayConfig) -> Self {
         Spawner {
-            spawner: Arc::new(aleph_mock::Spawner::new()),
+            spawner: Arc::new(MSpawner::new()),
             idle_mx: Arc::new(Mutex::new(())),
             wake_flag: Arc::new(AtomicBool::new(false)),
             // NOTE this is a magic value used to allow fuzzing tests be able to process enough messages from the PlaybackNetwork

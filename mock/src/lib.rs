@@ -12,7 +12,7 @@ use futures::{
 };
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     collections::{hash_map::DefaultHasher, HashMap},
     hash::Hasher as StdHasher,
     pin::Pin,
@@ -21,10 +21,15 @@ use std::{
     time::Duration,
 };
 
-use aleph_bft::{
-    exponential_slowdown, Config, DataIO as DataIOT, DelayConfig, Hasher, Index, KeyBox as KeyBoxT,
-    Member, MultiKeychain as MultiKeychainT, Network as NetworkT, NodeCount, NodeIndex,
-    OrderedBatch, PartialMultisignature as PartialMultisignatureT, SpawnHandle, TaskHandle,
+use crate::{
+    exponential_slowdown, run_session,
+    runway::{NotificationIn, NotificationOut},
+    units::{Unit, UnitCoord},
+    Config, DataProvider as DataProviderT, DelayConfig,
+    FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT,
+    MultiKeychain as MultiKeychainT, Network as NetworkT, NodeCount, NodeIndex,
+    PartialMultisignature as PartialMultisignatureT, Receiver, Recipient, Round, Sender,
+    SpawnHandle, TaskHandle,
 };
 
 pub fn init_log() {
@@ -67,16 +72,138 @@ impl Hasher for Hasher64 {
     }
 }
 
-pub type Hash64 = <Hasher64 as Hasher>::Hash;
+pub(crate) type Hash64 = <Hasher64 as Hasher>::Hash;
+
+// This struct allows to create a Hub to interconnect several instances of the Consensus engine, without
+// requiring the Member wrapper. The Hub notifies all connected instances about newly created units and
+// is able to answer unit requests as well. WrongControlHashes are not supported, which means that this
+// Hub should be used to run simple tests in honest scenarios only.
+// Usage: 1) create an instance using new(n_members), 2) connect all n_members instances, 0, 1, 2, ..., n_members - 1.
+// 3) run the HonestHub instance as a Future.
+pub(crate) struct HonestHub {
+    n_members: usize,
+    ntfct_out_rxs: HashMap<NodeIndex, UnboundedReceiver<NotificationOut<Hasher64>>>,
+    ntfct_in_txs: HashMap<NodeIndex, UnboundedSender<NotificationIn<Hasher64>>>,
+    units_by_coord: HashMap<UnitCoord, Unit<Hasher64>>,
+}
+
+impl HonestHub {
+    pub(crate) fn new(n_members: usize) -> Self {
+        HonestHub {
+            n_members,
+            ntfct_out_rxs: HashMap::new(),
+            ntfct_in_txs: HashMap::new(),
+            units_by_coord: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn connect(
+        &mut self,
+        node_ix: NodeIndex,
+    ) -> (
+        UnboundedSender<NotificationOut<Hasher64>>,
+        UnboundedReceiver<NotificationIn<Hasher64>>,
+    ) {
+        let (tx_in, rx_in) = unbounded();
+        let (tx_out, rx_out) = unbounded();
+        self.ntfct_in_txs.insert(node_ix, tx_in);
+        self.ntfct_out_rxs.insert(node_ix, rx_out);
+        (tx_out, rx_in)
+    }
+
+    fn send_to_all(&mut self, ntfct: NotificationIn<Hasher64>) {
+        assert!(
+            self.ntfct_in_txs.len() == self.n_members,
+            "Must connect to all nodes before running the hub."
+        );
+        for (_ix, tx) in self.ntfct_in_txs.iter() {
+            tx.unbounded_send(ntfct.clone()).ok();
+        }
+    }
+
+    fn send_to_node(&mut self, node_ix: NodeIndex, ntfct: NotificationIn<Hasher64>) {
+        let tx = self
+            .ntfct_in_txs
+            .get(&node_ix)
+            .expect("Must connect to all nodes before running the hub.");
+        tx.unbounded_send(ntfct).expect("Channel should be open");
+    }
+
+    fn on_notification(&mut self, node_ix: NodeIndex, ntfct: NotificationOut<Hasher64>) {
+        match ntfct {
+            NotificationOut::CreatedPreUnit(pu, _parent_hashes) => {
+                let hash = pu.using_encoded(Hasher64::hash);
+                let u = Unit::new(pu, hash);
+                let coord = UnitCoord::new(u.round(), u.creator());
+                self.units_by_coord.insert(coord, u.clone());
+                self.send_to_all(NotificationIn::NewUnits(vec![u]));
+            }
+            NotificationOut::MissingUnits(coords) => {
+                let mut response_units = Vec::new();
+                for coord in coords {
+                    match self.units_by_coord.get(&coord) {
+                        Some(unit) => {
+                            response_units.push(unit.clone());
+                        }
+                        None => {
+                            panic!("Unit requested that the hub does not know.");
+                        }
+                    }
+                }
+                let ntfct = NotificationIn::NewUnits(response_units);
+                self.send_to_node(node_ix, ntfct);
+            }
+            NotificationOut::WrongControlHash(_u_hash) => {
+                panic!("No support for forks in testing.");
+            }
+            NotificationOut::AddedToDag(_u_hash, _hashes) => {
+                // Safe to ignore in testing.
+                // Normally this is used in Member to answer parents requests.
+            }
+        }
+    }
+}
+
+impl Future for HonestHub {
+    type Output = ();
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let mut ready_ixs: Vec<NodeIndex> = Vec::new();
+        let mut buffer = Vec::new();
+        for (ix, rx) in self.ntfct_out_rxs.iter_mut() {
+            loop {
+                match rx.poll_next_unpin(cx) {
+                    Poll::Ready(Some(ntfct)) => {
+                        buffer.push((*ix, ntfct));
+                    }
+                    Poll::Ready(None) => {
+                        ready_ixs.push(*ix);
+                        break;
+                    }
+                    Poll::Pending => {
+                        break;
+                    }
+                }
+            }
+        }
+        for (ix, ntfct) in buffer {
+            self.on_notification(ix, ntfct);
+        }
+        for ix in ready_ixs {
+            self.ntfct_out_rxs.remove(&ix);
+        }
+        if self.ntfct_out_rxs.is_empty() {
+            return Poll::Ready(());
+        }
+        Poll::Pending
+    }
+}
 
 #[derive(Clone)]
-pub struct Spawner {
-    handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
-}
+pub struct Spawner {}
 
 impl SpawnHandle for Spawner {
     fn spawn(&self, _name: &str, task: impl Future<Output = ()> + Send + 'static) {
-        self.handles.lock().push(tokio::spawn(task))
+        tokio::spawn(task);
     }
 
     fn spawn_essential(
@@ -85,25 +212,17 @@ impl SpawnHandle for Spawner {
         task: impl Future<Output = ()> + Send + 'static,
     ) -> TaskHandle {
         let (res_tx, res_rx) = oneshot::channel();
-        let task = tokio::spawn(async move {
+        tokio::spawn(async move {
             task.await;
             res_tx.send(()).expect("We own the rx.");
         });
-        self.handles.lock().push(task);
         Box::pin(async move { res_rx.await.map_err(|_| ()) })
     }
 }
 
 impl Spawner {
-    pub async fn wait(&self) {
-        for h in self.handles.lock().iter_mut() {
-            let _ = h.await;
-        }
-    }
     pub fn new() -> Self {
-        Spawner {
-            handles: Arc::new(Mutex::new(Vec::new())),
-        }
+        Spawner {}
     }
 }
 
@@ -113,44 +232,27 @@ impl Default for Spawner {
     }
 }
 
-type NetworkReceiver<H, D, S, MS> =
-    UnboundedReceiver<(aleph_bft::NetworkData<H, D, S, MS>, NodeIndex)>;
-type NetworkSender<H, D, S, MS> = UnboundedSender<(aleph_bft::NetworkData<H, D, S, MS>, NodeIndex)>;
+pub type NetworkData = crate::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
+type NetworkReceiver = UnboundedReceiver<(NetworkData, NodeIndex)>;
+type NetworkSender = UnboundedSender<(NetworkData, NodeIndex)>;
 
-pub struct Network<
-    H: aleph_bft::Hasher,
-    D: aleph_bft::Data,
-    S: aleph_bft::Signature,
-    MS: aleph_bft::PartialMultisignature,
-> {
-    rx: UnboundedReceiver<(aleph_bft::NetworkData<H, D, S, MS>, NodeIndex)>,
-    tx: UnboundedSender<(aleph_bft::NetworkData<H, D, S, MS>, NodeIndex)>,
+pub struct Network {
+    rx: NetworkReceiver,
+    tx: NetworkSender,
     peers: Vec<NodeIndex>,
     index: NodeIndex,
 }
 
-impl<
-        H: aleph_bft::Hasher,
-        D: aleph_bft::Data,
-        S: aleph_bft::Signature,
-        MS: aleph_bft::PartialMultisignature,
-    > Network<H, D, S, MS>
-{
+impl Network {
     pub fn index(&self) -> NodeIndex {
         self.index
     }
 }
 
 #[async_trait::async_trait]
-impl<
-        H: aleph_bft::Hasher,
-        D: aleph_bft::Data,
-        S: aleph_bft::Signature,
-        MS: aleph_bft::PartialMultisignature,
-    > NetworkT<H, D, S, MS> for Network<H, D, S, MS>
-{
-    fn send(&self, data: aleph_bft::NetworkData<H, D, S, MS>, recipient: aleph_bft::Recipient) {
-        use aleph_bft::Recipient::*;
+impl NetworkT<Hasher64, Data, Signature, PartialMultisignature> for Network {
+    fn send(&self, data: NetworkData, recipient: Recipient) {
+        use Recipient::*;
         match recipient {
             Node(node) => self
                 .tx
@@ -166,41 +268,25 @@ impl<
         }
     }
 
-    async fn next_event(&mut self) -> Option<aleph_bft::NetworkData<H, D, S, MS>> {
+    async fn next_event(&mut self) -> Option<NetworkData> {
         Some(self.rx.next().await?.0)
     }
 }
 
-struct Peer<
-    H: aleph_bft::Hasher,
-    D: aleph_bft::Data,
-    S: aleph_bft::Signature,
-    MS: aleph_bft::PartialMultisignature,
-> {
-    tx: NetworkSender<H, D, S, MS>,
-    rx: NetworkReceiver<H, D, S, MS>,
+struct Peer {
+    tx: NetworkSender,
+    rx: NetworkReceiver,
 }
 
-pub struct UnreliableRouter<
-    H: aleph_bft::Hasher,
-    D: aleph_bft::Data,
-    S: aleph_bft::Signature,
-    MS: aleph_bft::PartialMultisignature,
-> {
-    peers: RefCell<HashMap<NodeIndex, Peer<H, D, S, MS>>>,
+pub struct UnreliableRouter {
+    peers: RefCell<HashMap<NodeIndex, Peer>>,
     peer_list: Vec<NodeIndex>,
-    hook_list: RefCell<Vec<Box<dyn NetworkHook<H, D, S, MS>>>>,
+    hook_list: RefCell<Vec<Box<dyn NetworkHook>>>,
     reliability: f64, //a number in the range [0, 1], 1.0 means perfect reliability, 0.0 means no message gets through
 }
 
-impl<
-        H: aleph_bft::Hasher,
-        D: aleph_bft::Data,
-        S: aleph_bft::Signature,
-        MS: aleph_bft::PartialMultisignature,
-    > UnreliableRouter<H, D, S, MS>
-{
-    pub fn new(peer_list: Vec<NodeIndex>, reliability: f64) -> Self {
+impl UnreliableRouter {
+    pub(crate) fn new(peer_list: Vec<NodeIndex>, reliability: f64) -> Self {
         UnreliableRouter {
             peers: RefCell::new(HashMap::new()),
             peer_list,
@@ -209,11 +295,11 @@ impl<
         }
     }
 
-    pub fn add_hook<HK: NetworkHook<H, D, S, MS> + 'static>(&mut self, hook: HK) {
+    pub fn add_hook<HK: NetworkHook + 'static>(&mut self, hook: HK) {
         self.hook_list.borrow_mut().push(Box::new(hook));
     }
 
-    pub fn connect_peer(&mut self, peer: NodeIndex) -> Network<H, D, S, MS> {
+    pub(crate) fn connect_peer(&mut self, peer: NodeIndex) -> Network {
         assert!(
             self.peer_list.iter().any(|p| *p == peer),
             "Must connect a peer in the list."
@@ -238,13 +324,7 @@ impl<
     }
 }
 
-impl<
-        H: aleph_bft::Hasher,
-        D: aleph_bft::Data,
-        S: aleph_bft::Signature,
-        MS: aleph_bft::PartialMultisignature,
-    > Future for UnreliableRouter<H, D, S, MS>
-{
+impl Future for UnreliableRouter {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = &mut self;
@@ -294,30 +374,57 @@ impl<
     }
 }
 
-pub trait NetworkHook<
-    H: aleph_bft::Hasher,
-    D: aleph_bft::Data,
-    S: aleph_bft::Signature,
-    MS: aleph_bft::PartialMultisignature,
->: Send
-{
-    fn update_state(
-        &mut self,
-        data: &mut aleph_bft::NetworkData<H, D, S, MS>,
-        sender: NodeIndex,
-        recipient: NodeIndex,
-    );
+pub trait NetworkHook: Send {
+    fn update_state(&mut self, data: &mut NetworkData, sender: NodeIndex, recipient: NodeIndex);
+}
+
+#[derive(Clone)]
+pub(crate) struct AlertHook {
+    alerts_sent_by_connection: Arc<Mutex<HashMap<(NodeIndex, NodeIndex), usize>>>,
+}
+
+impl AlertHook {
+    pub(crate) fn new() -> Self {
+        AlertHook {
+            alerts_sent_by_connection: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub(crate) fn count(&self, sender: NodeIndex, recipient: NodeIndex) -> usize {
+        match self
+            .alerts_sent_by_connection
+            .lock()
+            .get(&(sender, recipient))
+        {
+            Some(count) => *count,
+            None => 0,
+        }
+    }
+}
+
+impl NetworkHook for AlertHook {
+    fn update_state(&mut self, data: &mut NetworkData, sender: NodeIndex, recipient: NodeIndex) {
+        use crate::{alerts::AlertMessage::*, network::NetworkDataInner::*};
+        if let crate::NetworkData(Alert(ForkAlert(_))) = data {
+            *self
+                .alerts_sent_by_connection
+                .lock()
+                .entry((sender, recipient))
+                .or_insert(0) += 1;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Hash)]
 pub struct Data {
-    ix: NodeIndex,
-    id: u64,
+    coord: UnitCoord,
+    variant: u32,
 }
 
 impl Data {
-    fn new(ix: NodeIndex, id: u64) -> Self {
-        Data { ix, id }
+    #[cfg(test)]
+    pub(crate) fn new(coord: UnitCoord, variant: u32) -> Self {
+        Data { coord, variant }
     }
 }
 
@@ -343,46 +450,58 @@ impl PartialMultisignatureT for PartialMultisignature {
     }
 }
 
-pub struct DataIO {
+pub(crate) struct DataProvider {
     ix: NodeIndex,
-    round_counter: Cell<u64>,
-    tx: UnboundedSender<OrderedBatch<Data>>,
+    round_counter: Round,
 }
 
-impl DataIOT<Data> for DataIO {
-    type Error = ();
-    fn get_data(&self) -> Data {
-        self.round_counter.set(self.round_counter.get() + 1);
-        Data::new(self.ix, self.round_counter.get())
-    }
-
-    fn send_ordered_batch(&mut self, data: OrderedBatch<Data>) -> Result<(), ()> {
-        self.tx.unbounded_send(data).map_err(|e| {
-            error!(target: "data-io", "Error when sending data from DataIO {:?}.", e);
-        })
+#[async_trait]
+impl DataProviderT<Data> for DataProvider {
+    async fn get_data(&mut self) -> Data {
+        let coord = UnitCoord::new(self.round_counter, self.ix);
+        self.round_counter += 1;
+        Data { coord, variant: 0 }
     }
 }
 
-impl DataIO {
-    pub fn new(ix: NodeIndex) -> (Self, UnboundedReceiver<OrderedBatch<Data>>) {
-        let (tx, rx) = unbounded();
-        let data_io = DataIO {
+impl DataProvider {
+    pub(crate) fn new(ix: NodeIndex) -> Self {
+        Self {
             ix,
-            round_counter: Cell::new(0),
-            tx,
-        };
-        (data_io, rx)
+            round_counter: 0,
+        }
+    }
+}
+
+pub(crate) struct FinalizationHandler {
+    tx: Sender<Data>,
+}
+
+#[async_trait]
+impl FinalizationHandlerT<Data> for FinalizationHandler {
+    async fn data_finalized(&mut self, d: Data) {
+        if let Err(e) = self.tx.unbounded_send(d) {
+            error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
+        }
+    }
+}
+
+impl FinalizationHandler {
+    pub(crate) fn new() -> (Self, Receiver<Data>) {
+        let (tx, rx) = unbounded();
+
+        (Self { tx }, rx)
     }
 }
 
 #[derive(Clone)]
-pub struct KeyBox {
+pub(crate) struct KeyBox {
     count: NodeCount,
     ix: NodeIndex,
 }
 
 impl KeyBox {
-    pub fn new(count: NodeCount, ix: NodeIndex) -> Self {
+    pub(crate) fn new(count: NodeCount, ix: NodeIndex) -> Self {
         KeyBox { count, ix }
     }
 }
@@ -421,52 +540,74 @@ impl MultiKeychainT for KeyBox {
     }
 }
 
-pub fn configure_network<
-    H: aleph_bft::Hasher,
-    D: aleph_bft::Data,
-    S: aleph_bft::Signature,
-    MS: aleph_bft::PartialMultisignature,
+pub(crate) async fn run_honest_member<
+    N: 'static + NetworkT<Hasher64, Data, Signature, PartialMultisignature>,
 >(
-    n_members: usize,
-    reliability: f64,
-) -> (UnreliableRouter<H, D, S, MS>, Vec<Network<H, D, S, MS>>) {
-    let peer_list = || (0..n_members).map(NodeIndex);
+    config: Config,
+    network: N,
+    data_provider: DataProvider,
+    finalization_provider: FinalizationHandler,
+    keybox: KeyBox,
+    spawn_handle: Spawner,
+    exit: oneshot::Receiver<()>,
+) {
+    run_session(
+        config,
+        network,
+        data_provider,
+        finalization_provider,
+        keybox,
+        spawn_handle,
+        exit,
+    )
+    .await
+}
 
-    let mut router = UnreliableRouter::new(peer_list().collect(), reliability);
+pub fn configure_network(
+    n_members: NodeCount,
+    reliability: f64,
+) -> (UnreliableRouter, Vec<Network>) {
+    let peer_list = n_members.into_iterator().collect();
+    let mut router = UnreliableRouter::new(peer_list, reliability);
     let mut networks = Vec::new();
-    for ix in peer_list() {
+    for ix in n_members.into_iterator() {
         let network = router.connect_peer(ix);
         networks.push(network);
     }
     (router, networks)
 }
 
-pub fn spawn_honest_member_generic<D: aleph_bft::Data, H: Hasher, K: MultiKeychainT>(
-    spawner: impl SpawnHandle,
+pub fn spawn_honest_member(
+    spawner: Spawner,
     node_index: NodeIndex,
-    n_members: usize,
-    network: impl 'static + NetworkT<H, D, K::Signature, K::PartialMultisignature>,
-    data_io: impl DataIOT<D> + Send + 'static,
-    mk: impl ToOwned<Owned = K>,
-) -> oneshot::Sender<()> {
-    let config = gen_config(node_index, n_members.into());
-    spawn_honest_member_with_config(spawner, config, network, data_io, mk)
-}
+    n_members: NodeCount,
+    network: impl 'static + NetworkT<Hasher64, Data, Signature, PartialMultisignature>,
+) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
+    let data_provider = DataProvider::new(node_index);
 
-pub fn spawn_honest_member_with_config<D: aleph_bft::Data, H: Hasher, K: MultiKeychainT>(
-    spawner: impl SpawnHandle,
-    config: Config,
-    network: impl 'static + NetworkT<H, D, K::Signature, K::PartialMultisignature>,
-    data_io: impl DataIOT<D> + Send + 'static,
-    mk: impl ToOwned<Owned = K>,
-) -> oneshot::Sender<()> {
+    let (finalization_provider, finalization_rx) = FinalizationHandler::new();
+    let config = gen_config(node_index, n_members);
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
-    let keybox = mk.to_owned();
     let member_task = async move {
-        let member = Member::new(data_io, &keybox, config, spawner_inner.clone());
-        member.run_session(network, exit_rx).await;
+        let keybox = KeyBox::new(n_members, node_index);
+        run_honest_member(
+            config,
+            network,
+            data_provider,
+            finalization_provider,
+            keybox,
+            spawner_inner.clone(),
+            exit_rx,
+        )
+        .await
     };
-    spawner.spawn("member", member_task);
-    exit_tx
+    let handle = spawner.spawn_essential("member", member_task);
+    (finalization_rx, exit_tx, handle)
+}
+
+pub fn complete_oneshot<T: std::fmt::Debug>(t: T) -> oneshot::Receiver<T> {
+    let (tx, rx) = oneshot::channel();
+    tx.send(t).unwrap();
+    rx
 }
