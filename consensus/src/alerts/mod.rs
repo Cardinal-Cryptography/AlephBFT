@@ -18,6 +18,8 @@ use std::{
     time,
 };
 
+mod io;
+
 pub(crate) type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);
 
 #[derive(Debug, Decode, Encode, Derivative)]
@@ -358,65 +360,6 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     }
 }
 
-struct IO<'a, H: Hasher, D: Data, MK: MultiKeychain> {
-    messages_for_network: Sender<(
-        AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
-        Recipient,
-    )>,
-    messages_from_network: Receiver<AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>>,
-    notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
-    alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-    rmc: ReliableMulticast<'a, H::Hash, MK>,
-    messages_from_rmc: Receiver<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    messages_for_rmc: Sender<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    alerter_index: NodeIndex,
-}
-
-impl<'a, H: Hasher, D: Data, MK: MultiKeychain> IO<'a, H, D, MK> {
-    fn rmc_message_to_network(
-        &mut self,
-        message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
-        exiting: &mut bool,
-    ) {
-        self.send_message_for_network(
-            AlertMessage::RmcMessage(self.alerter_index, message),
-            Recipient::Everyone,
-            exiting,
-        );
-    }
-
-    fn send_notification_for_units(
-        &mut self,
-        notification: ForkingNotification<H, D, MK::Signature>,
-        exiting: &mut bool,
-    ) {
-        if self
-            .notifications_for_units
-            .unbounded_send(notification)
-            .is_err()
-        {
-            warn!(target: "AlephBFT-alerter", "{:?} Channel with forking notifications should be open", self.alerter_index);
-            *exiting = true;
-        }
-    }
-
-    fn send_message_for_network(
-        &mut self,
-        message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
-        recipient: Recipient,
-        exiting: &mut bool,
-    ) {
-        if self
-            .messages_for_network
-            .unbounded_send((message, recipient))
-            .is_err()
-        {
-            warn!(target: "AlephBFT-alerter", "{:?} Channel with notifications for network should be open", self.alerter_index);
-            *exiting = true;
-        }
-    }
-}
-
 pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     keychain: MK,
     messages_for_network: Sender<(
@@ -429,6 +372,8 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     config: AlertConfig,
     mut exit: oneshot::Receiver<()>,
 ) {
+    use self::io::IO;
+
     let n_members = config.n_members;
     let mut alerter = Alerter::new(&keychain, config);
     let (messages_for_rmc, messages_from_us) = mpsc::unbounded();
