@@ -67,6 +67,29 @@ dependencies = [
 name = "aleph-bft"
 version = "0.8.4"
 dependencies = [
+ "aleph-bft-types",
+ "async-trait",
+ "bit-vec",
+ "chrono",
+ "derivative",
+ "derive_more",
+ "env_logger",
+ "futures",
+ "futures-timer",
+ "libp2p",
+ "log",
+ "parity-scale-codec",
+ "parking_lot",
+ "rand 0.8.4",
+ "sha3",
+ "tokio",
+ "unsigned-varint",
+]
+
+[[package]]
+name = "aleph-bft-types"
+version = "0.1.0"
+dependencies = [
  "async-trait",
  "bit-vec",
  "chrono",
