@@ -268,7 +268,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
 
     async fn on_own_alert(&mut self, alert: Alert<H, D, MK::Signature>) {
         let forker = alert.forker();
-        self.known_forkers.insert(forker, alert.proof.clone());
+        self.known_forkers.insert(forker, alert.proof);
     }
 
     #[must_use = "`on_network_alert()` may return a `ForkingNotification`, which should be propagated"]
@@ -314,7 +314,9 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         match message {
             ForkAlert(alert) => {
                 trace!(target: "AlephBFT-alerter", "{:?} Fork alert received {:?}.", self.index(), alert);
-                self.on_network_alert(alert).await.map(AlertResponse::ForkingNotification)
+                self.on_network_alert(alert)
+                    .await
+                    .map(AlertResponse::ForkingNotification)
             }
             RmcMessage(sender, message) => {
                 let hash = message.hash();
@@ -327,22 +329,30 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
                     }
                 } else {
                     let message = AlertMessage::AlertRequest(self.index(), *hash);
-                    Some(AlertResponse::AlertRequest(message, Recipient::Node(sender)))
+                    Some(AlertResponse::AlertRequest(
+                        message,
+                        Recipient::Node(sender),
+                    ))
                 }
             }
             AlertRequest(node, hash) => match self.known_alerts.get(&hash) {
-                Some(alert) => Some(AlertResponse::ForkAlert(alert.as_signable().clone(), Recipient::Node(node))),
+                Some(alert) => Some(AlertResponse::ForkAlert(
+                    alert.as_signable().clone(),
+                    Recipient::Node(node),
+                )),
                 None => {
                     debug!(target: "AlephBFT-alerter", "{:?} Received request for unknown alert.", self.index());
                     None
                 }
-            }
+            },
         }
     }
 
     #[must_use = "`alert_confirmed()` may return a `ForkingNotification`, which should be propagated"]
-    fn alert_confirmed(&mut self, multisigned: Multisigned<'a, H::Hash, MK>)
-    -> Option<ForkingNotification<H, D, MK::Signature>> {
+    fn alert_confirmed(
+        &mut self,
+        multisigned: Multisigned<'a, H::Hash, MK>,
+    ) -> Option<ForkingNotification<H, D, MK::Signature>> {
         let alert = match self.known_alerts.get(multisigned.as_signable()) {
             Some(alert) => alert.as_signable(),
             None => {
@@ -425,7 +435,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
                             io.send_message_for_network(request, recipient, &mut alerter.exiting);
                         }
                         Some(AlertResponse::RmcMessage(message)) => {
-                            if let Err(_) = io.messages_for_rmc.unbounded_send(message) {
+                            if io.messages_for_rmc.unbounded_send(message).is_err() {
                                 warn!(target: "AlephBFT-alerter", "{:?} Channel with messages for rmc should be open", alerter.index());
                                 alerter.exiting = true;
                             }

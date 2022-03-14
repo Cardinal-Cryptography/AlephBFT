@@ -5,12 +5,15 @@ pub(super) struct IO<'a, H: Hasher, D: Data, MK: MultiKeychain> {
         AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
         Recipient,
     )>,
-    pub(super) messages_from_network: Receiver<AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>>,
+    pub(super) messages_from_network:
+        Receiver<AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>>,
     pub(super) notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     pub(super) alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     pub(super) rmc: ReliableMulticast<'a, H::Hash, MK>,
-    pub(super) messages_from_rmc: Receiver<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    pub(super) messages_for_rmc: Sender<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    pub(super) messages_from_rmc:
+        Receiver<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    pub(super) messages_for_rmc:
+        Sender<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
     pub(super) alerter_index: NodeIndex,
 }
 
