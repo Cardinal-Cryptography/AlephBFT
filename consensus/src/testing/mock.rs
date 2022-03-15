@@ -540,9 +540,7 @@ impl MultiKeychainT for KeyBox {
     }
 }
 
-pub(crate) async fn run_honest_member<
-    N: 'static + NetworkT<NetworkData>,
->(
+pub(crate) async fn run_honest_member<N: 'static + NetworkT<NetworkData>>(
     config: Config,
     network: N,
     data_provider: DataProvider,

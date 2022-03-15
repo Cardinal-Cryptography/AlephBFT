@@ -4,11 +4,11 @@ use crate::{
     signed::{PartialMultisignature, Signature},
     Hasher, Receiver, Sender,
 };
+pub use aleph_bft_types::{Network, Recipient};
 use codec::{Codec, Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::{error, info, warn};
 use std::fmt::Debug;
-pub use aleph_bft_types::{Network, Recipient};
 
 /// Data type that we want to order.
 pub trait Data: Eq + Clone + Send + Sync + Debug + std::hash::Hash + Codec + 'static {}
@@ -88,8 +88,13 @@ struct NetworkHub<
     alerts_received: Sender<AlertMessage<H, D, S, MS>>,
 }
 
-impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature, N: Network<NetworkData<H, D, S, MS>>>
-    NetworkHub<H, D, S, MS, N>
+impl<
+        H: Hasher,
+        D: Data,
+        S: Signature,
+        MS: PartialMultisignature,
+        N: Network<NetworkData<H, D, S, MS>>,
+    > NetworkHub<H, D, S, MS, N>
 {
     fn new(
         network: N,
@@ -189,12 +194,12 @@ pub(crate) async fn run<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aleph_bft_types::NodeIndex;
     use crate::{
         testing::mock::{self, Data, Hasher64, PartialMultisignature, Signature},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
         NodeSubset, Round, UncheckedSigned,
     };
+    use aleph_bft_types::NodeIndex;
 
     fn test_unchecked_unit(
         creator: NodeIndex,

@@ -1,8 +1,6 @@
-use codec::Codec;
-use crate::{
-    Index, NodeCount, NodeIndex, NodeMap,
-};
+use crate::{Index, NodeCount, NodeIndex, NodeMap};
 use async_trait::async_trait;
+use codec::Codec;
 use std::fmt::Debug;
 
 /// The type used as a signature.

@@ -12,8 +12,8 @@ use crate::{
         KeyBox, Network, NetworkData, Spawner,
     },
     units::{ControlHash, FullUnit, PreUnit, SignedUnit, UnitCoord},
-    Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap, Recipient,
-    Round, SessionId, SpawnHandle, TaskHandle,
+    Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap,
+    Recipient, Round, SessionId, SpawnHandle, TaskHandle,
 };
 
 use crate::member::UnitMessage::NewUnit;

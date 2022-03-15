@@ -9,7 +9,8 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, Receiver, Round, Sender, SessionId, Signature, Signed, SpawnHandle, UncheckedSigned,
+    NodeIndex, NodeMap, Receiver, Round, Sender, SessionId, Signature, Signed, SpawnHandle,
+    UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},

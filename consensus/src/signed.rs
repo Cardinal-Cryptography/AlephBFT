@@ -1,7 +1,6 @@
 pub(crate) use crate::{
-    Index, NodeCount, NodeIndex,
-    Signable, Signature, SignatureSet, KeyBox,
-    PartialMultisignature, MultiKeychain,
+    Index, KeyBox, MultiKeychain, NodeCount, NodeIndex, PartialMultisignature, Signable, Signature,
+    SignatureSet,
 };
 use codec::{Decode, Encode};
 use log::warn;

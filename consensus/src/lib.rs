@@ -7,6 +7,7 @@ type Receiver<T> = mpsc::UnboundedReceiver<T>;
 type Sender<T> = mpsc::UnboundedSender<T>;
 
 mod alerts;
+mod config;
 mod consensus;
 mod creation;
 mod extender;
@@ -14,22 +15,19 @@ mod member;
 mod network;
 mod runway;
 mod signed;
-mod config;
 mod terminal;
 mod units;
 
-
 pub use aleph_bft_types::{
-    DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain,
-    Network, NodeCount, NodeIndex, NodeMap, NodeSubset, PartialMultisignature,
-    Recipient, Round, SessionId, Signable, Signature, SignatureSet, SpawnHandle,
-    TaskHandle,
+    DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain, Network, NodeCount,
+    NodeIndex, NodeMap, NodeSubset, PartialMultisignature, Recipient, Round, SessionId, Signable,
+    Signature, SignatureSet, SpawnHandle, TaskHandle,
 };
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
-pub use network::{Data, NetworkData};
 pub use member::run_session;
+pub use network::{Data, NetworkData};
 
 pub use signed::*;
+pub mod rmc;
 #[cfg(test)]
 pub mod testing;
-pub mod rmc;

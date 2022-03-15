@@ -3,9 +3,7 @@ use std::collections::{HashMap, VecDeque};
 
 use log::{debug, info, warn};
 
-use crate::{
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
-};
+use crate::{Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender};
 
 pub(crate) struct ExtenderUnit<H: Hasher> {
     creator: NodeIndex,

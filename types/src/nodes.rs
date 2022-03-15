@@ -213,8 +213,6 @@ impl Index<NodeIndex> for NodeSubset {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
 

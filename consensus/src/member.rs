@@ -7,7 +7,6 @@ use crate::{
     Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount, NodeIndex,
     Receiver, Sender, Signable, SpawnHandle, UncheckedSigned,
 };
-use network::NetworkData;
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
@@ -16,6 +15,7 @@ use futures::{
 };
 use futures_timer::Delay;
 use log::{debug, error, info, trace, warn};
+use network::NetworkData;
 use rand::Rng;
 use std::{
     cmp::Ordering,
