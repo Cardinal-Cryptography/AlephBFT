@@ -6,14 +6,13 @@ use std::collections::HashMap;
 
 use crate::{
     network::NetworkDataInner::Units,
-    nodes::NodeMap,
     signed::Signed,
     testing::mock::{
         configure_network, init_log, spawn_honest_member, AlertHook, Data, Hash64, Hasher64,
         KeyBox, Network, NetworkData, Spawner,
     },
     units::{ControlHash, FullUnit, PreUnit, SignedUnit, UnitCoord},
-    Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, Recipient,
+    Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap, Recipient,
     Round, SessionId, SpawnHandle, TaskHandle,
 };
 

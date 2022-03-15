@@ -250,7 +250,7 @@ impl Network {
 }
 
 #[async_trait::async_trait]
-impl NetworkT<Hasher64, Data, Signature, PartialMultisignature> for Network {
+impl NetworkT<NetworkData> for Network {
     fn send(&self, data: NetworkData, recipient: Recipient) {
         use Recipient::*;
         match recipient {
@@ -541,7 +541,7 @@ impl MultiKeychainT for KeyBox {
 }
 
 pub(crate) async fn run_honest_member<
-    N: 'static + NetworkT<Hasher64, Data, Signature, PartialMultisignature>,
+    N: 'static + NetworkT<NetworkData>,
 >(
     config: Config,
     network: N,
@@ -581,7 +581,7 @@ pub fn spawn_honest_member(
     spawner: Spawner,
     node_index: NodeIndex,
     n_members: NodeCount,
-    network: impl 'static + NetworkT<Hasher64, Data, Signature, PartialMultisignature>,
+    network: impl 'static + NetworkT<NetworkData>,
 ) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
     let data_provider = DataProvider::new(node_index);
 

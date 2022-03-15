@@ -1,6 +1,5 @@
 use crate::{
-    nodes::{NodeCount, NodeIndex, NodeMap},
-    Index,
+    Index, NodeCount, NodeIndex, NodeMap,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};

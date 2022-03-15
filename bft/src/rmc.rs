@@ -1,8 +1,7 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 use crate::{
-    nodes::NodeCount,
     signed::{PartiallyMultisigned, Signable, Signed, UncheckedSigned},
-    Indexed, MultiKeychain, Multisigned, PartialMultisignature, Signature,
+    Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, Signature,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};

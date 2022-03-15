@@ -7,6 +7,7 @@ use crate::{
     Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount, NodeIndex,
     Receiver, Sender, Signable, SpawnHandle, UncheckedSigned,
 };
+use network::NetworkData;
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
@@ -425,7 +426,7 @@ pub async fn run_session<
     D: Data,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
-    N: Network<H, D, MK::Signature, MK::PartialMultisignature> + 'static,
+    N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
     MK: MultiKeychain,
 >(

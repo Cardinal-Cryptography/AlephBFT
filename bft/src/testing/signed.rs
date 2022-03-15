@@ -1,7 +1,6 @@
 use crate::{
-    nodes::{NodeCount, NodeIndex},
     signed::*,
-    Index, KeyBox, Signable,
+    Index, KeyBox, NodeCount, NodeIndex, Signable,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};
