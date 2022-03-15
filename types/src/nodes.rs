@@ -93,7 +93,7 @@ impl<T> NodeMap<T> {
             .filter_map(|(idx, maybe_value)| Some((NodeIndex(idx), maybe_value.as_mut()?)))
     }
 
-    pub fn into_iter(self) -> impl Iterator<Item = (NodeIndex, T)>
+    fn into_iter(self) -> impl Iterator<Item = (NodeIndex, T)>
     where
         T: 'static,
     {
