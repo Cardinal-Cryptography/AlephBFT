@@ -6,7 +6,6 @@ members = [
 ]
 
 exclude = [
-    "examples",
     "fuzz",
     "mock",
 ]
