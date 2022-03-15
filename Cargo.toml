@@ -1,5 +1,11 @@
 [workspace]
 
 members = [
-    "bft",
+    "consensus",
+    "types",
+]
+
+exclude = [
+    "fuzz",
+    "mock",
 ]

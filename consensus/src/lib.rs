@@ -2,6 +2,10 @@
 //! requires access to a network layer, a cryptographic primitive, and a data provider that
 //! gives appropriate access to the set of available data that we need to make consensus on.
 
+use futures::channel::mpsc;
+type Receiver<T> = mpsc::UnboundedReceiver<T>;
+type Sender<T> = mpsc::UnboundedSender<T>;
+
 mod alerts;
 mod consensus;
 mod creation;
@@ -14,23 +18,17 @@ mod config;
 mod terminal;
 mod units;
 
-use aleph_bft_types::{
-    DataProvider, FinalizationHandler, Hasher, Index,
-    Network, NodeCount, NodeIndex, NodeMap, NodeSubset,
-    Round, SessionId, SpawnHandle,
+
+pub use aleph_bft_types::{
+    DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain,
+    Network, NodeCount, NodeIndex, NodeMap, NodeSubset, PartialMultisignature,
+    Recipient, Round, SessionId, Signable, Signature, SignatureSet, SpawnHandle,
+    TaskHandle,
 };
-#[cfg(test)]
-use aleph_bft_types::{Recipient, TaskHandle,};
-
-use futures::channel::mpsc;
-type Receiver<T> = mpsc::UnboundedReceiver<T>;
-type Sender<T> = mpsc::UnboundedSender<T>;
-
-
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
 pub use network::{Data, NetworkData};
 pub use member::run_session;
-//
+
 pub use signed::*;
 #[cfg(test)]
 pub mod testing;

@@ -4,6 +4,7 @@ use std::{fmt::Debug, hash::Hash as StdHash};
 mod dataio;
 mod network;
 mod nodes;
+mod signed;
 mod tasks;
 
 pub use dataio::{
@@ -27,6 +28,15 @@ pub use nodes::{
 pub trait Index {
     fn index(&self) -> NodeIndex;
 }
+
+pub use signed::{
+    KeyBox,
+    MultiKeychain,
+    PartialMultisignature,
+    Signable,
+    Signature,
+    SignatureSet,
+};
 
 pub use tasks::{
     TaskHandle,
