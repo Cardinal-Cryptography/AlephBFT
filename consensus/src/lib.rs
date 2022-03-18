@@ -2,10 +2,6 @@
 //! requires access to a network layer, a cryptographic primitive, and a data provider that
 //! gives appropriate access to the set of available data that we need to make consensus on.
 
-use futures::channel::mpsc;
-type Receiver<T> = mpsc::UnboundedReceiver<T>;
-type Sender<T> = mpsc::UnboundedSender<T>;
-
 mod alerts;
 mod config;
 mod consensus;
@@ -31,3 +27,6 @@ pub use signed::*;
 pub mod rmc;
 #[cfg(test)]
 pub mod testing;
+
+type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
+type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;
