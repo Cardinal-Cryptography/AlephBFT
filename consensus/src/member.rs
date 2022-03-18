@@ -1,11 +1,11 @@
 use crate::{
     config::Config,
-    network::{self, Recipient},
+    network,
     runway::{self, Request, Response, RunwayIO, RunwayNotificationIn, RunwayNotificationOut},
     signed::Signature,
     units::{UncheckedSignedUnit, UnitCoord},
     Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount, NodeIndex,
-    Receiver, Sender, Signable, SpawnHandle, UncheckedSigned,
+    Receiver, Recipient, Sender, Signable, SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{

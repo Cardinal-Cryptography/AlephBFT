@@ -1,11 +1,11 @@
 use crate::{
     alerts::{run, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
-    network::Recipient,
     rmc::Message as RmcMessage,
     signed::KeyBox as _,
     testing::mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature},
     units::{ControlHash, FullUnit, PreUnit, UnitCoord},
-    Index, Indexed, NodeCount, NodeIndex, NodeMap, Round, Signable, Signed, UncheckedSigned,
+    Index, Indexed, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable, Signed,
+    UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},

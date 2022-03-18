@@ -2,9 +2,8 @@ use crate::{
     alerts::AlertMessage,
     member::UnitMessage,
     signed::{PartialMultisignature, Signature},
-    Hasher, Receiver, Sender,
+    Hasher, Network, Receiver, Recipient, Sender,
 };
-pub use aleph_bft_types::{Network, Recipient};
 use codec::{Codec, Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::{error, info, warn};
@@ -197,9 +196,8 @@ mod tests {
     use crate::{
         testing::mock::{self, Data, Hasher64, PartialMultisignature, Signature},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
-        NodeSubset, Round, UncheckedSigned,
+        NodeIndex, NodeSubset, Round, UncheckedSigned,
     };
-    use aleph_bft_types::NodeIndex;
 
     fn test_unchecked_unit(
         creator: NodeIndex,

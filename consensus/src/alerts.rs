@@ -1,10 +1,10 @@
 use crate::{
-    network::Recipient,
     rmc,
     rmc::{DoublingDelayScheduler, ReliableMulticast},
     signed::{Multisigned, PartialMultisignature, Signable, Signature, Signed, UncheckedSigned},
     units::UncheckedSignedUnit,
-    Data, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, Receiver, Sender, SessionId,
+    Data, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, Receiver, Recipient, Sender,
+    SessionId,
 };
 use codec::{Decode, Encode};
 use derivative::Derivative;
