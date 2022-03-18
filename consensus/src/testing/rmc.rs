@@ -4,7 +4,7 @@ use crate::{
     testing::signed::{
         test_multi_keychain, TestMultiKeychain, TestPartialMultisignature, TestSignature,
     },
-    NodeCount, NodeIndex,
+    NodeCount, NodeIndex, Signable, SignatureSet,
 };
 use futures::{
     channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},

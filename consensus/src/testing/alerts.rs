@@ -1,10 +1,9 @@
 use crate::{
     alerts::{run, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     rmc::Message as RmcMessage,
-    signed::KeyBox as _,
     testing::mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature},
     units::{ControlHash, FullUnit, PreUnit, UnitCoord},
-    Index, Indexed, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable, Signed,
+    Index, Indexed, KeyBox as _, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable, Signed,
     UncheckedSigned,
 };
 use futures::{

@@ -1,8 +1,6 @@
 use crate::{
-    alerts::AlertMessage,
-    member::UnitMessage,
-    signed::{PartialMultisignature, Signature},
-    Data, Hasher, Network, Receiver, Recipient, Sender,
+    alerts::AlertMessage, member::UnitMessage, Data, Hasher, Network, PartialMultisignature,
+    Receiver, Recipient, Sender, Signature,
 };
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};

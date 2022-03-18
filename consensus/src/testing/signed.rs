@@ -1,4 +1,4 @@
-use crate::{signed::*, Index, KeyBox, NodeCount, NodeIndex, Signable};
+use crate::{signed::*, Index, KeyBox, NodeCount, NodeIndex, Signable, SignatureSet};
 use async_trait::async_trait;
 use codec::{Decode, Encode};
 
