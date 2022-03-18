@@ -9,7 +9,7 @@ homepage = "https://alephzero.org"
 repository = "https://github.com/cardinal-cryptography/?"
 keywords = ["asynchronous", "consensus", "bft", "blockchain", "distributed-systems"]
 license = "Apache-2.0"
-readme = "README.md"
+readme = "../README.md"
 
 [dependencies]
 async-trait = "0.1"
