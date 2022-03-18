@@ -2,17 +2,12 @@ use crate::{
     alerts::AlertMessage,
     member::UnitMessage,
     signed::{PartialMultisignature, Signature},
-    Hasher, Network, Receiver, Recipient, Sender,
+    Data, Hasher, Network, Receiver, Recipient, Sender,
 };
-use codec::{Codec, Decode, Encode};
+use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::{error, info, warn};
 use std::fmt::Debug;
-
-/// Data type that we want to order.
-pub trait Data: Eq + Clone + Send + Sync + Debug + std::hash::Hash + Codec + 'static {}
-
-impl<T> Data for T where T: Eq + Clone + Send + Sync + Debug + std::hash::Hash + Codec + 'static {}
 
 #[derive(Encode, Decode, Clone, Debug)]
 pub(crate) enum NetworkDataInner<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {

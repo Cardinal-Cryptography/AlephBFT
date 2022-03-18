@@ -15,13 +15,13 @@ mod terminal;
 mod units;
 
 pub use aleph_bft_types::{
-    DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain, Network, NodeCount,
-    NodeIndex, NodeMap, NodeSubset, PartialMultisignature, Recipient, Round, SessionId, Signable,
-    Signature, SignatureSet, SpawnHandle, TaskHandle,
+    Data, DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain, Network,
+    NodeCount, NodeIndex, NodeMap, NodeSubset, PartialMultisignature, Recipient, Round, SessionId,
+    Signable, Signature, SignatureSet, SpawnHandle, TaskHandle,
 };
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
 pub use member::run_session;
-pub use network::{Data, NetworkData};
+pub use network::NetworkData;
 
 pub use signed::*;
 pub mod rmc;
