@@ -8,19 +8,15 @@ mod signed;
 mod tasks;
 
 pub use dataio::{DataProvider, FinalizationHandler};
-
 pub use network::{Network, Recipient};
-
 pub use nodes::{NodeCount, NodeIndex, NodeMap, NodeSubset};
+pub use signed::{KeyBox, MultiKeychain, PartialMultisignature, Signable, Signature, SignatureSet};
+pub use tasks::{SpawnHandle, TaskHandle};
 
 /// Indicates that an implementor has been assigned some index.
 pub trait Index {
     fn index(&self) -> NodeIndex;
 }
-
-pub use signed::{KeyBox, MultiKeychain, PartialMultisignature, Signable, Signature, SignatureSet};
-
-pub use tasks::{SpawnHandle, TaskHandle};
 
 /// A hasher, used for creating identifiers for blocks or units.
 pub trait Hasher: Eq + Clone + Send + Sync + Debug + 'static {
