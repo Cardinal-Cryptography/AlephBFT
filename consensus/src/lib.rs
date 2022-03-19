@@ -14,6 +14,10 @@ mod signed;
 mod terminal;
 mod units;
 
+pub use aleph_bft_signed::{
+    IncompleteMultisignatureError, Indexed, Multisigned, PartiallyMultisigned, SignatureError,
+    Signed, UncheckedSigned,
+};
 pub use aleph_bft_types::{
     Data, DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain, Network,
     NodeCount, NodeIndex, NodeMap, NodeSubset, PartialMultisignature, Recipient, Round, SessionId,

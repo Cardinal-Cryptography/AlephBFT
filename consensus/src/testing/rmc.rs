@@ -1,19 +1,135 @@
 use crate::{
-    rmc::*,
-    signed::*,
-    testing::signed::{
-        test_multi_keychain, TestMultiKeychain, TestPartialMultisignature, TestSignature,
-    },
-    NodeCount, NodeIndex, Signable, SignatureSet,
+    rmc::*, signed::*, Index, KeyBox, MultiKeychain, NodeCount, NodeIndex, PartialMultisignature,
+    Signable, SignatureSet,
 };
+use async_trait::async_trait;
+use codec::{Decode, Encode};
 use futures::{
     channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    future::{self, BoxFuture, FutureExt},
+    future::{self, BoxFuture},
     stream::{self, Stream},
-    StreamExt,
+    FutureExt, StreamExt,
 };
 use rand::Rng;
-use std::{collections::HashMap, pin::Pin, time::Duration};
+use std::{collections::HashMap, fmt::Debug, pin::Pin, time::Duration};
+
+/// Keybox wrapper which implements MultiKeychain such that a partial multisignature is a list of
+/// signatures and a partial multisignature is considered complete if it contains more than 2N/3 signatures.
+///
+/// Note: this way of multisigning is very inefficient, and should be used only for testing.
+#[derive(Debug, Clone)]
+struct DefaultMultiKeychain<KB: KeyBox> {
+    key_box: KB,
+}
+
+impl<KB: KeyBox> DefaultMultiKeychain<KB> {
+    // Create a new `DefaultMultiKeychain` using the provided `KeyBox`.
+    fn new(key_box: KB) -> Self {
+        DefaultMultiKeychain { key_box }
+    }
+
+    fn quorum(&self) -> usize {
+        2 * self.node_count().0 / 3 + 1
+    }
+}
+
+impl<KB: KeyBox> Index for DefaultMultiKeychain<KB> {
+    fn index(&self) -> NodeIndex {
+        self.key_box.index()
+    }
+}
+
+#[async_trait::async_trait]
+impl<KB: KeyBox> KeyBox for DefaultMultiKeychain<KB> {
+    type Signature = KB::Signature;
+
+    async fn sign(&self, msg: &[u8]) -> Self::Signature {
+        self.key_box.sign(msg).await
+    }
+
+    fn node_count(&self) -> NodeCount {
+        self.key_box.node_count()
+    }
+
+    fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool {
+        self.key_box.verify(msg, sgn, index)
+    }
+}
+
+impl<KB: KeyBox> MultiKeychain for DefaultMultiKeychain<KB> {
+    type PartialMultisignature = SignatureSet<KB::Signature>;
+
+    fn from_signature(
+        &self,
+        signature: &Self::Signature,
+        index: NodeIndex,
+    ) -> Self::PartialMultisignature {
+        SignatureSet::add_signature(SignatureSet::with_size(self.node_count()), signature, index)
+    }
+
+    fn is_complete(&self, msg: &[u8], partial: &Self::PartialMultisignature) -> bool {
+        let signature_count = partial.iter().count();
+        if signature_count < self.quorum() {
+            return false;
+        }
+        partial
+            .iter()
+            .all(|(i, sgn)| self.key_box.verify(msg, sgn, i))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+struct TestSignature {
+    msg: Vec<u8>,
+    index: NodeIndex,
+}
+
+#[derive(Clone, Debug)]
+struct TestKeyBox {
+    count: NodeCount,
+    index: NodeIndex,
+}
+
+impl TestKeyBox {
+    fn new(count: NodeCount, index: NodeIndex) -> Self {
+        TestKeyBox { count, index }
+    }
+}
+
+impl Index for TestKeyBox {
+    fn index(&self) -> NodeIndex {
+        self.index
+    }
+}
+
+#[async_trait]
+impl KeyBox for TestKeyBox {
+    type Signature = TestSignature;
+
+    fn node_count(&self) -> NodeCount {
+        self.count
+    }
+
+    async fn sign(&self, msg: &[u8]) -> Self::Signature {
+        TestSignature {
+            msg: msg.to_vec(),
+            index: self.index,
+        }
+    }
+
+    fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool {
+        index == sgn.index && msg == sgn.msg
+    }
+}
+
+type TestMultiKeychain = DefaultMultiKeychain<TestKeyBox>;
+
+type TestPartialMultisignature = SignatureSet<TestSignature>;
+
+fn test_multi_keychain(node_count: NodeCount, index: NodeIndex) -> TestMultiKeychain {
+    let key_box = TestKeyBox::new(node_count, index);
+    DefaultMultiKeychain::new(key_box)
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
 struct Hash {
