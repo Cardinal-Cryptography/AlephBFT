@@ -457,10 +457,12 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
                     let alert_hash = alert.hash();
                     let alert = Signed::sign(alert, alerter.keychain).await;
                     io.send_message_for_network(
-                        AlertMessage::ForkAlert(alert.into()),
+                        AlertMessage::ForkAlert(alert.clone().into()),
                         Recipient::Everyone,
                         &mut alerter.exiting,
                     );
+                    let forker = alert.as_signable().forker();
+                    alerter.rmc_alert(forker, alert).await;
                     io.rmc.start_rmc(alert_hash).await;
                 }
                 None => {
