@@ -3,7 +3,7 @@
 members = [
     "consensus",
     "types",
-    "signed",
+    "crypto",
 ]
 
 exclude = [
