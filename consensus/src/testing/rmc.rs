@@ -329,35 +329,79 @@ async fn node_hearing_only_multisignatures() {
     }
 }
 
-fn bad_signature() -> TestSignature {
-    TestSignature {
-        msg: Vec::new(),
-        index: 111.into(),
-    }
-}
-
-fn bad_multisignature(node_count: NodeCount) -> TestPartialMultisignature {
-    SignatureSet::with_size(node_count)
-}
-
 /// 7 honest nodes and 3 dishonest nodes which emit bad signatures and multisignatures
 #[tokio::test]
 async fn bad_signatures_and_multisignatures_are_ignored() {
+
+    #[derive(Clone, Debug)]
+    struct BadKeyBox {
+        count: NodeCount,
+        index: NodeIndex,
+        signature_index: NodeIndex,
+    }
+
+    impl BadKeyBox {
+        fn new(count: NodeCount, index: NodeIndex, signature_index: NodeIndex) -> Self {
+            BadKeyBox { count, index, signature_index}
+        }
+    }
+
+    impl Index for BadKeyBox {
+        fn index(&self) -> NodeIndex {
+            self.index
+        }
+    }
+
+    #[async_trait]
+    impl KeyBox for BadKeyBox {
+        type Signature = TestSignature;
+
+        fn node_count(&self) -> NodeCount {
+            self.count
+        }
+
+        async fn sign(&self, msg: &[u8]) -> Self::Signature {
+            TestSignature {
+                msg: msg.to_vec(),
+                index: self.signature_index,
+            }
+        }
+
+        fn verify(&self, _msg: &[u8], _sgn: &Self::Signature, _index: NodeIndex) -> bool {
+            true
+        }
+    }
+
+
+    impl MultiKeychain for BadKeyBox {
+        type PartialMultisignature = SignatureSet<TestSignature>;
+
+        fn from_signature(
+            &self,
+            _signature: &Self::Signature,
+            _index: NodeIndex,
+        ) -> Self::PartialMultisignature {
+            SignatureSet::with_size(self.count)
+        }
+
+        fn is_complete(&self, _msg: &[u8], _partial: &Self::PartialMultisignature) -> bool {
+            true
+        }
+    }
+
     let node_count = NodeCount(10);
     let keychains = prepare_keychains(node_count);
     let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
     let bad_hash = Hash { byte: 65 };
-    let bad_msg = TestMessage::SignedHash(UncheckedSigned::new_with_index(
-        bad_hash,
-        0.into(),
-        bad_signature(),
-    ));
+    let bad_keybox = BadKeyBox::new(node_count, 0.into(), 111.into());
+    let bad_msg = TestMessage::SignedHash(
+        Signed::sign_with_index(bad_hash, &bad_keybox).await.into()
+    );
     data.network.broadcast_message(bad_msg);
-    let bad_msg = TestMessage::MultisignedHash(UncheckedSigned::new(
-        bad_hash,
-        bad_multisignature(node_count),
-    ));
+    let bad_msg = TestMessage::MultisignedHash(
+        Signed::sign_with_index(bad_hash, &bad_keybox).await.into_partially_multisigned(&bad_keybox).into_unchecked(),
+    );
     data.network.broadcast_message(bad_msg);
 
     let hash = Hash { byte: 56 };
