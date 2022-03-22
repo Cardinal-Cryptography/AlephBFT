@@ -14,7 +14,7 @@ mod signed;
 mod terminal;
 mod units;
 
-pub use aleph_bft_signed::{
+pub use aleph_bft_crypto::{
     IncompleteMultisignatureError, Indexed, Multisigned, PartiallyMultisigned, SignatureError,
     Signed, UncheckedSigned,
 };
