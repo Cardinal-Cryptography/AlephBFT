@@ -187,7 +187,7 @@ pub(crate) async fn run<
 mod tests {
     use super::*;
     use crate::{
-        testing::mock::{self, Data, Hasher64, PartialMultisignature, Signature, KeyBox},
+        testing::mock::{self, Data, Hasher64, KeyBox, PartialMultisignature, Signature},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
         NodeIndex, NodeSubset, Round, Signed,
     };
@@ -204,7 +204,9 @@ mod tests {
         let pu = PreUnit::new(creator, round, control_hash);
         let data = Data::new(UnitCoord::new(7, 13.into()), variant);
         let signable = FullUnit::new(pu, data, 0);
-        Signed::sign(signable, &KeyBox::new(0.into(), creator)).await.into_unchecked()
+        Signed::sign(signable, &KeyBox::new(0.into(), creator))
+            .await
+            .into_unchecked()
     }
 
     #[tokio::test]
@@ -377,7 +379,9 @@ mod tests {
         let alert = crate::alerts::Alert::new(sender, (f1, f2), vec![lu1, lu2]);
 
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Alert(ForkAlert(
-            Signed::sign(alert.clone(), &KeyBox::new(0.into(), sender)).await.into_unchecked()
+            Signed::sign(alert.clone(), &KeyBox::new(0.into(), sender))
+                .await
+                .into_unchecked(),
         )));
         let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ForkAlert");

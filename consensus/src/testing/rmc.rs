@@ -332,7 +332,6 @@ async fn node_hearing_only_multisignatures() {
 /// 7 honest nodes and 3 dishonest nodes which emit bad signatures and multisignatures
 #[tokio::test]
 async fn bad_signatures_and_multisignatures_are_ignored() {
-
     #[derive(Clone, Debug)]
     struct BadKeyBox {
         count: NodeCount,
@@ -342,7 +341,11 @@ async fn bad_signatures_and_multisignatures_are_ignored() {
 
     impl BadKeyBox {
         fn new(count: NodeCount, index: NodeIndex, signature_index: NodeIndex) -> Self {
-            BadKeyBox { count, index, signature_index}
+            BadKeyBox {
+                count,
+                index,
+                signature_index,
+            }
         }
     }
 
@@ -372,7 +375,6 @@ async fn bad_signatures_and_multisignatures_are_ignored() {
         }
     }
 
-
     impl MultiKeychain for BadKeyBox {
         type PartialMultisignature = SignatureSet<TestSignature>;
 
@@ -395,12 +397,14 @@ async fn bad_signatures_and_multisignatures_are_ignored() {
 
     let bad_hash = Hash { byte: 65 };
     let bad_keybox = BadKeyBox::new(node_count, 0.into(), 111.into());
-    let bad_msg = TestMessage::SignedHash(
-        Signed::sign_with_index(bad_hash, &bad_keybox).await.into()
-    );
+    let bad_msg =
+        TestMessage::SignedHash(Signed::sign_with_index(bad_hash, &bad_keybox).await.into());
     data.network.broadcast_message(bad_msg);
     let bad_msg = TestMessage::MultisignedHash(
-        Signed::sign_with_index(bad_hash, &bad_keybox).await.into_partially_multisigned(&bad_keybox).into_unchecked(),
+        Signed::sign_with_index(bad_hash, &bad_keybox)
+            .await
+            .into_partially_multisigned(&bad_keybox)
+            .into_unchecked(),
     );
     data.network.broadcast_message(bad_msg);
 
