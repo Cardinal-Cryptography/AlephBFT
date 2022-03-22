@@ -11,7 +11,7 @@ pub use dataio::{DataProvider, FinalizationHandler};
 pub use network::{Network, Recipient};
 pub use nodes::{NodeCount, NodeIndex, NodeMap, NodeSubset};
 pub use signed::{KeyBox, MultiKeychain, PartialMultisignature, Signable, Signature, SignatureSet};
-pub use tasks::{SpawnHandle, TaskHandle};
+pub use tasks::{SpawnHandle, TaskHandle, TaskScheduler};
 
 /// Data type that we want to order.
 pub trait Data: Eq + Clone + Send + Sync + Debug + StdHash + Codec + 'static {}

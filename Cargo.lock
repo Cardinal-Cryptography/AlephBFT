@@ -68,6 +68,7 @@ name = "aleph-bft"
 version = "0.9.0"
 dependencies = [
  "aleph-bft-crypto",
+ "aleph-bft-rmc",
  "aleph-bft-types",
  "async-trait",
  "chrono",
@@ -93,6 +94,21 @@ dependencies = [
  "async-trait",
  "log",
  "parity-scale-codec",
+ "tokio",
+]
+
+[[package]]
+name = "aleph-bft-rmc"
+version = "0.1.0"
+dependencies = [
+ "aleph-bft-crypto",
+ "aleph-bft-types",
+ "async-trait",
+ "futures",
+ "futures-timer",
+ "log",
+ "parity-scale-codec",
+ "rand 0.8.5",
  "tokio",
 ]
 

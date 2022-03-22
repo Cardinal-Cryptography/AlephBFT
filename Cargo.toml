@@ -4,6 +4,7 @@ members = [
     "consensus",
     "types",
     "crypto",
+    "rmc",
 ]
 
 exclude = [
