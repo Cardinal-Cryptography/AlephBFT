@@ -10,7 +10,6 @@ mod extender;
 mod member;
 mod network;
 mod runway;
-mod signed;
 mod terminal;
 mod units;
 
@@ -27,7 +26,6 @@ pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
 pub use member::run_session;
 pub use network::NetworkData;
 
-pub use signed::*;
 pub mod rmc;
 #[cfg(test)]
 pub mod testing;

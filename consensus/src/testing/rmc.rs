@@ -1,6 +1,6 @@
 use crate::{
-    rmc::*, signed::*, Index, KeyBox, MultiKeychain, NodeCount, NodeIndex, PartialMultisignature,
-    Signable, SignatureSet,
+    rmc::*, Index, KeyBox, MultiKeychain, Multisigned, NodeCount, NodeIndex, PartialMultisignature,
+    Signable, SignatureSet, Signed,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};
