@@ -36,14 +36,6 @@ impl<T: Signable, S: Signature> UncheckedSigned<Indexed<T>, S> {
     }
 }
 
-// this should be removed!
-// #[cfg(test)]
-impl<T: Signable, S: Signature> UncheckedSigned<T, S> {
-    pub fn signature_mut(&mut self) -> &mut S {
-        &mut self.signature
-    }
-}
-
 /// Error type returned when a verification of a signature fails.
 #[derive(Clone, Debug)]
 pub struct SignatureError<T: Signable, S: Signature> {
@@ -523,7 +515,7 @@ mod tests {
         let msg = test_message();
         let signed_msg = Signed::sign_with_index(msg, &keychain).await;
         let mut unchecked_msg = signed_msg.into_unchecked();
-        unchecked_msg.signature_mut().index = 1.into();
+        unchecked_msg.signature.index = 1.into();
 
         assert!(
             unchecked_msg.check(&keychain).is_err(),
