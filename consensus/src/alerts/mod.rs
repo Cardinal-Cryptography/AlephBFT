@@ -410,11 +410,13 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
                 Some(message) => {
                     let response = alerter.on_message(message.clone()).await;
                     if let AlertMessage::ForkAlert(alert) = message {
-                        io.rmc.start_rmc(alert.as_signable().hash()).await;
-                        io.send_notification_for_units(
-                            ForkingNotification::Forker(alert.into_signable().proof),
-                            &mut alerter.exiting,
-                        );
+                        if alert.clone().check(alerter.keychain).is_ok() && alerter.who_is_forking(&alert.as_signable().proof).is_some() {
+                            io.rmc.start_rmc(alert.as_signable().hash()).await;
+                            io.send_notification_for_units(
+                                ForkingNotification::Forker(alert.into_signable().proof),
+                                &mut alerter.exiting,
+                            );
+                        }
                     }
                     match response {
                         Some(AlertResponse::ForkAlert(alert, recipient)) => {
