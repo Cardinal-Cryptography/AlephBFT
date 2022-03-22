@@ -39,7 +39,7 @@ impl<T: Signable, S: Signature> UncheckedSigned<Indexed<T>, S> {
 // this should be removed!
 // #[cfg(test)]
 impl<T: Signable, S: Signature> UncheckedSigned<T, S> {
-    fn as_signable_mut(&mut self) -> &mut T {
+    pub fn as_signable_mut(&mut self) -> &mut T {
         &mut self.signable
     }
     pub fn signature_mut(&mut self) -> &mut S {
