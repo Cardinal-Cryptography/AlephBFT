@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-bft"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "aleph-bft-rmc",
  "aleph-bft-types",
@@ -57,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-bft-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aleph-bft-crypto",
  "async-trait",
