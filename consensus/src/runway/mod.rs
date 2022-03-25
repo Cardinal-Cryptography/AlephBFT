@@ -1,25 +1,14 @@
 use crate::{
     alerts::{self, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     consensus,
-<<<<<<<< HEAD:consensus/src/runway.rs
-    member::{NewestUnitResponse, UnitMessage},
-========
     member::UnitMessage,
-    network::Recipient,
-    nodes::NodeMap,
->>>>>>>> eb77659 (Factor unit validation out of runway):src/runway/mod.rs
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, Validator,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-<<<<<<<< HEAD:consensus/src/runway.rs
-    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signature, Signed,
+    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signable, Signature, Signed,
     SpawnHandle, UncheckedSigned,
-========
-    NodeIndex, Receiver, Round, Sender, SessionId, Signable, Signature, Signed, SpawnHandle,
-    UncheckedSigned,
->>>>>>>> eb77659 (Factor unit validation out of runway):src/runway/mod.rs
 };
 use codec::{Decode, Encode};
 use futures::{
