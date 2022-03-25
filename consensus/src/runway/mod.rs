@@ -239,7 +239,7 @@ where
         let store = UnitStore::new(n_members, max_round);
         let session_id = config.session_id;
         let keybox = config.keychain;
-        let validator = Validator::new(session_id, keybox, max_round, n_members, threshold);
+        let validator = Validator::new(session_id, keybox, max_round, threshold);
 
         Runway {
             threshold,
