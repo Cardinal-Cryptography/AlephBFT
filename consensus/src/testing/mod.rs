@@ -6,5 +6,4 @@ mod crash;
 mod creation;
 mod dag;
 pub(crate) mod mock;
-pub(crate) mod signed;
 mod unreliable;
