@@ -13,17 +13,13 @@ mod runway;
 mod terminal;
 mod units;
 
-pub use aleph_bft_crypto::{
-    IncompleteMultisignatureError, Indexed, Multisigned, PartiallyMultisigned, SignatureError,
-    Signed, UncheckedSigned,
-};
-pub use aleph_bft_rmc::{
-    DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast, Task as RmcTask,
-};
+use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
+
 pub use aleph_bft_types::{
-    Data, DataProvider, FinalizationHandler, Hasher, Index, KeyBox, MultiKeychain, Network,
-    NodeCount, NodeIndex, NodeMap, NodeSubset, PartialMultisignature, Recipient, Round, SessionId,
-    Signable, Signature, SignatureSet, SpawnHandle, TaskHandle, TaskScheduler,
+    Data, DataProvider, FinalizationHandler, Hasher, IncompleteMultisignatureError, Index, Indexed,
+    KeyBox, MultiKeychain, Multisigned, Network, NodeCount, NodeIndex, NodeMap, NodeSubset,
+    PartialMultisignature, PartiallyMultisigned, Recipient, Round, SessionId, Signable, Signature,
+    SignatureError, SignatureSet, Signed, SpawnHandle, TaskHandle, UncheckedSigned,
 };
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
 pub use member::run_session;

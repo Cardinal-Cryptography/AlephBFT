@@ -12,10 +12,11 @@ license = "Apache-2.0"
 readme = "../README.md"
 
 [dependencies]
-aleph-bft-types = { path = "../types" }
+async-trait = "0.1"
+bit-vec = "0.6"
 codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
+derive_more = "0.99"
 log = "0.4"
 
 [dev-dependencies]
-async-trait = "0.1"
 tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }

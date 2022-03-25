@@ -1,9 +1,9 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 pub use aleph_bft_crypto::{
-    Indexed, Multisigned, PartialMultisignature, PartiallyMultisigned, Signature, Signed,
-    UncheckedSigned,
+    nodes::NodeCount,
+    signed::{Indexed, Multisigned, PartiallyMultisigned, Signed, UncheckedSigned},
+    types::{MultiKeychain, PartialMultisignature, Signable, Signature},
 };
-pub use aleph_bft_types::{MultiKeychain, NodeCount, Signable, TaskScheduler};
 use async_trait::async_trait;
 use codec::{Decode, Encode};
 use core::fmt::Debug;
@@ -20,6 +20,18 @@ use std::{
     time,
     time::Duration,
 };
+
+/// Abstraction of a task-scheduling logic
+///
+/// Because the network can be faulty, the task of sending a message must be performed multiple
+/// times to ensure that the recipient receives each message.
+/// The trait [`TaskScheduler<T>`] describes in what intervals some abstract task of type `T`
+/// should be performed.
+#[async_trait::async_trait]
+pub trait TaskScheduler<T>: Send + Sync {
+    fn add_task(&mut self, task: T);
+    async fn next_task(&mut self) -> Option<T>;
+}
 
 /// An RMC message consisting of either a signed (indexed) hash, or a multisigned hash.
 #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, Hash)]
@@ -308,9 +320,10 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
 mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
     use aleph_bft_crypto::{
-        KeyBox, MultiKeychain, Multisigned, PartialMultisignature, SignatureSet, Signed,
+        nodes::{Index, NodeCount, NodeIndex},
+        signed::{Multisigned, Signed},
+        types::{KeyBox, MultiKeychain, PartialMultisignature, Signable, SignatureSet},
     };
-    use aleph_bft_types::{Index, NodeCount, NodeIndex, Signable};
     use async_trait::async_trait;
     use codec::{Decode, Encode};
     use futures::{

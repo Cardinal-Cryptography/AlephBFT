@@ -14,7 +14,6 @@ readme = "../README.md"
 description = """AlephBFT is an asynchronous and Byzantine fault tolerant consensus protocol aimed at ordering arbitrary messages (transactions). It has been designed to continuously operate even in the harshest conditions: with no bounds on message-delivery delays and in the presence of malicious actors. This makes it an excellent fit for blockchain-related applications."""
 
 [dependencies]
-aleph-bft-crypto = { path = "../crypto" }
 aleph-bft-rmc = { path = "../rmc" }
 aleph-bft-types = { path = "../types" }
 async-trait = "0.1"
@@ -27,9 +26,5 @@ parking_lot = "0.11"
 rand = "0.8"
 
 [dev-dependencies]
-chrono = "0.4"
 env_logger = "0.9"
-libp2p = { version ="0.39", features = ["mdns", "tcp-tokio"]}
 tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
-sha3 = "0.9.1"
-unsigned-varint = { version = "0.7.0", features = ["futures", "asynchronous_codec"] }
