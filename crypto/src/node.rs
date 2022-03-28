@@ -1,7 +1,7 @@
 use codec::{Decode, Encode, Error, Input, Output};
 use derive_more::{Add, AddAssign, From, Into, Sub, SubAssign, Sum};
 use std::{
-    ops::{Div, Index as stdIndex, Mul},
+    ops::{Div, Index as StdIndex, Mul},
     vec,
 };
 
@@ -210,7 +210,7 @@ impl Decode for NodeSubset {
     }
 }
 
-impl stdIndex<NodeIndex> for NodeSubset {
+impl StdIndex<NodeIndex> for NodeSubset {
     type Output = bool;
 
     fn index(&self, vidx: NodeIndex) -> &bool {
