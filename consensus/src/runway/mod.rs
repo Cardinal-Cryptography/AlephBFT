@@ -293,7 +293,7 @@ where
                     self.on_parents_response(u_hash, parents)
                 }
                 Response::NewestUnit(response) => {
-                    trace!(target: "AlephBFT-runway", "{:?} Response parents received.", self.index());
+                    trace!(target: "AlephBFT-runway", "{:?} Response newest unit received from {:?}.", self.index(), response.index());
                     self.on_newest_response(response);
                 }
             },
