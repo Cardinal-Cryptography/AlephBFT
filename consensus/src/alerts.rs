@@ -1,8 +1,9 @@
 use crate::{
-    units::UncheckedSignedUnit, Data, DoublingDelayScheduler, Hasher, Index, MultiKeychain,
-    Multisigned, NodeCount, NodeIndex, PartialMultisignature, Receiver, Recipient,
-    ReliableMulticast, RmcMessage, Sender, SessionId, Signable, Signature, Signed, UncheckedSigned,
+    units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount,
+    NodeIndex, PartialMultisignature, Receiver, Recipient, Sender, SessionId, Signable, Signature,
+    Signed, UncheckedSigned,
 };
+use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use codec::{Decode, Encode};
 use derivative::Derivative;
 use futures::{

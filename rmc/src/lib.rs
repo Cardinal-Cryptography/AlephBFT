@@ -1,8 +1,7 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 pub use aleph_bft_crypto::{
-    nodes::NodeCount,
-    signed::{Indexed, Multisigned, PartiallyMultisigned, Signed, UncheckedSigned},
-    types::{MultiKeychain, PartialMultisignature, Signable, Signature},
+    Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
+    Signable, Signature, Signed, UncheckedSigned,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};
@@ -320,9 +319,8 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
 mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
     use aleph_bft_crypto::{
-        nodes::{Index, NodeCount, NodeIndex},
-        signed::{Multisigned, Signed},
-        types::{KeyBox, MultiKeychain, PartialMultisignature, Signable, SignatureSet},
+        Index, KeyBox, MultiKeychain, Multisigned, NodeCount, NodeIndex, PartialMultisignature,
+        Signable, SignatureSet, Signed,
     };
     use async_trait::async_trait;
     use codec::{Decode, Encode};

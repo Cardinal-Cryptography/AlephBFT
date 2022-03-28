@@ -13,8 +13,6 @@ mod runway;
 mod terminal;
 mod units;
 
-use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
-
 pub use aleph_bft_types::{
     Data, DataProvider, FinalizationHandler, Hasher, IncompleteMultisignatureError, Index, Indexed,
     KeyBox, MultiKeychain, Multisigned, Network, NodeCount, NodeIndex, NodeMap, NodeSubset,

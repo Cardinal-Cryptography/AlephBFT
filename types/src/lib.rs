@@ -3,12 +3,9 @@ mod network;
 mod tasks;
 
 pub use aleph_bft_crypto::{
-    nodes::{Index, NodeCount, NodeIndex, NodeMap, NodeSubset},
-    signed::{
-        IncompleteMultisignatureError, Indexed, Multisigned, PartiallyMultisigned, SignatureError,
-        Signed, UncheckedSigned,
-    },
-    types::{KeyBox, MultiKeychain, PartialMultisignature, Signable, Signature, SignatureSet},
+    IncompleteMultisignatureError, Index, Indexed, KeyBox, MultiKeychain, Multisigned, NodeCount,
+    NodeIndex, NodeMap, NodeSubset, PartialMultisignature, PartiallyMultisigned, Signable,
+    Signature, SignatureError, SignatureSet, Signed, UncheckedSigned,
 };
 pub use dataio::{DataProvider, FinalizationHandler};
 pub use network::{Network, Recipient};

@@ -221,7 +221,7 @@ impl StdIndex<NodeIndex> for NodeSubset {
 #[cfg(test)]
 mod tests {
 
-    use crate::nodes::{NodeIndex, NodeSubset};
+    use crate::node::{NodeIndex, NodeSubset};
     use codec::{Decode, Encode};
     #[test]
     fn decoding_node_index_works() {
