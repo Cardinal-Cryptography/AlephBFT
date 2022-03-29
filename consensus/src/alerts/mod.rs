@@ -128,7 +128,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H
 /// Certain calls to the alerter may generate responses. It is the caller's responsibility to
 /// forward them appropriately.
 #[derive(Debug)]
-pub(crate) enum AlertResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
+enum AlertResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>, Recipient),
     ForkResponse(Option<ForkingNotification<H, D, S>>, H::Hash),
     AlertRequest(AlertMessage<H, D, S, MS>, Recipient),
