@@ -295,7 +295,7 @@ impl UnreliableRouter {
         }
     }
 
-    pub(crate) fn add_hook<HK: NetworkHook + 'static>(&mut self, hook: HK) {
+    pub fn add_hook<HK: NetworkHook + 'static>(&mut self, hook: HK) {
         self.hook_list.borrow_mut().push(Box::new(hook));
     }
 
@@ -382,8 +382,9 @@ impl Future for UnreliableRouter {
 }
 
 #[async_trait]
-pub(crate) trait NetworkHook: Send {
-    /// This must complete during a single poll
+pub trait NetworkHook: Send {
+    /// This must complete during a single poll - the current implementation
+    /// of UnreliableRouter will panic if polling this method returns Poll::Pending
     async fn update_state(
         &mut self,
         data: &mut NetworkData,
