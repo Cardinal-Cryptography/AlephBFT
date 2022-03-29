@@ -384,7 +384,7 @@ impl Future for UnreliableRouter {
 #[async_trait]
 pub trait NetworkHook: Send {
     /// This must complete during a single poll - the current implementation
-    /// of UnreliableRouter will panic if polling this method returns Poll::Pending
+    /// of UnreliableRouter will panic if polling this method returns Poll::Pending.
     async fn update_state(
         &mut self,
         data: &mut NetworkData,
