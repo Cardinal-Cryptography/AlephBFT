@@ -24,7 +24,7 @@ pub(crate) type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSig
 
 #[derive(Debug, Decode, Encode, Derivative)]
 #[derivative(PartialEq, Eq, Hash)]
-pub(crate) struct Alert<H: Hasher, D: Data, S: Signature> {
+pub struct Alert<H: Hasher, D: Data, S: Signature> {
     sender: NodeIndex,
     proof: ForkProof<H, D, S>,
     legit_units: Vec<UncheckedSignedUnit<H, D, S>>,
@@ -104,7 +104,7 @@ impl<H: Hasher, D: Data, S: Signature> Signable for Alert<H, D, S> {
 
 /// A message concerning alerts.
 #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum AlertMessage<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
+pub enum AlertMessage<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
     /// Alert regarding forks, signed by the person claiming misconduct.
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>),
     /// An internal RMC message, together with the id of the sender.
@@ -138,7 +138,7 @@ enum AlertResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> 
 // Notifications being sent to consensus, so that it can learn about proven forkers and receive
 // legitimized units.
 #[derive(Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ForkingNotification<H: Hasher, D: Data, S: Signature> {
+pub enum ForkingNotification<H: Hasher, D: Data, S: Signature> {
     Forker(ForkProof<H, D, S>),
     Units(Vec<UncheckedSignedUnit<H, D, S>>),
 }
