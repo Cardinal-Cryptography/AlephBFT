@@ -128,7 +128,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H
 /// Certain calls to the alerter may generate responses. It is the caller's responsibility to
 /// forward them appropriately.
 #[derive(Debug)]
-enum AlertResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
+enum AlerterResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>, Recipient),
     ForkResponse(Option<ForkingNotification<H, D, S>>, H::Hash),
     AlertRequest(AlertMessage<H, D, S, MS>, Recipient),
@@ -322,38 +322,38 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
         }
     }
 
-    #[must_use = "`on_message()` may return an `AlertResponse` which should be propagated"]
+    #[must_use = "`on_message()` may return an `AlerterResponse` which should be propagated"]
     async fn on_message(
         &mut self,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
-    ) -> Option<AlertResponse<H, D, MK::Signature, MK::PartialMultisignature>> {
+    ) -> Option<AlerterResponse<H, D, MK::Signature, MK::PartialMultisignature>> {
         use AlertMessage::*;
         match message {
             ForkAlert(alert) => {
                 trace!(target: "AlephBFT-alerter", "{:?} Fork alert received {:?}.", self.index(), alert);
                 self.on_network_alert(alert)
                     .await
-                    .map(|(n, h)| AlertResponse::ForkResponse(n, h))
+                    .map(|(n, h)| AlerterResponse::ForkResponse(n, h))
             }
             RmcMessage(sender, message) => {
                 let hash = message.hash();
                 if let Some(alert) = self.known_alerts.get(hash) {
                     let alert_id = (alert.as_signable().sender, alert.as_signable().forker());
                     if self.known_rmcs.get(&alert_id) == Some(hash) || message.is_complete() {
-                        Some(AlertResponse::RmcMessage(message))
+                        Some(AlerterResponse::RmcMessage(message))
                     } else {
                         None
                     }
                 } else {
                     let message = AlertMessage::AlertRequest(self.index(), *hash);
-                    Some(AlertResponse::AlertRequest(
+                    Some(AlerterResponse::AlertRequest(
                         message,
                         Recipient::Node(sender),
                     ))
                 }
             }
             AlertRequest(node, hash) => match self.known_alerts.get(&hash) {
-                Some(alert) => Some(AlertResponse::ForkAlert(
+                Some(alert) => Some(AlerterResponse::ForkAlert(
                     alert.clone().into_unchecked(),
                     Recipient::Node(node),
                 )),
@@ -426,23 +426,23 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
             message = io.messages_from_network.next() => match message {
                 Some(message) => {
                     match alerter.on_message(message).await {
-                        Some(AlertResponse::ForkAlert(alert, recipient)) => {
+                        Some(AlerterResponse::ForkAlert(alert, recipient)) => {
                             io.send_message_for_network(
                                 AlertMessage::ForkAlert(alert),
                                 recipient,
                                 &mut alerter.exiting,
                             );
                         }
-                        Some(AlertResponse::AlertRequest(request, recipient)) => {
+                        Some(AlerterResponse::AlertRequest(request, recipient)) => {
                             io.send_message_for_network(request, recipient, &mut alerter.exiting);
                         }
-                        Some(AlertResponse::RmcMessage(message)) => {
+                        Some(AlerterResponse::RmcMessage(message)) => {
                             if io.messages_for_rmc.unbounded_send(message).is_err() {
                                 warn!(target: "AlephBFT-alerter", "{:?} Channel with messages for rmc should be open", alerter.index());
                                 alerter.exiting = true;
                             }
                         }
-                        Some(AlertResponse::ForkResponse(maybe_notification, hash)) => {
+                        Some(AlerterResponse::ForkResponse(maybe_notification, hash)) => {
                             io.rmc.start_rmc(hash).await;
                             if let Some(notification) = maybe_notification {
                                 io.send_notification_for_units(notification, &mut alerter.exiting);
