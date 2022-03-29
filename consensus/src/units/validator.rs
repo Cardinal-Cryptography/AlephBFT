@@ -26,7 +26,7 @@ impl<H: Hasher, D: Data, S: Signature> Display for ValidationError<H, D, S> {
         match self {
             WrongSignature(usu) => write!(f, "wrongly signed unit: {:?}", usu),
             WrongSession(fu) => write!(f, "unit from wrong session: {:?}", fu),
-            RoundTooHigh(fu) => write!(f, "unit with too high round{}: {:?}", fu.round(), fu),
+            RoundTooHigh(fu) => write!(f, "unit with too high round {}: {:?}", fu.round(), fu),
             WrongNumberOfMembers(pu) => write!(
                 f,
                 "wrong number of members implied by unit {:?}: {:?}",
