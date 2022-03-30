@@ -2,8 +2,8 @@ use crate::{
     consensus,
     runway::{NotificationIn, NotificationOut},
     testing::{
-        complete_oneshot, init_log,
-        mock::{gen_config, Hasher64, Spawner},
+        complete_oneshot, gen_config, init_log,
+        mock::{Hasher64, Spawner},
     },
     units::{ControlHash, PreUnit, Unit, UnitCoord},
     Hasher, NodeIndex, SpawnHandle,

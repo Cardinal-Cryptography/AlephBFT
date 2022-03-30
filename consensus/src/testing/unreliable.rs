@@ -3,9 +3,8 @@ use crate::{
     network::NetworkDataInner,
     testing::{
         init_log,
-        mock::{
-            configure_network, spawn_honest_member, NetworkData, NetworkHook, Signature, Spawner,
-        },
+        mock::{configure_network, NetworkHook, Signature, Spawner},
+        spawn_honest_member, NetworkData,
     },
     Index, KeyBox, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };
@@ -22,7 +21,7 @@ struct CorruptPacket {
 }
 
 #[async_trait]
-impl NetworkHook for CorruptPacket {
+impl NetworkHook<NetworkData> for CorruptPacket {
     async fn update_state(
         &mut self,
         data: &mut NetworkData,
@@ -83,7 +82,7 @@ struct NoteRequest {
 }
 
 #[async_trait]
-impl NetworkHook for NoteRequest {
+impl NetworkHook<NetworkData> for NoteRequest {
     async fn update_state(&mut self, data: &mut NetworkData, sender: NodeIndex, _: NodeIndex) {
         use NetworkDataInner::Units;
         use UnitMessage::RequestCoord;

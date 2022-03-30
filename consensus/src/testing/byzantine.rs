@@ -3,18 +3,18 @@ use crate::{
     network::NetworkDataInner::Units,
     testing::{
         init_log,
-        mock::{
-            configure_network, spawn_honest_member, AlertHook, Data, Hash64, Hasher64, KeyBox,
-            Network, NetworkData, Spawner,
-        },
+        mock::{configure_network, Data, Hash64, Hasher64, KeyBox, NetworkHook, Spawner},
+        spawn_honest_member, Network, NetworkData,
     },
     units::{ControlHash, FullUnit, PreUnit, SignedUnit, UnitCoord},
     Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap,
     Recipient, Round, SessionId, Signed, SpawnHandle, TaskHandle,
 };
+use async_trait::async_trait;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, trace};
-use std::collections::HashMap;
+use parking_lot::Mutex;
+use std::{collections::HashMap, sync::Arc};
 
 struct MaliciousMember<'a> {
     node_ix: NodeIndex,
@@ -200,6 +200,49 @@ fn spawn_malicious_member(
     };
     let task_handle = spawner.spawn_essential("malicious-member", member_task);
     (exit_tx, task_handle)
+}
+
+#[derive(Clone)]
+pub(crate) struct AlertHook {
+    alerts_sent_by_connection: Arc<Mutex<HashMap<(NodeIndex, NodeIndex), usize>>>,
+}
+
+impl AlertHook {
+    pub(crate) fn new() -> Self {
+        AlertHook {
+            alerts_sent_by_connection: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub(crate) fn count(&self, sender: NodeIndex, recipient: NodeIndex) -> usize {
+        match self
+            .alerts_sent_by_connection
+            .lock()
+            .get(&(sender, recipient))
+        {
+            Some(count) => *count,
+            None => 0,
+        }
+    }
+}
+
+#[async_trait]
+impl NetworkHook<NetworkData> for AlertHook {
+    async fn update_state(
+        &mut self,
+        data: &mut NetworkData,
+        sender: NodeIndex,
+        recipient: NodeIndex,
+    ) {
+        use crate::{alerts::AlertMessage::*, network::NetworkDataInner::*};
+        if let crate::NetworkData(Alert(ForkAlert(_))) = data {
+            *self
+                .alerts_sent_by_connection
+                .lock()
+                .entry((sender, recipient))
+                .or_insert(0) += 1;
+        }
+    }
 }
 
 async fn honest_members_agree_on_batches_byzantine(

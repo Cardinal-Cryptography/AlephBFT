@@ -187,7 +187,7 @@ pub(crate) async fn run<
 mod tests {
     use super::*;
     use crate::{
-        testing::mock::{self, Data, Hasher64, KeyBox, PartialMultisignature, Signature},
+        testing::mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
         NodeIndex, NodeSubset, Round, Signed,
     };
@@ -218,7 +218,7 @@ mod tests {
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(NewUnit(
             uu.clone(),
         )));
-        let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for NewUnit");
         let decoded = decoded.unwrap();
         assert_eq!(
@@ -247,7 +247,7 @@ mod tests {
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
             RequestCoord(ni, uc),
         ));
-        let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for RequestCoord");
         let decoded = decoded.unwrap();
         assert!(
@@ -271,7 +271,7 @@ mod tests {
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
             ResponseCoord(uu.clone()),
         ));
-        let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ResponseCoord");
         let decoded = decoded.unwrap();
         assert_eq!(
@@ -300,7 +300,7 @@ mod tests {
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
             RequestParents(ni, h),
         ));
-        let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for RequestParents");
         let decoded = decoded.unwrap();
         assert!(
@@ -333,7 +333,7 @@ mod tests {
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
             ResponseParents(h, parents.clone()),
         ));
-        let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ResponseParents");
         let decoded = decoded.unwrap();
         assert_eq!(
@@ -379,7 +379,7 @@ mod tests {
                 .await
                 .into_unchecked(),
         )));
-        let decoded = mock::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ForkAlert");
         let decoded = decoded.unwrap();
         assert_eq!(

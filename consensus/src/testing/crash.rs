@@ -1,7 +1,8 @@
 use crate::{
     testing::{
         init_log,
-        mock::{configure_network, spawn_honest_member, Spawner},
+        mock::{configure_network, Spawner},
+        spawn_honest_member,
     },
     NodeCount, SpawnHandle,
 };

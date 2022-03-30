@@ -1,7 +1,10 @@
 use crate::{
     creation::{run, IO},
     runway::NotificationOut as GenericNotificationOut,
-    testing::mock::{gen_config, Data, Hasher64},
+    testing::{
+        gen_config,
+        mock::{Data, Hasher64},
+    },
     units::{FullUnit as GenericFullUnit, PreUnit as GenericPreUnit, Unit as GenericUnit},
     NodeCount, Receiver, Round, Sender,
 };
