@@ -1,9 +1,9 @@
 use crate::{
-    exponential_slowdown, run_session, units::UnitCoord, Config, DataProvider as DataProviderT,
-    DelayConfig, FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT,
+    exponential_slowdown, run_session, Config, DataProvider as DataProviderT, DelayConfig,
+    FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT,
     MultiKeychain as MultiKeychainT, Network as NetworkT, NodeCount, NodeIndex,
-    PartialMultisignature as PartialMultisignatureT, Receiver, Recipient, Round, Sender,
-    SpawnHandle, TaskHandle,
+    PartialMultisignature as PartialMultisignatureT, Receiver, Recipient, Sender, SpawnHandle,
+    TaskHandle,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};
@@ -50,7 +50,7 @@ pub fn spawn_honest_member(
     n_members: NodeCount,
     network: impl 'static + NetworkT<NetworkData>,
 ) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
-    let data_provider = DataProvider::new(node_index);
+    let data_provider = DataProvider::new();
 
     let (finalization_provider, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
@@ -342,18 +342,7 @@ impl NetworkHook for AlertHook {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct Data {
-    coord: UnitCoord,
-    variant: u32,
-}
-
-impl Data {
-    #[cfg(test)]
-    pub(crate) fn new(coord: UnitCoord, variant: u32) -> Self {
-        Data { coord, variant }
-    }
-}
+pub type Data = u32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct Signature {}
@@ -377,26 +366,18 @@ impl PartialMultisignatureT for PartialMultisignature {
     }
 }
 
-pub(crate) struct DataProvider {
-    ix: NodeIndex,
-    round_counter: Round,
+pub(crate) struct DataProvider;
+
+impl DataProvider {
+    pub(crate) fn new() -> Self {
+        Self
+    }
 }
 
 #[async_trait]
 impl DataProviderT<Data> for DataProvider {
     async fn get_data(&mut self) -> Data {
-        let coord = UnitCoord::new(self.round_counter, self.ix);
-        self.round_counter += 1;
-        Data { coord, variant: 0 }
-    }
-}
-
-impl DataProvider {
-    pub(crate) fn new(ix: NodeIndex) -> Self {
-        Self {
-            ix,
-            round_counter: 0,
-        }
+        0
     }
 }
 

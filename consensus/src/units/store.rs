@@ -140,8 +140,7 @@ mod tests {
             round,
             ControlHash::new(&NodeMap::with_size(count)),
         );
-        let coord = UnitCoord::new(round, node_idx);
-        let data = Data::new(coord, 0);
+        let data = 0;
         let full_unit = FullUnit::new(preunit, data, session_id);
         Signed::sign(full_unit, keybox).await
     }

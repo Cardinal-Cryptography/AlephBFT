@@ -135,7 +135,7 @@ mod tests {
         testing::mock::{Data, Hasher64, KeyBox, Signature},
         units::{
             FullUnit as GenericFullUnit, PreUnit as GenericPreUnit,
-            UncheckedSignedUnit as GenericUncheckedSignedUnit, Unit as GenericUnit, UnitCoord,
+            UncheckedSignedUnit as GenericUncheckedSignedUnit, Unit as GenericUnit,
         },
         Hasher, NodeCount, NodeIndex, Round, SessionId, Signed,
     };
@@ -171,13 +171,7 @@ mod tests {
     }
 
     fn preunit_to_unit(preunit: PreUnit) -> Unit {
-        FullUnit::new(
-            preunit,
-            // The coord is wrong, but it doesn't matter.
-            Data::new(UnitCoord::new(0, 0.into()), 0),
-            0,
-        )
-        .unit()
+        FullUnit::new(preunit, 0, 0).unit()
     }
 
     fn add_units(creator: &mut Creator, units: &[Unit]) {
@@ -191,7 +185,7 @@ mod tests {
         session_id: SessionId,
         keybox: &KeyBox,
     ) -> UncheckedSignedUnit {
-        let data = Data::new(UnitCoord::new(0, 0.into()), 0);
+        let data = 0;
         let full_unit = FullUnit::new(pu, data, session_id);
         let signed_unit = Signed::sign(full_unit, keybox).await;
         signed_unit.into()
