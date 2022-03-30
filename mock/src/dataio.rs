@@ -1,12 +1,14 @@
-use crate::{
-    DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT, Receiver, Sender,
-};
+use aleph_bft_types::{DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT};
 use async_trait::async_trait;
 use futures::channel::mpsc::unbounded;
 use log::error;
 
+type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
+type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;
+
 pub type Data = u32;
 
+#[derive(Default)]
 pub struct DataProvider;
 
 impl DataProvider {
@@ -36,7 +38,7 @@ impl FinalizationHandlerT<Data> for FinalizationHandler {
 }
 
 impl FinalizationHandler {
-    pub(crate) fn new() -> (Self, Receiver<Data>) {
+    pub fn new() -> (Self, Receiver<Data>) {
         let (tx, rx) = unbounded();
 
         (Self { tx }, rx)

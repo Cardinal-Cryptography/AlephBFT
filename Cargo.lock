@@ -47,6 +47,12 @@ name = "aleph-bft-mock"
 version = "0.2.0"
 dependencies = [
  "aleph-bft-types",
+ "async-trait",
+ "futures",
+ "log",
+ "parity-scale-codec",
+ "rand",
+ "tokio",
 ]
 
 [[package]]

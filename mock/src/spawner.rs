@@ -1,4 +1,4 @@
-use crate::{SpawnHandle, TaskHandle};
+use aleph_bft_types::{SpawnHandle, TaskHandle};
 use futures::{channel::oneshot, Future};
 
 #[derive(Clone)]

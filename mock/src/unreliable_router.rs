@@ -1,4 +1,5 @@
-use crate::{NodeCount, NodeIndex};
+use crate::network::{Network, NetworkReceiver, NetworkSender};
+use aleph_bft_types::{NodeCount, NodeIndex};
 use async_trait::async_trait;
 use futures::{channel::mpsc::unbounded, Future, StreamExt};
 use log::debug;
@@ -9,11 +10,16 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::testing::mock::network::{Network, NetworkReceiver, NetworkSender};
-
 pub struct Peer<D> {
     tx: NetworkSender<D>,
     rx: NetworkReceiver<D>,
+}
+
+#[async_trait]
+pub trait NetworkHook<D>: Send {
+    /// This must complete during a single poll - the current implementation
+    /// of UnreliableRouter will panic if polling this method returns Poll::Pending.
+    async fn update_state(&mut self, data: &mut D, sender: NodeIndex, recipient: NodeIndex);
 }
 
 pub struct UnreliableRouter<D> {
@@ -24,7 +30,7 @@ pub struct UnreliableRouter<D> {
 }
 
 impl<D> UnreliableRouter<D> {
-    pub(crate) fn new(peer_list: Vec<NodeIndex>, reliability: f64) -> Self {
+    pub fn new(peer_list: Vec<NodeIndex>, reliability: f64) -> Self {
         UnreliableRouter {
             peers: RefCell::new(HashMap::new()),
             peer_list,
@@ -37,7 +43,7 @@ impl<D> UnreliableRouter<D> {
         self.hook_list.borrow_mut().push(Box::new(hook));
     }
 
-    pub(crate) fn connect_peer(&mut self, peer: NodeIndex) -> Network<D> {
+    pub fn connect_peer(&mut self, peer: NodeIndex) -> Network<D> {
         assert!(
             self.peer_list.iter().any(|p| *p == peer),
             "Must connect a peer in the list."
@@ -126,11 +132,4 @@ pub fn configure_network<D>(
         networks.push(network);
     }
     (router, networks)
-}
-
-#[async_trait]
-pub trait NetworkHook<D>: Send {
-    /// This must complete during a single poll - the current implementation
-    /// of UnreliableRouter will panic if polling this method returns Poll::Pending.
-    async fn update_state(&mut self, data: &mut D, sender: NodeIndex, recipient: NodeIndex);
 }

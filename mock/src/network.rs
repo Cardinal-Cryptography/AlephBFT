@@ -1,4 +1,4 @@
-use crate::{Network as NetworkT, NodeIndex, Recipient};
+use aleph_bft_types::{Network as NetworkT, NodeIndex, Recipient};
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
     StreamExt,

@@ -1,4 +1,4 @@
-use crate::{
+use aleph_bft_types::{
     Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
     PartialMultisignature as PartialMultisignatureT,
 };
