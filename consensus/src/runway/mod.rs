@@ -13,16 +13,16 @@ use crate::{
 use futures::{
     channel::{mpsc, oneshot},
     future::FusedFuture,
-    pin_mut, FutureExt, StreamExt, Future,
+    pin_mut, Future, FutureExt, StreamExt,
 };
 use log::{debug, error, info, trace, warn};
 use std::{collections::HashSet, convert::TryFrom};
 
 mod collection;
 
-pub use collection::{NewestUnitResponse, Salt};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
+pub use collection::{NewestUnitResponse, Salt};
 
 /// Type for incoming notifications: Runway to Consensus.
 #[derive(Clone, PartialEq)]
@@ -682,9 +682,11 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
     threshold: NodeCount,
     unit_messages_for_network: &Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     starting_round_sender: oneshot::Sender<Round>,
-    responses_from_runway:
-        Receiver<UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>>,
-    resolved_requests: Sender<Request<H>>) -> Result<impl Future<Output=()> + 'a, ()> {
+    responses_from_runway: Receiver<
+        UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
+    >,
+    resolved_requests: Sender<Request<H>>,
+) -> Result<impl Future<Output = ()> + 'a, ()> {
     let (collection, salt) = Collection::new(keychain, validator, threshold);
     let notification =
         RunwayNotificationOut::Request(Request::NewestUnit(salt), Recipient::Everyone);
@@ -702,7 +704,9 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
 }
 
 #[cfg(not(feature = "initial_unit_collection"))]
-fn trivial_start(starting_round_sender: oneshot::Sender<Round>) -> Result<impl Future<Output=()>, ()> {
+fn trivial_start(
+    starting_round_sender: oneshot::Sender<Round>,
+) -> Result<impl Future<Output = ()>, ()> {
     if let Err(e) = starting_round_sender.send(0) {
         error!(target: "AlephBFT-runway", "Unable to send the starting round: {}", e);
         return Err(());
@@ -779,7 +783,15 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     let validator = Validator::new(config.session_id, &keychain, config.max_round, threshold);
     let (responses_for_collection, responses_from_runway) = mpsc::unbounded();
     #[cfg(feature = "initial_unit_collection")]
-    let starting_round_handle = match initial_unit_collection(&keychain, &validator, threshold, &runway_io.unit_messages_for_network, starting_round_sender, responses_from_runway, runway_io.resolved_requests.clone()) {
+    let starting_round_handle = match initial_unit_collection(
+        &keychain,
+        &validator,
+        threshold,
+        &runway_io.unit_messages_for_network,
+        starting_round_sender,
+        responses_from_runway,
+        runway_io.resolved_requests.clone(),
+    ) {
         Ok(handle) => handle.fuse(),
         Err(_) => return,
     };

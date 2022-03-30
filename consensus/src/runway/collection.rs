@@ -82,7 +82,7 @@ impl<H: Hasher, D: Data, S: Signature> NewestUnitResponse<H, D, S> {
 }
 
 /// Ways in which a newest unit response might be wrong.
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 pub enum Error<H: Hasher, D: Data, S: Signature> {
     WrongSignature,
     SaltMismatch(Salt, Salt),
@@ -280,5 +280,240 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        Collection as GenericCollection, Error, NewestUnitResponse as GenericNewestUnitResponse,
+        Salt,
+    };
+    use crate::{
+        creation::Creator as GenericCreator,
+        testing::mock::{Data, Hasher64, KeyBox, Signature},
+        units::{
+            FullUnit as GenericFullUnit, PreUnit as GenericPreUnit,
+            UncheckedSignedUnit as GenericUncheckedSignedUnit, UnitCoord,
+            Validator as GenericValidator,
+        },
+        Index, NodeCount, NodeIndex, SessionId, Signed, UncheckedSigned,
+    };
+    use std::iter::{once, repeat};
+
+    type Collection<'a> = GenericCollection<'a, KeyBox>;
+    type Validator<'a> = GenericValidator<'a, KeyBox>;
+    type Creator = GenericCreator<Hasher64>;
+    type PreUnit = GenericPreUnit<Hasher64>;
+    type FullUnit = GenericFullUnit<Hasher64, Data>;
+    type UncheckedSignedUnit = GenericUncheckedSignedUnit<Hasher64, Data, Signature>;
+    type NewestUnitResponse = GenericNewestUnitResponse<Hasher64, Data, Signature>;
+    type UncheckedSignedNewestUnitResponse = UncheckedSigned<NewestUnitResponse, Signature>;
+
+    fn keychain_set(n_members: NodeCount) -> Vec<KeyBox> {
+        let mut result = Vec::new();
+        for i in 0..n_members.0 {
+            result.push(KeyBox::new(n_members, NodeIndex(i)));
+        }
+        result
+    }
+
+    async fn create_responses<'a, R: Iterator<Item = (&'a KeyBox, Option<UncheckedSignedUnit>)>>(
+        presponses: R,
+        salt: Salt,
+        requester: NodeIndex,
+    ) -> Vec<UncheckedSignedNewestUnitResponse> {
+        let mut result = Vec::new();
+        for (keychain, maybe_unit) in presponses {
+            let response = NewestUnitResponse::new(requester, keychain.index(), maybe_unit, salt);
+            result.push(Signed::sign(response, keychain).await.into_unchecked());
+        }
+        result
+    }
+
+    async fn preunit_to_unchecked_signed_unit(
+        pu: PreUnit,
+        session_id: SessionId,
+        keychain: &KeyBox,
+    ) -> UncheckedSignedUnit {
+        let data = Data::new(UnitCoord::new(0, 0.into()), 0);
+        let full_unit = FullUnit::new(pu, data, session_id);
+        let signed_unit = Signed::sign(full_unit, keychain).await;
+        signed_unit.into()
+    }
+
+    #[test]
+    fn no_starting_round_with_no_messages() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let max_round = 2;
+        let keychain = KeyBox::new(n_members, creator_id);
+        let validator = Validator::new(session_id, &keychain, max_round, threshold);
+        let (collection, _) = Collection::new(&keychain, &validator, threshold);
+        assert_eq!(collection.starting_round(), None);
+    }
+
+    #[tokio::test]
+    async fn no_starting_round_with_too_few_messages() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let responses = create_responses(
+            keychains.iter().skip(1).take(3).zip(repeat(None)),
+            salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            assert_eq!(collection.on_newest_response(response), Ok(()));
+        }
+        assert_eq!(collection.starting_round(), None);
+    }
+
+    #[tokio::test]
+    async fn starting_round_with_just_enough_messages() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let responses = create_responses(
+            keychains.iter().skip(1).take(4).zip(repeat(None)),
+            salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            assert_eq!(collection.on_newest_response(response), Ok(()));
+        }
+        assert_eq!(collection.starting_round(), Some(0));
+    }
+
+    #[tokio::test]
+    async fn higher_starting_round_with_last_message() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let creator = Creator::new(creator_id, n_members);
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let (preunit, _) = creator.create_unit(0).expect("Creation should succeed.");
+        let unit = preunit_to_unchecked_signed_unit(preunit, session_id, keychain).await;
+        let responses = create_responses(
+            keychains
+                .iter()
+                .skip(1)
+                .zip(repeat(None).take(5).chain(once(Some(unit)))),
+            salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            assert_eq!(collection.on_newest_response(response), Ok(()));
+        }
+        assert_eq!(collection.starting_round(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn detects_salt_mismatch() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let other_salt = salt + 1;
+        let responses = create_responses(
+            keychains.iter().skip(1).zip(repeat(None)),
+            other_salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            assert_eq!(
+                collection.on_newest_response(response),
+                Err(Error::SaltMismatch(salt, other_salt))
+            );
+        }
+        assert_eq!(collection.starting_round(), None);
+    }
+
+    #[tokio::test]
+    async fn detects_invalid_unit() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let wrong_session_id = 43;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let creator = Creator::new(creator_id, n_members);
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let (preunit, _) = creator.create_unit(0).expect("Creation should succeed.");
+        let unit = preunit_to_unchecked_signed_unit(preunit, wrong_session_id, keychain).await;
+        let responses = create_responses(
+            keychains.iter().skip(1).zip(repeat(Some(unit.clone()))),
+            salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            match collection.on_newest_response(response) {
+                Err(Error::InvalidUnit(_)) => (),
+                result => panic!("Expected invalid unit result got {:?}", result),
+            }
+        }
+        assert_eq!(collection.starting_round(), None);
+    }
+
+    #[tokio::test]
+    async fn detects_foreign_unit() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let other_creator_id = NodeIndex(1);
+        let session_id = 0;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let creator = Creator::new(other_creator_id, n_members);
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let (preunit, _) = creator.create_unit(0).expect("Creation should succeed.");
+        let unit = preunit_to_unchecked_signed_unit(preunit, session_id, &keychains[1]).await;
+        let responses = create_responses(
+            keychains.iter().skip(1).zip(repeat(Some(unit.clone()))),
+            salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            assert_eq!(
+                collection.on_newest_response(response),
+                Err(Error::ForeignUnit(other_creator_id))
+            );
+        }
+        assert_eq!(collection.starting_round(), None);
     }
 }
