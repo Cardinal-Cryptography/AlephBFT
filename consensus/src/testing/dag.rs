@@ -1,7 +1,10 @@
 use crate::{
     consensus,
     runway::{NotificationIn, NotificationOut},
-    testing::mock::{gen_config, Hash64, Hasher64, Spawner},
+    testing::{
+        complete_oneshot,
+        mock::{gen_config, Hash64, Hasher64, Spawner},
+    },
     units::{ControlHash, PreUnit, Unit},
     NodeCount, NodeIndex, NodeMap, NodeSubset, Receiver, Round, Sender, SpawnHandle,
 };
@@ -13,10 +16,7 @@ use futures::{
 use futures_timer::Delay;
 use log::{debug, error, trace};
 use rand::{distributions::Open01, prelude::*};
-use std::{cmp, time::Duration};
-
-use crate::testing::mock::complete_oneshot;
-use std::collections::HashMap;
+use std::{cmp, collections::HashMap, time::Duration};
 
 #[derive(Clone)]
 struct UnitWithParents {

@@ -1,9 +1,11 @@
 use crate::{
     member::UnitMessage,
     network::NetworkDataInner,
-    testing::mock::{
-        configure_network, init_log, spawn_honest_member, NetworkData, NetworkHook, Signature,
-        Spawner,
+    testing::{
+        init_log,
+        mock::{
+            configure_network, spawn_honest_member, NetworkData, NetworkHook, Signature, Spawner,
+        },
     },
     Index, KeyBox, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };

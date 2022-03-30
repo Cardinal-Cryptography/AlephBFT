@@ -1,9 +1,11 @@
-use futures::StreamExt;
-
 use crate::{
-    testing::mock::{configure_network, init_log, spawn_honest_member, Spawner},
+    testing::{
+        init_log,
+        mock::{configure_network, spawn_honest_member, Spawner},
+    },
     NodeCount, SpawnHandle,
 };
+use futures::StreamExt;
 
 async fn honest_members_agree_on_batches(
     n_members: NodeCount,
