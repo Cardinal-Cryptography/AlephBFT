@@ -5,18 +5,17 @@ mod consensus;
 mod crash;
 mod creation;
 mod dag;
-pub(crate) mod mock;
 mod unreliable;
 
 use crate::{
     exponential_slowdown, run_session, Config, DelayConfig, Network as NetworkT, NodeCount,
     NodeIndex, SpawnHandle, TaskHandle,
 };
-use futures::channel::{mpsc::UnboundedReceiver, oneshot};
-use mock::{
+use aleph_bft_mock::{
     Data, DataProvider, FinalizationHandler, Hasher64, KeyBox, Network as MockNetwork,
     PartialMultisignature, Signature, Spawner,
 };
+use futures::channel::{mpsc::UnboundedReceiver, oneshot};
 use std::{sync::Arc, time::Duration};
 
 pub type NetworkData = crate::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;

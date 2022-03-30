@@ -1,11 +1,8 @@
 use crate::{
-    testing::{
-        init_log,
-        mock::{configure_network, Spawner},
-        spawn_honest_member,
-    },
+    testing::{init_log, spawn_honest_member},
     NodeCount, SpawnHandle,
 };
+use aleph_bft_mock::{configure_network, Spawner};
 use futures::StreamExt;
 
 async fn honest_members_agree_on_batches(

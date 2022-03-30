@@ -11,6 +11,8 @@ mod member;
 mod network;
 mod runway;
 mod terminal;
+#[cfg(test)]
+mod testing;
 mod units;
 
 pub use aleph_bft_types::{
@@ -22,9 +24,6 @@ pub use aleph_bft_types::{
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
 pub use member::run_session;
 pub use network::NetworkData;
-
-#[cfg(test)]
-pub mod testing;
 
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
 type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;

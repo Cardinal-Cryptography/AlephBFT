@@ -223,10 +223,10 @@ impl<H: Hasher> Unit<H> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        testing::mock::Hasher64,
         units::{ControlHash, FullUnit, PreUnit},
         Hasher, NodeIndex,
     };
+    use aleph_bft_mock::Hasher64;
     use codec::{Decode, Encode};
 
     #[test]

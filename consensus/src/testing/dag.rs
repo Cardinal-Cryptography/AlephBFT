@@ -1,13 +1,11 @@
 use crate::{
     consensus,
     runway::{NotificationIn, NotificationOut},
-    testing::{
-        complete_oneshot, gen_config,
-        mock::{Hash64, Hasher64, Spawner},
-    },
+    testing::{complete_oneshot, gen_config},
     units::{ControlHash, PreUnit, Unit},
     NodeCount, NodeIndex, NodeMap, NodeSubset, Receiver, Round, Sender, SpawnHandle,
 };
+use aleph_bft_mock::{Hash64, Hasher64, Spawner};
 use futures::{
     channel::{mpsc, oneshot},
     stream::StreamExt,

@@ -123,10 +123,10 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        testing::mock::{Data, Hasher64, KeyBox},
         units::{ControlHash, FullUnit, PreUnit, SignedUnit, UnitCoord, UnitStore},
         NodeCount, NodeIndex, NodeMap, Round, Signed,
     };
+    use aleph_bft_mock::{Data, Hasher64, KeyBox};
 
     async fn create_unit<'a>(
         round: Round,

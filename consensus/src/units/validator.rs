@@ -132,13 +132,13 @@ mod tests {
     use super::{ValidationError::*, Validator as GenericValidator};
     use crate::{
         creation::Creator as GenericCreator,
-        testing::mock::{Data, Hasher64, KeyBox, Signature},
         units::{
             FullUnit as GenericFullUnit, PreUnit as GenericPreUnit,
             UncheckedSignedUnit as GenericUncheckedSignedUnit, Unit as GenericUnit,
         },
         Hasher, NodeCount, NodeIndex, Round, SessionId, Signed,
     };
+    use aleph_bft_mock::{Data, Hasher64, KeyBox, Signature};
 
     type Validator<'a> = GenericValidator<'a, KeyBox>;
     type Creator = GenericCreator<Hasher64>;

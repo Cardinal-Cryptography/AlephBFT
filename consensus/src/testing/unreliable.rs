@@ -1,13 +1,10 @@
 use crate::{
     member::UnitMessage,
     network::NetworkDataInner,
-    testing::{
-        init_log,
-        mock::{configure_network, NetworkHook, Signature, Spawner},
-        spawn_honest_member, NetworkData,
-    },
+    testing::{init_log, spawn_honest_member, NetworkData},
     Index, KeyBox, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };
+use aleph_bft_mock::{configure_network, NetworkHook, Signature, Spawner};
 use async_trait::async_trait;
 use futures::StreamExt;
 use parking_lot::Mutex;

@@ -1,10 +1,10 @@
 use crate::{
     alerts::{run, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
-    testing::mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature},
     units::{ControlHash, FullUnit, PreUnit},
     Index, Indexed, KeyBox as _, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable, Signed,
     UncheckedSigned,
 };
+use aleph_bft_mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature};
 use aleph_bft_rmc::Message as RmcMessage;
 use futures::{
     channel::{mpsc, oneshot},

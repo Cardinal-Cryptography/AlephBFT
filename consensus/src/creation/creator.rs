@@ -90,10 +90,10 @@ impl<H: Hasher> Creator<H> {
 mod tests {
     use super::Creator as GenericCreator;
     use crate::{
-        testing::mock::{Data, Hasher64},
         units::{FullUnit as GenericFullUnit, PreUnit as GenericPreUnit, Unit as GenericUnit},
         Hasher, NodeCount, NodeIndex, Round,
     };
+    use aleph_bft_mock::{Data, Hasher64};
     use std::collections::HashSet;
 
     type Creator = GenericCreator<Hasher64>;

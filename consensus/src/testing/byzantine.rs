@@ -1,15 +1,12 @@
 use crate::{
     member::UnitMessage::NewUnit,
     network::NetworkDataInner::Units,
-    testing::{
-        init_log,
-        mock::{configure_network, Data, Hash64, Hasher64, KeyBox, NetworkHook, Spawner},
-        spawn_honest_member, Network, NetworkData,
-    },
+    testing::{init_log, spawn_honest_member, Network, NetworkData},
     units::{ControlHash, FullUnit, PreUnit, SignedUnit, UnitCoord},
     Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap,
     Recipient, Round, SessionId, Signed, SpawnHandle, TaskHandle,
 };
+use aleph_bft_mock::{configure_network, Data, Hash64, Hasher64, KeyBox, NetworkHook, Spawner};
 use async_trait::async_trait;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, trace};

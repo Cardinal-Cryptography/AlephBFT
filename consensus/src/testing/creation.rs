@@ -1,14 +1,11 @@
 use crate::{
     creation::{run, IO},
     runway::NotificationOut as GenericNotificationOut,
-    testing::{
-        gen_config,
-        mock::{Data, Hasher64},
-    },
+    testing::gen_config,
     units::{FullUnit as GenericFullUnit, PreUnit as GenericPreUnit, Unit as GenericUnit},
     NodeCount, Receiver, Round, Sender,
 };
-
+use aleph_bft_mock::{Data, Hasher64};
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, StreamExt,

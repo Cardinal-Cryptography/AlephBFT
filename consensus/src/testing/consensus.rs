@@ -1,13 +1,11 @@
 use crate::{
     consensus,
     runway::{NotificationIn, NotificationOut},
-    testing::{
-        complete_oneshot, gen_config, init_log,
-        mock::{Hasher64, Spawner},
-    },
+    testing::{complete_oneshot, gen_config, init_log},
     units::{ControlHash, PreUnit, Unit, UnitCoord},
     Hasher, NodeIndex, SpawnHandle,
 };
+use aleph_bft_mock::{Hasher64, Spawner};
 use codec::Encode;
 use futures::{
     channel::{

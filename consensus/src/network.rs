@@ -187,10 +187,10 @@ pub(crate) async fn run<
 mod tests {
     use super::*;
     use crate::{
-        testing::mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
         NodeIndex, NodeSubset, Round, Signed,
     };
+    use aleph_bft_mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature};
 
     async fn test_unchecked_unit(
         creator: NodeIndex,
