@@ -8,7 +8,7 @@ edition = "2018"
 [dependencies]
 aleph-bft = { path = ".." }
 async-trait = "0.1"
-codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["std"] }
+codec = { package = "parity-scale-codec", version = "3.0.0", default-features = false, features = ["std"] }
 env_logger = { version = "0.8", default-features = false }
 futures = "0.3"
 log = "0.4"
