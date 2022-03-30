@@ -6,8 +6,9 @@ use crate::{
         RunwayNotificationOut,
     },
     units::{UncheckedSignedUnit, UnitCoord},
-    Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount, NodeIndex,
-    Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
+    Backup, Data, DataProvider, FinalizationHandler, Hasher, IntoBackup, IntoReader, MultiKeychain,
+    Network, NodeCount, NodeIndex, Reader, Receiver, Recipient, Sender, Signature, SpawnHandle,
+    UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -396,10 +397,13 @@ where
 /// For a detailed description of the consensus implemented by `run_session` see
 /// [docs for devs](https://cardinal-cryptography.github.io/AlephBFT/index.html)
 /// or the [original paper](https://arxiv.org/abs/1908.05156).
+#[allow(clippy::too_many_arguments)]
 pub async fn run_session<
     H: Hasher,
     D: Data,
     DP: DataProvider<D>,
+    IB: IntoBackup,
+    IR: IntoReader,
     FH: FinalizationHandler<D>,
     N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
@@ -408,11 +412,16 @@ pub async fn run_session<
     config: Config,
     network: N,
     data_provider: DP,
+    unit_pre_backup: IB,
+    unit_pre_reader: IR,
     finalization_handler: FH,
     keybox: MK,
     spawn_handle: SH,
     mut exit: oneshot::Receiver<()>,
-) {
+) where
+    IB::Into: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
+    IR::Into: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
+{
     let index = config.node_ix;
     info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", index);
 
@@ -451,11 +460,15 @@ pub async fn run_session<
         unit_messages_for_network: runway_messages_for_network,
         resolved_requests: resolved_requests_tx,
     };
+    let unit_backup = unit_pre_backup.into_backup::<UncheckedSignedUnit<H, D, MK::Signature>>();
+    let unit_reader = unit_pre_reader.into_reader::<UncheckedSignedUnit<H, D, MK::Signature>>();
     let runway_handle = runway::run(
         config.clone(),
         keybox.clone(),
         data_provider,
         finalization_handler,
+        unit_backup,
+        unit_reader,
         spawn_handle.clone(),
         runway_io,
         exit_stream,

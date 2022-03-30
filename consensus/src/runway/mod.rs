@@ -6,9 +6,9 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, Validator,
     },
-    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signable, Signature, Signed,
-    SpawnHandle, UncheckedSigned,
+    Backup, Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain,
+    NodeCount, NodeIndex, NodeMap, Reader, Receiver, Recipient, Round, Sender, SessionId, Signable,
+    Signature, Signed, SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -151,12 +151,14 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-struct Runway<'a, H, D, MK, DP, FH>
+struct Runway<'a, H, D, MK, DP, UB, UR, FH>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
+    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
     FH: FinalizationHandler<D>,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -177,6 +179,8 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     data_provider: DP,
+    unit_backup: UB,
+    unit_reader: UR,
     finalization_handler: FH,
     after_catch_up_delay: bool,
     starting_round_sender: Option<oneshot::Sender<Round>>,
@@ -191,6 +195,8 @@ struct RunwayConfig<
     H: Hasher,
     D: Data,
     DP: DataProvider<D>,
+    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
     FH: FinalizationHandler<D>,
     MK: MultiKeychain,
 > {
@@ -211,17 +217,21 @@ struct RunwayConfig<
     resolved_requests: Sender<Request<H>>,
     starting_round_sender: oneshot::Sender<Round>,
     salt: u64,
+    unit_backup: UB,
+    unit_reader: UR,
 }
 
-impl<'a, H, D, MK, DP, FH> Runway<'a, H, D, MK, DP, FH>
+impl<'a, H, D, MK, DP, UB, UR, FH> Runway<'a, H, D, MK, DP, UB, UR, FH>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
+    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
     FH: FinalizationHandler<D>,
 {
-    fn new(config: RunwayConfig<'a, H, D, DP, FH, MK>) -> Self {
+    fn new(config: RunwayConfig<'a, H, D, DP, UB, UR, FH, MK>) -> Self {
         let n_members = config.n_members;
         let threshold = (n_members * 2) / 3 + NodeCount(1);
         let max_round = config.max_round;
@@ -246,6 +256,8 @@ where
             rx_consensus: config.rx_consensus,
             ordered_batch_rx: config.ordered_batch_rx,
             data_provider: config.data_provider,
+            unit_backup: config.unit_backup,
+            unit_reader: config.unit_reader,
             finalization_handler: config.finalization_handler,
             after_catch_up_delay: false,
             starting_round_sender: Some(config.starting_round_sender),
@@ -580,7 +592,11 @@ where
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         let data = self.data_provider.get_data().await;
         let full_unit = FullUnit::new(u, data, self.session_id);
+        let hash = full_unit.hash();
         let signed_unit = Signed::sign(full_unit, self.keybox).await;
+        trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), hash);
+        self.unit_backup.save(signed_unit.clone().into()).await;
+        trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), hash);
         self.store.add_unit(signed_unit.clone(), false);
     }
 
@@ -736,6 +752,10 @@ where
             self.exiting = true
         };
 
+        while self.unit_reader.next().is_some() {
+            // TODO implement handling units
+        }
+
         let mut catch_up_delay = futures_timer::Delay::new(Duration::from_secs(5)).fuse();
 
         info!(target: "AlephBFT-runway", "{:?} Runway started.", index);
@@ -811,11 +831,14 @@ pub(crate) struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
     pub(crate) resolved_requests: Sender<Request<H>>,
 }
 
-pub(crate) async fn run<H, D, MK, DP, FH, SH>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run<H, D, MK, DP, UB, UR, FH, SH>(
     config: Config,
     keychain: MK,
     data_provider: DP,
     finalization_handler: FH,
+    unit_backup: UB,
+    unit_reader: UR,
     spawn_handle: SH,
     runway_io: RunwayIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
@@ -824,6 +847,8 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
+    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
     FH: FinalizationHandler<D>,
     SH: SpawnHandle,
 {
@@ -885,6 +910,8 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     let runway_config = RunwayConfig {
         keychain: &keychain,
         data_provider,
+        unit_backup,
+        unit_reader,
         finalization_handler,
         alerts_for_alerter,
         notifications_from_alerter,

@@ -11,7 +11,8 @@ use crate::{
 };
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, trace};
-use std::collections::HashMap;
+use parking_lot::Mutex;
+use std::{collections::HashMap, sync::Arc};
 
 struct MaliciousMember<'a> {
     node_ix: NodeIndex,
@@ -182,7 +183,7 @@ fn spawn_malicious_member(
     n_members: NodeCount,
     round_to_fork: Round,
     network: Network,
-) -> (oneshot::Sender<()>, TaskHandle) {
+) -> (Vec<oneshot::Sender<()>>, Vec<TaskHandle>) {
     let (exit_tx, exit_rx) = oneshot::channel();
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);
@@ -198,7 +199,7 @@ fn spawn_malicious_member(
         lesniak.run_session(exit_rx).await;
     };
     let task_handle = spawner.spawn_essential("malicious-member", member_task);
-    (exit_tx, task_handle)
+    (vec![exit_tx], vec![task_handle])
 }
 
 async fn honest_members_agree_on_batches_byzantine(
@@ -211,7 +212,7 @@ async fn honest_members_agree_on_batches_byzantine(
     let spawner = Spawner::new();
     let mut batch_rxs = Vec::new();
     let mut exits = Vec::new();
-    let mut handles = Vec::new();
+    let mut handles = Vec::<TaskHandle>::new();
     let (mut net_hub, networks) = configure_network(n_members, network_reliability);
 
     let alert_hook = AlertHook::new();
@@ -221,16 +222,21 @@ async fn honest_members_agree_on_batches_byzantine(
 
     for network in networks {
         let ix = network.index();
-        let (exit_tx, handle) = if !n_honest.into_range().contains(&ix) {
+        let (mut exit_txs, mut new_handles) = if !n_honest.into_range().contains(&ix) {
             spawn_malicious_member(spawner.clone(), ix, n_members, 2, network)
         } else {
-            let (batch_rx, exit_tx, handle) =
-                spawn_honest_member(spawner.clone(), ix, n_members, network);
+            let (batch_rx, exit_txs, handles) = spawn_honest_member(
+                spawner.clone(),
+                ix,
+                n_members,
+                Arc::new(Mutex::new(vec![])),
+                network,
+            );
             batch_rxs.push(batch_rx);
-            (exit_tx, handle)
+            (exit_txs, handles)
         };
-        exits.push(exit_tx);
-        handles.push(handle);
+        exits.append(&mut exit_txs);
+        handles.append(&mut new_handles);
     }
 
     let mut batches = Vec::new();
