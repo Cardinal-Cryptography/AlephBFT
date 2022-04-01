@@ -9,14 +9,14 @@ use std::fmt::Debug;
 ///
 /// Note: this way of multisigning is very inefficient, and should be used only for testing.
 #[derive(Debug, Clone)]
-pub struct DefaultMultiKeychain<KB: KeyBox> {
+pub struct ThresholdMultiKeychain<KB: KeyBox> {
     key_box: KB,
 }
 
-impl<KB: KeyBox> DefaultMultiKeychain<KB> {
-    // Create a new `DefaultMultiKeychain` using the provided `KeyBox`.
+impl<KB: KeyBox> ThresholdMultiKeychain<KB> {
+    // Create a new `ThresholdMultiKeychain` using the provided `KeyBox`.
     pub fn new(key_box: KB) -> Self {
-        DefaultMultiKeychain { key_box }
+        ThresholdMultiKeychain { key_box }
     }
 
     fn quorum(&self) -> usize {
@@ -24,14 +24,14 @@ impl<KB: KeyBox> DefaultMultiKeychain<KB> {
     }
 }
 
-impl<KB: KeyBox> Index for DefaultMultiKeychain<KB> {
+impl<KB: KeyBox> Index for ThresholdMultiKeychain<KB> {
     fn index(&self) -> NodeIndex {
         self.key_box.index()
     }
 }
 
 #[async_trait]
-impl<KB: KeyBox> KeyBox for DefaultMultiKeychain<KB> {
+impl<KB: KeyBox> KeyBox for ThresholdMultiKeychain<KB> {
     type Signature = KB::Signature;
 
     async fn sign(&self, msg: &[u8]) -> Self::Signature {
@@ -47,7 +47,7 @@ impl<KB: KeyBox> KeyBox for DefaultMultiKeychain<KB> {
     }
 }
 
-impl<KB: KeyBox> MultiKeychain for DefaultMultiKeychain<KB> {
+impl<KB: KeyBox> MultiKeychain for ThresholdMultiKeychain<KB> {
     type PartialMultisignature = SignatureSet<KB::Signature>;
 
     fn from_signature(

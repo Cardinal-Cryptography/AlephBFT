@@ -320,7 +320,7 @@ mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{
-        prepare_keychains, BadKeyBox, SignableByte, TestMultiKeychain,
+        BadVerboseMultiKeychain, SignableByte, ThresholdMultiKeychain, VerboseKeyBox,
         VerbosePartialMultisignature, VerboseSignature,
     };
     use futures::{
@@ -333,6 +333,13 @@ mod tests {
     use std::{collections::HashMap, pin::Pin, time::Duration};
 
     type TestMessage = Message<SignableByte, VerboseSignature, VerbosePartialMultisignature>;
+    type TestMultiKeychain = ThresholdMultiKeychain<VerboseKeyBox>;
+
+    fn prepare_keychains(node_count: NodeCount) -> Vec<TestMultiKeychain> {
+        (0..node_count.0)
+            .map(|i| ThresholdMultiKeychain::new(VerboseKeyBox::new(node_count, i.into())))
+            .collect()
+    }
 
     struct TestNetwork {
         outgoing_rx: Pin<Box<dyn Stream<Item = TestMessage>>>,
@@ -517,7 +524,7 @@ mod tests {
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
         let bad_hash = 65.into();
-        let bad_keybox = BadKeyBox::new(node_count, 0.into(), 111.into());
+        let bad_keybox = BadVerboseMultiKeychain::new(node_count, 0.into(), 111.into());
         let bad_msg =
             TestMessage::SignedHash(Signed::sign_with_index(bad_hash, &bad_keybox).await.into());
         data.network.broadcast_message(bad_msg);

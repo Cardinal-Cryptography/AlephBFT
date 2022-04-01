@@ -1,6 +1,6 @@
 use aleph_bft_types::{
     Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
-    PartialMultisignature as PartialMultisignatureT,
+    PartialMultisignature as PartialMultisignatureT, SignatureSet,
 };
 use async_trait::async_trait;
 use codec::{Decode, Encode};
@@ -84,6 +84,8 @@ impl VerboseSignature {
         Self { msg, index }
     }
 }
+
+pub type VerbosePartialMultisignature = SignatureSet<VerboseSignature>;
 
 #[derive(Clone, Debug)]
 pub struct VerboseKeyBox {
