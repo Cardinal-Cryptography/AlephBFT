@@ -318,33 +318,21 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
 #[cfg(test)]
 mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
-    use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signable, SignatureSet, Signed};
-    mod mock;
+    use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
+    use aleph_bft_mock::{
+        prepare_keychains, BadKeyBox, SignableByte, TestMultiKeychain,
+        VerbosePartialMultisignature, VerboseSignature,
+    };
     use futures::{
         channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
         future::{self, BoxFuture},
         stream::{self, Stream},
         FutureExt, StreamExt,
     };
-    use mock::{prepare_keychains, BadKeyBox, TestMultiKeychain, TestSignature};
     use rand::Rng;
-    use std::{collections::HashMap, fmt::Debug, pin::Pin, time::Duration};
+    use std::{collections::HashMap, pin::Pin, time::Duration};
 
-    type TestPartialMultisignature = SignatureSet<TestSignature>;
-    type TestMessage = Message<Hash, TestSignature, TestPartialMultisignature>;
-
-    #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Ord, PartialOrd)]
-    struct Hash {
-        byte: u8,
-    }
-
-    impl Signable for Hash {
-        type Hash = [u8; 1];
-
-        fn hash(&self) -> Self::Hash {
-            [self.byte]
-        }
-    }
+    type TestMessage = Message<SignableByte, VerboseSignature, VerbosePartialMultisignature>;
 
     struct TestNetwork {
         outgoing_rx: Pin<Box<dyn Stream<Item = TestMessage>>>,
@@ -388,9 +376,7 @@ mod tests {
                     .expect("Channel should be open");
             }
         }
-    }
 
-    impl TestNetwork {
         async fn run(&mut self) {
             while let Some(message) = self.outgoing_rx.next().await {
                 for (i, tx) in self.incoming_txs.iter().enumerate() {
@@ -405,7 +391,7 @@ mod tests {
 
     struct TestData<'a> {
         network: TestNetwork,
-        rmcs: Vec<ReliableMulticast<'a, Hash, TestMultiKeychain>>,
+        rmcs: Vec<ReliableMulticast<'a, SignableByte, TestMultiKeychain>>,
     }
 
     impl<'a> TestData<'a> {
@@ -432,16 +418,16 @@ mod tests {
         async fn collect_multisigned_hashes(
             mut self,
             count: usize,
-        ) -> HashMap<NodeIndex, Vec<Multisigned<'a, Hash, TestMultiKeychain>>> {
+        ) -> HashMap<NodeIndex, Vec<Multisigned<'a, SignableByte, TestMultiKeychain>>> {
             let mut hashes = HashMap::new();
 
             for _ in 0..count {
                 // covert each RMC into a future returning an optional unchecked multisigned hash.
-                let rmc_futures: Vec<BoxFuture<Multisigned<'a, Hash, TestMultiKeychain>>> = self
-                    .rmcs
-                    .iter_mut()
-                    .map(|rmc| rmc.next_multisigned_hash().boxed())
-                    .collect();
+                let rmc_futures: Vec<BoxFuture<Multisigned<'a, SignableByte, TestMultiKeychain>>> =
+                    self.rmcs
+                        .iter_mut()
+                        .map(|rmc| rmc.next_multisigned_hash().boxed())
+                        .collect();
                 tokio::select! {
                     (unchecked, i, _) = future::select_all(rmc_futures) => {
                         hashes.entry(i.into()).or_insert_with(Vec::new).push(unchecked);
@@ -462,7 +448,7 @@ mod tests {
         let keychains = prepare_keychains(node_count);
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
-        let hash = Hash { byte: 56 };
+        let hash = 56.into();
         for i in 0..node_count.0 {
             data.rmcs[i].start_rmc(hash).await;
         }
@@ -484,7 +470,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut data = TestData::new(node_count, &keychains, move |_, _| rng.gen_range(0..5) == 0);
 
-        let hash = Hash { byte: 56 };
+        let hash = 56.into();
         for i in 0..node_count.0 {
             data.rmcs[i].start_rmc(hash).await;
         }
@@ -509,7 +495,7 @@ mod tests {
         });
 
         let threshold = (2 * node_count.0 + 1) / 3;
-        let hash = Hash { byte: 56 };
+        let hash = 56.into();
         for i in 0..threshold {
             data.rmcs[i].start_rmc(hash).await;
         }
@@ -530,7 +516,7 @@ mod tests {
         let keychains = prepare_keychains(node_count);
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
-        let bad_hash = Hash { byte: 65 };
+        let bad_hash = 65.into();
         let bad_keybox = BadKeyBox::new(node_count, 0.into(), 111.into());
         let bad_msg =
             TestMessage::SignedHash(Signed::sign_with_index(bad_hash, &bad_keybox).await.into());
@@ -543,7 +529,7 @@ mod tests {
         );
         data.network.broadcast_message(bad_msg);
 
-        let hash = Hash { byte: 56 };
+        let hash = 56.into();
         for i in 0..node_count.0 {
             data.rmcs[i].start_rmc(hash).await;
         }

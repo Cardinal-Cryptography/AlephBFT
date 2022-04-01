@@ -72,3 +72,53 @@ impl MultiKeychainT for KeyBox {
         (self.count * 2) / 3 < NodeCount(partial.signed_by.len())
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
+pub struct VerboseSignature {
+    msg: Vec<u8>,
+    index: NodeIndex,
+}
+
+impl VerboseSignature {
+    pub fn new(msg: Vec<u8>, index: NodeIndex) -> Self {
+        Self { msg, index }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct VerboseKeyBox {
+    count: NodeCount,
+    index: NodeIndex,
+}
+
+impl VerboseKeyBox {
+    pub fn new(count: NodeCount, index: NodeIndex) -> Self {
+        VerboseKeyBox { count, index }
+    }
+}
+
+impl Index for VerboseKeyBox {
+    fn index(&self) -> NodeIndex {
+        self.index
+    }
+}
+
+#[async_trait]
+impl KeyBoxT for VerboseKeyBox {
+    type Signature = VerboseSignature;
+
+    fn node_count(&self) -> NodeCount {
+        self.count
+    }
+
+    async fn sign(&self, msg: &[u8]) -> Self::Signature {
+        VerboseSignature {
+            msg: msg.to_vec(),
+            index: self.index,
+        }
+    }
+
+    fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool {
+        index == sgn.index && msg == sgn.msg
+    }
+}
