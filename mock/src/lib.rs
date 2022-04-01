@@ -1,7 +1,7 @@
 mod bad_verbose_multikeychain;
 mod constant_signature_keybox;
-mod crypto;
 mod dataio;
+mod dummy_keychain;
 mod hasher;
 mod network;
 mod signable_byte;
@@ -13,8 +13,11 @@ mod verbose_signature;
 
 pub use bad_verbose_multikeychain::BadVerboseMultiKeychain;
 pub use constant_signature_keybox::ConstantSignatureKeyBox;
-pub use crypto::{KeyBox, PartialMultisignature, Signature};
 pub use dataio::{Data, DataProvider, FinalizationHandler};
+pub use dummy_keychain::{
+    DummyPartialMultisignature as PartialMultisignature, DummySignature as Signature,
+    ThresholdDummyMultiKeychain as KeyBox,
+};
 pub use hasher::{Hash64, Hasher64};
 pub use network::{Network, NetworkReceiver, NetworkSender};
 pub use signable_byte::SignableByte;
