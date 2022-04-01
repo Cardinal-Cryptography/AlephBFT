@@ -118,6 +118,17 @@ impl<H: Hasher, D: Data, S: Signature> From<SignatureError<NewestUnitResponse<H,
     }
 }
 
+/// The status of an ongoing collection.
+#[derive(PartialEq, Debug)]
+pub enum Status {
+    /// Received less than threshold responses.
+    Pending,
+    /// Received at least threshold responses.
+    Ready(Round),
+    /// Received all possible responses.
+    Finished(Round),
+}
+
 /// Initial unit collection to figure out at which round we should start unit production.
 /// Unfortunately this isn't quite BFT, but it's good enough in many situations.
 pub struct Collection<'a, MK: KeyBox> {
@@ -138,12 +149,13 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
         threshold: NodeCount,
     ) -> (Self, Salt) {
         let salt = generate_salt();
+        let responders = [keychain.index()].into();
         (
             Collection {
                 keychain,
                 validator,
                 starting_round: 0,
-                responders: HashSet::new(),
+                responders,
                 threshold,
                 salt,
             },
@@ -155,7 +167,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
     pub fn on_newest_response<H: Hasher, D: Data>(
         &mut self,
         unchecked_response: UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
-    ) -> Result<(), Error<H, D, MK::Signature>> {
+    ) -> Result<Status, Error<H, D, MK::Signature>> {
         let response = unchecked_response.check(self.keychain)?.into_signable();
         if response.salt != self.salt {
             return Err(Error::SaltMismatch(self.salt, response.salt));
@@ -172,7 +184,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
             }
         }
         self.responders.insert(response.responder);
-        Ok(())
+        Ok(self.status())
     }
 
     /// The salt associated with this collection instance.
@@ -180,16 +192,17 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
         self.salt
     }
 
-    fn ready(&self) -> bool {
-        self.responders.len() + 1 >= self.threshold.0
-    }
-
-    /// Returns the starting round if it already collected enough responses, nothing otherwise.
-    pub fn starting_round(&self) -> Option<Round> {
-        match self.ready() {
-            true => Some(self.starting_round),
-            false => None,
+    /// The current status of the collection.
+    pub fn status(&self) -> Status {
+        use Status::*;
+        let responders = NodeCount(self.responders.len());
+        if responders == self.keychain.node_count() {
+            return Finished(self.starting_round);
         }
+        if self.responders.len() >= self.threshold.0 {
+            return Ready(self.starting_round);
+        }
+        Pending
     }
 }
 
@@ -220,9 +233,23 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
         }
     }
 
+    fn finish(self, round: Round) {
+        if self.round_for_creator.send(round).is_err() {
+            error!(target: "AlephBFT-runway", "unable to send starting round to creator");
+        }
+        if let Err(e) = self
+            .resolved_requests
+            .unbounded_send(Request::NewestUnit(self.collection.salt()))
+        {
+            warn!(target: "AlephBFT-runway", "unable to send resolved request:  {}", e);
+        }
+    }
+
     /// Run the initial unit collection until it sends the initial round.
     pub async fn run(mut self) {
+        use Status::*;
         let mut catch_up_delay = futures_timer::Delay::new(Duration::from_secs(5)).fuse();
+        let mut delay_passed = false;
 
         loop {
             futures::select! {
@@ -235,49 +262,25 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
                         }
                     };
                     match self.collection.on_newest_response(response) {
-                        Ok(()) => (),
+                        Ok(Pending) => (),
+                        Ok(Ready(round)) => if delay_passed {
+                            self.finish(round);
+                            return;
+                        },
+                        Ok(Finished(round)) => {
+                            self.finish(round);
+                            return;
+                        },
                         Err(e) => warn!(target: "AlephBFT-runway", "Received wrong newest unit response: {}", e),
                     }
                 },
-                _ = catch_up_delay => if let Some(round) = self.collection.starting_round() {
-                    if self.round_for_creator.send(round).is_err() {
-                        error!(target: "AlephBFT-runway", "unable to send starting round to creator");
-                    }
-                    if let Err(e) = self.resolved_requests.unbounded_send(Request::NewestUnit(self.collection.salt())) {
-                        warn!(target: "AlephBFT-runway", "unable to send resolved request:  {}", e);
-                    }
-                    return;
-                } else {
-                    break;
-                },
-            }
-        }
-        loop {
-            let response = match self.responses_from_network.next().await {
-                Some(response) => response,
-                None => {
-                    warn!(target: "AlephBFT-runway", "Response channel closed.");
-                    return;
-                }
-            };
-            match self.collection.on_newest_response(response) {
-                Ok(()) => {
-                    if let Some(round) = self.collection.starting_round() {
-                        if self.round_for_creator.send(round).is_err() {
-                            error!(target: "AlephBFT-runway", "unable to send starting round to creator");
-                        }
-                        if let Err(e) = self
-                            .resolved_requests
-                            .unbounded_send(Request::NewestUnit(self.collection.salt()))
-                        {
-                            warn!(target: "AlephBFT-runway", "unable to send resolved request:  {}", e);
-                        }
+                _ = catch_up_delay => match self.collection.status() {
+                    Pending => delay_passed = true,
+                    Ready(round) | Finished(round)  =>{
+                        self.finish(round);
                         return;
-                    }
-                }
-                Err(e) => {
-                    warn!(target: "AlephBFT-runway", "Received wrong newest unit response: {}", e)
-                }
+                    },
+                },
             }
         }
     }
@@ -287,7 +290,7 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
 mod tests {
     use super::{
         Collection as GenericCollection, Error, NewestUnitResponse as GenericNewestUnitResponse,
-        Salt,
+        Salt, Status::*,
     };
     use crate::{
         creation::Creator as GenericCreator,
@@ -343,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn no_starting_round_with_no_messages() {
+    fn pending_with_no_messages() {
         let n_members = NodeCount(7);
         let threshold = NodeCount(5);
         let creator_id = NodeIndex(0);
@@ -352,11 +355,11 @@ mod tests {
         let keychain = KeyBox::new(n_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (collection, _) = Collection::new(&keychain, &validator, threshold);
-        assert_eq!(collection.starting_round(), None);
+        assert_eq!(collection.status(), Pending);
     }
 
     #[tokio::test]
-    async fn no_starting_round_with_too_few_messages() {
+    async fn pending_with_too_few_messages() {
         let n_members = NodeCount(7);
         let threshold = NodeCount(5);
         let creator_id = NodeIndex(0);
@@ -373,13 +376,13 @@ mod tests {
         )
         .await;
         for response in responses {
-            assert_eq!(collection.on_newest_response(response), Ok(()));
+            assert_eq!(collection.on_newest_response(response), Ok(Pending));
         }
-        assert_eq!(collection.starting_round(), None);
+        assert_eq!(collection.status(), Pending);
     }
 
     #[tokio::test]
-    async fn starting_round_with_just_enough_messages() {
+    async fn ready_with_just_enough_messages() {
         let n_members = NodeCount(7);
         let threshold = NodeCount(5);
         let creator_id = NodeIndex(0);
@@ -395,14 +398,18 @@ mod tests {
             creator_id,
         )
         .await;
-        for response in responses {
-            assert_eq!(collection.on_newest_response(response), Ok(()));
+        for response in responses.iter().take(3) {
+            assert_eq!(collection.on_newest_response(response.clone()), Ok(Pending));
         }
-        assert_eq!(collection.starting_round(), Some(0));
+        assert_eq!(
+            collection.on_newest_response(responses[3].clone()),
+            Ok(Ready(0))
+        );
+        assert_eq!(collection.status(), Ready(0));
     }
 
     #[tokio::test]
-    async fn higher_starting_round_with_last_message() {
+    async fn finished_and_higher_starting_round_with_last_message() {
         let n_members = NodeCount(7);
         let threshold = NodeCount(5);
         let creator_id = NodeIndex(0);
@@ -424,10 +431,20 @@ mod tests {
             creator_id,
         )
         .await;
-        for response in responses {
-            assert_eq!(collection.on_newest_response(response), Ok(()));
+        for response in responses.iter().take(3) {
+            assert_eq!(collection.on_newest_response(response.clone()), Ok(Pending));
         }
-        assert_eq!(collection.starting_round(), Some(1));
+        for response in responses.iter().skip(3).take(2) {
+            assert_eq!(
+                collection.on_newest_response(response.clone()),
+                Ok(Ready(0))
+            );
+        }
+        assert_eq!(
+            collection.on_newest_response(responses[5].clone()),
+            Ok(Finished(1))
+        );
+        assert_eq!(collection.status(), Finished(1));
     }
 
     #[tokio::test]
@@ -454,7 +471,7 @@ mod tests {
                 Err(Error::SaltMismatch(salt, other_salt))
             );
         }
-        assert_eq!(collection.starting_round(), None);
+        assert_eq!(collection.status(), Pending);
     }
 
     #[tokio::test]
@@ -484,7 +501,7 @@ mod tests {
                 result => panic!("Expected invalid unit result got {:?}", result),
             }
         }
-        assert_eq!(collection.starting_round(), None);
+        assert_eq!(collection.status(), Pending);
     }
 
     #[tokio::test]
@@ -514,6 +531,6 @@ mod tests {
                 Err(Error::ForeignUnit(other_creator_id))
             );
         }
-        assert_eq!(collection.starting_round(), None);
+        assert_eq!(collection.status(), Pending);
     }
 }
