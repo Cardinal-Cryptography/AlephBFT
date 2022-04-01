@@ -337,7 +337,7 @@ mod tests {
 
     fn prepare_keychains(node_count: NodeCount) -> Vec<TestMultiKeychain> {
         (0..node_count.0)
-            .map(|i| ThresholdMultiKeychain::new(VerboseKeyBox::new(node_count, i.into())))
+            .map(|i| VerboseKeyBox::new(node_count, i.into()).into())
             .collect()
     }
 

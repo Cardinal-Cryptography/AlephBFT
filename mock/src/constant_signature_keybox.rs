@@ -9,6 +9,16 @@ pub struct ConstantSignatureKeyBox<T: Signature> {
     signature: T,
 }
 
+impl<T: Signature> ConstantSignatureKeyBox<T> {
+    pub fn new(count: NodeCount, index: NodeIndex, signature: T) -> Self {
+        ConstantSignatureKeyBox {
+            count,
+            index,
+            signature,
+        }
+    }
+}
+
 impl<T: Signature> Index for ConstantSignatureKeyBox<T> {
     fn index(&self) -> NodeIndex {
         self.index

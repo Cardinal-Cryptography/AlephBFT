@@ -2,9 +2,9 @@ use crate::{
     member::UnitMessage,
     network::NetworkDataInner,
     testing::{init_log, spawn_honest_member, NetworkData},
-    Index, KeyBox, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
+    Index, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };
-use aleph_bft_mock::{configure_network, NetworkHook, Signature, Spawner};
+use aleph_bft_mock::{configure_network, ConstantSignatureKeyBox, NetworkHook, Spawner};
 use async_trait::async_trait;
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -25,48 +25,23 @@ impl NetworkHook<NetworkData> for CorruptPacket {
         sender: NodeIndex,
         recipient: NodeIndex,
     ) {
-        #[derive(Clone, Debug)]
-        struct BadKeyBox {
-            index: NodeIndex,
-            signature: Signature,
-        }
-
-        impl Index for BadKeyBox {
-            fn index(&self) -> NodeIndex {
-                self.index
-            }
-        }
-
-        #[async_trait]
-        impl KeyBox for BadKeyBox {
-            type Signature = Signature;
-
-            fn node_count(&self) -> NodeCount {
-                0.into()
-            }
-
-            async fn sign(&self, _msg: &[u8]) -> Self::Signature {
-                self.signature.clone()
-            }
-
-            fn verify(&self, _msg: &[u8], _sgn: &Self::Signature, _index: NodeIndex) -> bool {
-                true
-            }
-        }
-
         if self.recipient != recipient || self.sender != sender {
             return;
         }
         if let crate::NetworkData(NetworkDataInner::Units(UnitMessage::NewUnit(us))) = data {
             let mut full_unit = us.clone().into_signable();
             let signature = us.signature();
+            let count = 0.into();
             let index = full_unit.index();
             if full_unit.round() == self.round && full_unit.creator() == self.creator {
                 full_unit.set_round(0);
             }
-            *us = Signed::sign(full_unit, &BadKeyBox { index, signature })
-                .await
-                .into();
+            *us = Signed::sign(
+                full_unit,
+                &ConstantSignatureKeyBox::new(count, index, signature),
+            )
+            .await
+            .into();
         }
     }
 }

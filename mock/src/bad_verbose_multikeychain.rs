@@ -1,4 +1,4 @@
-use crate::crypto::{VerbosePartialMultisignature, VerboseSignature};
+use crate::{VerbosePartialMultisignature, VerboseSignature};
 use aleph_bft_types::{Index, KeyBox, MultiKeychain, NodeCount, NodeIndex, SignatureSet};
 use async_trait::async_trait;
 use std::fmt::Debug;

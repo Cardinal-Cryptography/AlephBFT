@@ -14,13 +14,14 @@ pub struct ThresholdMultiKeychain<KB: KeyBox> {
 }
 
 impl<KB: KeyBox> ThresholdMultiKeychain<KB> {
-    // Create a new `ThresholdMultiKeychain` using the provided `KeyBox`.
-    pub fn new(key_box: KB) -> Self {
-        ThresholdMultiKeychain { key_box }
-    }
-
     fn quorum(&self) -> usize {
         2 * self.node_count().0 / 3 + 1
+    }
+}
+
+impl<KB: KeyBox> From<KB> for ThresholdMultiKeychain<KB> {
+    fn from(key_box: KB) -> Self {
+        Self { key_box }
     }
 }
 
