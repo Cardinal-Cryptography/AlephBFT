@@ -60,6 +60,7 @@ name = "aleph-bft-rmc"
 version = "0.1.0"
 dependencies = [
  "aleph-bft-crypto",
+ "aleph-bft-mock",
  "async-trait",
  "futures",
  "futures-timer",
