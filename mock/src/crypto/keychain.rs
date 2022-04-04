@@ -1,5 +1,8 @@
-use crate::crypto::Signature;
-use aleph_bft_types::{Index, KeyBox as KeyBoxT, NodeCount, NodeIndex};
+use crate::crypto::{PartialMultisignature, Signature};
+use aleph_bft_types::{
+    Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
+    PartialMultisignature as PartialMultisignatureT, SignatureSet,
+};
 use async_trait::async_trait;
 
 #[derive(Clone, Debug)]
@@ -11,6 +14,10 @@ pub struct Keychain {
 impl Keychain {
     pub fn new(count: NodeCount, index: NodeIndex) -> Self {
         Keychain { count, index }
+    }
+
+    fn quorum(&self) -> usize {
+        2 * self.count.0 / 3 + 1
     }
 }
 
@@ -36,3 +43,25 @@ impl KeyBoxT for Keychain {
         index == sgn.index() && msg == sgn.msg()
     }
 }
+
+impl MultiKeychainT for Keychain {
+    type PartialMultisignature = PartialMultisignature;
+
+    fn from_signature(
+        &self,
+        signature: &Self::Signature,
+        index: NodeIndex,
+    ) -> Self::PartialMultisignature {
+        SignatureSet::add_signature(SignatureSet::with_size(self.node_count()), signature, index)
+    }
+
+    fn is_complete(&self, msg: &[u8], partial: &Self::PartialMultisignature) -> bool {
+        let signature_count = partial.iter().count();
+        if signature_count < self.quorum() {
+            return false;
+        }
+        partial.iter().all(|(i, sgn)| self.verify(msg, sgn, i))
+    }
+}
+
+impl crate::crypto::wrappers::MK for Keychain {}
