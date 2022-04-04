@@ -19,23 +19,9 @@ pub use spawner::Spawner;
 
 // ugly renames
 use aleph_bft_types::{NodeCount, NodeIndex};
-
-pub use PartialMultisignature as VerbosePartialMultisignature;
-
-pub use Signature as VerboseSignature;
-
 pub type KeyBox = ThresholdMultiWrapper<YesManWrapper<Keychain>>;
 impl KeyBox {
     pub fn new(count: NodeCount, index: NodeIndex) -> Self {
         YesManWrapper::from(Keychain::new(count, index)).into()
-    }
-}
-
-pub use Keychain as VerboseKeyBox;
-
-pub type BadVerboseMultiKeychain = ThresholdMultiWrapper<BadSignatureWrapper<Keychain>>;
-impl BadVerboseMultiKeychain {
-    pub fn new(count: NodeCount, index: NodeIndex) -> Self {
-        BadSignatureWrapper::from(Keychain::new(count, index)).into()
     }
 }
