@@ -320,7 +320,7 @@ mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{
-        BadVerboseMultiKeychain, SignableByte, ThresholdMultiKeychain, VerboseKeyBox,
+        BadVerboseMultiKeychain, Signable, ThresholdMultiKeychain, VerboseKeyBox,
         VerbosePartialMultisignature, VerboseSignature,
     };
     use futures::{
@@ -332,7 +332,7 @@ mod tests {
     use rand::Rng;
     use std::{collections::HashMap, pin::Pin, time::Duration};
 
-    type TestMessage = Message<SignableByte, VerboseSignature, VerbosePartialMultisignature>;
+    type TestMessage = Message<Signable, VerboseSignature, VerbosePartialMultisignature>;
     type TestMultiKeychain = ThresholdMultiKeychain<VerboseKeyBox>;
 
     fn prepare_keychains(node_count: NodeCount) -> Vec<TestMultiKeychain> {
@@ -398,7 +398,7 @@ mod tests {
 
     struct TestData<'a> {
         network: TestNetwork,
-        rmcs: Vec<ReliableMulticast<'a, SignableByte, TestMultiKeychain>>,
+        rmcs: Vec<ReliableMulticast<'a, Signable, TestMultiKeychain>>,
     }
 
     impl<'a> TestData<'a> {
@@ -425,12 +425,12 @@ mod tests {
         async fn collect_multisigned_hashes(
             mut self,
             count: usize,
-        ) -> HashMap<NodeIndex, Vec<Multisigned<'a, SignableByte, TestMultiKeychain>>> {
+        ) -> HashMap<NodeIndex, Vec<Multisigned<'a, Signable, TestMultiKeychain>>> {
             let mut hashes = HashMap::new();
 
             for _ in 0..count {
                 // covert each RMC into a future returning an optional unchecked multisigned hash.
-                let rmc_futures: Vec<BoxFuture<Multisigned<'a, SignableByte, TestMultiKeychain>>> =
+                let rmc_futures: Vec<BoxFuture<Multisigned<'a, Signable, TestMultiKeychain>>> =
                     self.rmcs
                         .iter_mut()
                         .map(|rmc| rmc.next_multisigned_hash().boxed())
@@ -455,9 +455,9 @@ mod tests {
         let keychains = prepare_keychains(node_count);
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
-        let hash = 56.into();
+        let hash: Signable = "56".into();
         for i in 0..node_count.0 {
-            data.rmcs[i].start_rmc(hash).await;
+            data.rmcs[i].start_rmc(hash.clone()).await;
         }
 
         let hashes = data.collect_multisigned_hashes(node_count.0).await;
@@ -477,9 +477,9 @@ mod tests {
         let mut rng = rand::thread_rng();
         let mut data = TestData::new(node_count, &keychains, move |_, _| rng.gen_range(0..5) == 0);
 
-        let hash = 56.into();
+        let hash: Signable = "56".into();
         for i in 0..node_count.0 {
-            data.rmcs[i].start_rmc(hash).await;
+            data.rmcs[i].start_rmc(hash.clone()).await;
         }
 
         let hashes = data.collect_multisigned_hashes(node_count.0).await;
@@ -502,9 +502,9 @@ mod tests {
         });
 
         let threshold = (2 * node_count.0 + 1) / 3;
-        let hash = 56.into();
+        let hash: Signable = "56".into();
         for i in 0..threshold {
-            data.rmcs[i].start_rmc(hash).await;
+            data.rmcs[i].start_rmc(hash.clone()).await;
         }
 
         let hashes = data.collect_multisigned_hashes(node_count.0).await;
@@ -523,22 +523,25 @@ mod tests {
         let keychains = prepare_keychains(node_count);
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
-        let bad_hash = 65.into();
+        let bad_hash: Signable = "65".into();
         let bad_keybox = BadVerboseMultiKeychain::new(node_count, 0.into(), 111.into());
-        let bad_msg =
-            TestMessage::SignedHash(Signed::sign_with_index(bad_hash, &bad_keybox).await.into());
+        let bad_msg = TestMessage::SignedHash(
+            Signed::sign_with_index(bad_hash.clone(), &bad_keybox)
+                .await
+                .into(),
+        );
         data.network.broadcast_message(bad_msg);
         let bad_msg = TestMessage::MultisignedHash(
-            Signed::sign_with_index(bad_hash, &bad_keybox)
+            Signed::sign_with_index(bad_hash.clone(), &bad_keybox)
                 .await
                 .into_partially_multisigned(&bad_keybox)
                 .into_unchecked(),
         );
         data.network.broadcast_message(bad_msg);
 
-        let hash = 56.into();
+        let hash: Signable = "56".into();
         for i in 0..node_count.0 {
-            data.rmcs[i].start_rmc(hash).await;
+            data.rmcs[i].start_rmc(hash.clone()).await;
         }
 
         let hashes = data.collect_multisigned_hashes(node_count.0).await;

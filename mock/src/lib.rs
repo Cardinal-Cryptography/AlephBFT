@@ -5,7 +5,7 @@ mod dummy_keychain;
 mod hasher;
 mod network;
 mod router;
-mod signable_byte;
+mod signable;
 mod spawner;
 mod threshold_multi_keychain;
 mod verbose_keybox;
@@ -21,7 +21,7 @@ pub use dummy_keychain::{
 pub use hasher::{Hash64, Hasher64};
 pub use network::{Network, NetworkReceiver, NetworkSender};
 pub use router::{NetworkHook, Peer, Router};
-pub use signable_byte::SignableByte;
+pub use signable::{Signable, SignableByte};
 pub use spawner::Spawner;
 pub use threshold_multi_keychain::ThresholdMultiKeychain;
 pub use verbose_keybox::VerboseKeyBox;
