@@ -190,7 +190,7 @@ mod tests {
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
         NodeIndex, NodeSubset, Round, Signed,
     };
-    use aleph_bft_mock::{Data, Hasher64, KeyBox, PartialMultisignature, Signature};
+    use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
 
     async fn test_unchecked_unit(
         creator: NodeIndex,
@@ -203,7 +203,7 @@ mod tests {
         };
         let pu = PreUnit::new(creator, round, control_hash);
         let signable = FullUnit::new(pu, data, 0);
-        Signed::sign(signable, &KeyBox::new(0.into(), creator))
+        Signed::sign(signable, &Keychain::new(0.into(), creator))
             .await
             .into_unchecked()
     }
@@ -375,7 +375,7 @@ mod tests {
         let alert = crate::alerts::Alert::new(sender, (f1, f2), vec![lu1, lu2]);
 
         let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Alert(ForkAlert(
-            Signed::sign(alert.clone(), &KeyBox::new(0.into(), sender))
+            Signed::sign(alert.clone(), &Keychain::new(0.into(), sender))
                 .await
                 .into_unchecked(),
         )));

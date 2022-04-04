@@ -4,7 +4,7 @@ use crate::{
     testing::{init_log, spawn_honest_member, NetworkData},
     Index, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };
-use aleph_bft_mock::{KeyBox, NetworkHook, Router, Spawner};
+use aleph_bft_mock::{Keychain, NetworkHook, Router, Spawner};
 use async_trait::async_trait;
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -34,7 +34,7 @@ impl NetworkHook<NetworkData> for CorruptPacket {
             if full_unit.round() == self.round && full_unit.creator() == self.creator {
                 full_unit.set_round(0);
                 // count does not matter here, as it's not included in the signature, set to 0
-                *us = Signed::sign(full_unit, &KeyBox::new(0.into(), index))
+                *us = Signed::sign(full_unit, &Keychain::new(0.into(), index))
                     .await
                     .into();
             }

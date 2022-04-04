@@ -12,7 +12,7 @@ use crate::{
     NodeIndex, SpawnHandle, TaskHandle,
 };
 use aleph_bft_mock::{
-    Data, DataProvider, FinalizationHandler, Hasher64, KeyBox, Network as MockNetwork,
+    Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Network as MockNetwork,
     PartialMultisignature, Signature, Spawner,
 };
 use futures::channel::{mpsc::UnboundedReceiver, oneshot};
@@ -65,7 +65,7 @@ pub fn spawn_honest_member(
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
     let member_task = async move {
-        let keybox = KeyBox::new(n_members, node_index);
+        let keybox = Keychain::new(n_members, node_index);
         run_session(
             config,
             network,

@@ -138,9 +138,9 @@ mod tests {
         },
         Hasher, NodeCount, NodeIndex, Round, SessionId, Signed,
     };
-    use aleph_bft_mock::{Data, Hasher64, KeyBox, Signature};
+    use aleph_bft_mock::{Data, Hasher64, Keychain, Signature};
 
-    type Validator<'a> = GenericValidator<'a, KeyBox>;
+    type Validator<'a> = GenericValidator<'a, Keychain>;
     type Creator = GenericCreator<Hasher64>;
     type PreUnit = GenericPreUnit<Hasher64>;
     type Unit = GenericUnit<Hasher64>;
@@ -183,7 +183,7 @@ mod tests {
     async fn preunit_to_unchecked_signed_unit(
         pu: PreUnit,
         session_id: SessionId,
-        keybox: &KeyBox,
+        keybox: &Keychain,
     ) -> UncheckedSignedUnit {
         let data = 0;
         let full_unit = FullUnit::new(pu, data, session_id);
@@ -200,7 +200,7 @@ mod tests {
         let round = 0;
         let max_round = 2;
         let creator = Creator::new(creator_id, n_members);
-        let keychain = KeyBox::new(n_members, creator_id);
+        let keychain = Keychain::new(n_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
@@ -222,7 +222,7 @@ mod tests {
         let round = 0;
         let max_round = 2;
         let creator = Creator::new(creator_id, n_members);
-        let keychain = KeyBox::new(n_members, creator_id);
+        let keychain = Keychain::new(n_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
@@ -247,7 +247,7 @@ mod tests {
         let round = 0;
         let max_round = 2;
         let creator = Creator::new(creator_id, n_members);
-        let keychain = KeyBox::new(n_plus_one_members, creator_id);
+        let keychain = Keychain::new(n_plus_one_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
@@ -280,7 +280,7 @@ mod tests {
             .collect();
         let creator = &mut creators[0];
         add_units(creator, &round_0_units);
-        let keychain = KeyBox::new(n_members, creator_id);
+        let keychain = Keychain::new(n_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
@@ -314,7 +314,7 @@ mod tests {
             }
         }
         let creator = &creators[0];
-        let keychain = KeyBox::new(n_members, creator_id);
+        let keychain = Keychain::new(n_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)

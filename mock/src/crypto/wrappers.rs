@@ -1,65 +1,63 @@
 use crate::crypto::{PartialMultisignature, Signature};
 use aleph_bft_types::{
-    Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
+    Index, KeyBox as KeychainT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
 };
 use async_trait::async_trait;
 use std::fmt::Debug;
 
 pub trait MK:
-    KeyBoxT<Signature = Signature> + MultiKeychainT<PartialMultisignature = PartialMultisignature>
+    KeychainT<Signature = Signature> + MultiKeychainT<PartialMultisignature = PartialMultisignature>
 {
 }
 
-/// Keybox wrapper which produces incorrect signatures
+/// Keychain wrapper which produces incorrect signatures
 #[derive(Debug, Clone)]
-pub struct BadSignatureWrapper<KB: MK> {
-    key_box: KB,
-}
+pub struct BadSignatureWrapper<T: MK>(T);
 
-impl<KB: MK> From<KB> for BadSignatureWrapper<KB> {
-    fn from(key_box: KB) -> Self {
-        Self { key_box }
+impl<T: MK> From<T> for BadSignatureWrapper<T> {
+    fn from(mk: T) -> Self {
+        Self(mk)
     }
 }
 
-impl<KB: MK> Index for BadSignatureWrapper<KB> {
+impl<T: MK> Index for BadSignatureWrapper<T> {
     fn index(&self) -> NodeIndex {
-        self.key_box.index()
+        self.0.index()
     }
 }
 
 #[async_trait]
-impl<KB: MK> KeyBoxT for BadSignatureWrapper<KB> {
-    type Signature = KB::Signature;
+impl<T: MK> KeychainT for BadSignatureWrapper<T> {
+    type Signature = T::Signature;
 
     async fn sign(&self, msg: &[u8]) -> Self::Signature {
-        let signature = self.key_box.sign(msg).await;
+        let signature = self.0.sign(msg).await;
         let mut msg = b"BAD".to_vec();
         msg.extend(signature.msg().clone());
         Signature::new(msg, signature.index())
     }
 
     fn node_count(&self) -> NodeCount {
-        self.key_box.node_count()
+        self.0.node_count()
     }
 
     fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool {
-        self.key_box.verify(msg, sgn, index)
+        self.0.verify(msg, sgn, index)
     }
 }
 
-impl<KB: MK> MultiKeychainT for BadSignatureWrapper<KB> {
-    type PartialMultisignature = KB::PartialMultisignature;
+impl<T: MK> MultiKeychainT for BadSignatureWrapper<T> {
+    type PartialMultisignature = T::PartialMultisignature;
 
     fn from_signature(
         &self,
         signature: &Self::Signature,
         index: NodeIndex,
     ) -> Self::PartialMultisignature {
-        self.key_box.from_signature(signature, index)
+        self.0.from_signature(signature, index)
     }
 
     fn is_complete(&self, msg: &[u8], partial: &Self::PartialMultisignature) -> bool {
-        self.key_box.is_complete(msg, partial)
+        self.0.is_complete(msg, partial)
     }
 }

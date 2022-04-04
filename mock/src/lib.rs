@@ -13,5 +13,3 @@ pub use network::{Network, NetworkReceiver, NetworkSender};
 pub use router::{NetworkHook, Peer, Router};
 pub use signable::{Signable, SignableByte};
 pub use spawner::Spawner;
-
-pub type KeyBox = Keychain;

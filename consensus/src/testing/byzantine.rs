@@ -6,7 +6,7 @@ use crate::{
     Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap,
     Recipient, Round, SessionId, Signed, SpawnHandle, TaskHandle,
 };
-use aleph_bft_mock::{Data, Hash64, Hasher64, KeyBox, NetworkHook, Router, Spawner};
+use aleph_bft_mock::{Data, Hash64, Hasher64, Keychain, NetworkHook, Router, Spawner};
 use async_trait::async_trait;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, trace};
@@ -19,14 +19,14 @@ struct MaliciousMember<'a> {
     threshold: NodeCount,
     session_id: SessionId,
     forking_round: Round,
-    keybox: &'a KeyBox,
+    keybox: &'a Keychain,
     network: Network,
-    unit_store: HashMap<UnitCoord, SignedUnit<'a, Hasher64, Data, KeyBox>>,
+    unit_store: HashMap<UnitCoord, SignedUnit<'a, Hasher64, Data, Keychain>>,
 }
 
 impl<'a> MaliciousMember<'a> {
     fn new(
-        keybox: &'a KeyBox,
+        keybox: &'a Keychain,
         network: Network,
         node_ix: NodeIndex,
         n_members: NodeCount,
@@ -46,7 +46,7 @@ impl<'a> MaliciousMember<'a> {
         }
     }
 
-    fn unit_to_data(su: SignedUnit<'a, Hasher64, Data, KeyBox>) -> NetworkData {
+    fn unit_to_data(su: SignedUnit<'a, Hasher64, Data, Keychain>) -> NetworkData {
         NetworkDataT(Units(NewUnit(su.into())))
     }
 
@@ -77,15 +77,15 @@ impl<'a> MaliciousMember<'a> {
         }
     }
 
-    fn send_legit_unit(&mut self, su: SignedUnit<'a, Hasher64, Data, KeyBox>) {
+    fn send_legit_unit(&mut self, su: SignedUnit<'a, Hasher64, Data, Keychain>) {
         let message = Self::unit_to_data(su);
         self.network.send(message, Recipient::Everyone);
     }
 
     fn send_two_variants(
         &mut self,
-        su0: SignedUnit<'a, Hasher64, Data, KeyBox>,
-        su1: SignedUnit<'a, Hasher64, Data, KeyBox>,
+        su0: SignedUnit<'a, Hasher64, Data, Keychain>,
+        su1: SignedUnit<'a, Hasher64, Data, Keychain>,
     ) {
         // We send variant k \in {0,1} to each node with index = k (mod 2)
         // We also send to ourselves, it does not matter much.
@@ -130,7 +130,7 @@ impl<'a> MaliciousMember<'a> {
         false
     }
 
-    fn on_unit_received(&mut self, su: SignedUnit<'a, Hasher64, Data, KeyBox>) {
+    fn on_unit_received(&mut self, su: SignedUnit<'a, Hasher64, Data, Keychain>) {
         let full_unit = su.as_signable();
         let coord: UnitCoord = full_unit.coord();
         // We don't care if we overwrite something as long as we keep at least one version of a unit
@@ -183,7 +183,7 @@ fn spawn_malicious_member(
 ) -> (oneshot::Sender<()>, TaskHandle) {
     let (exit_tx, exit_rx) = oneshot::channel();
     let member_task = async move {
-        let keybox = KeyBox::new(n_members, node_index);
+        let keybox = Keychain::new(n_members, node_index);
         let session_id = 0u64;
         let lesniak = MaliciousMember::new(
             &keybox,

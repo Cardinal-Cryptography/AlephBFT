@@ -1,6 +1,6 @@
 use crate::crypto::{PartialMultisignature, Signature};
 use aleph_bft_types::{
-    Index, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
+    Index, KeyBox as KeychainT, MultiKeychain as MultiKeychainT, NodeCount, NodeIndex,
     PartialMultisignature as PartialMultisignatureT, SignatureSet,
 };
 use async_trait::async_trait;
@@ -28,7 +28,7 @@ impl Index for Keychain {
 }
 
 #[async_trait]
-impl KeyBoxT for Keychain {
+impl KeychainT for Keychain {
     type Signature = Signature;
 
     fn node_count(&self) -> NodeCount {
