@@ -1,13 +1,14 @@
 use aleph_bft_types::{Index, NodeIndex, SignatureSet};
 use codec::{Decode, Encode};
+use std::hash::Hash;
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct VerboseSignature {
+#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+pub struct Signature {
     msg: Vec<u8>,
     index: NodeIndex,
 }
 
-impl VerboseSignature {
+impl Signature {
     pub fn new(msg: Vec<u8>, index: NodeIndex) -> Self {
         Self { msg, index }
     }
@@ -17,10 +18,10 @@ impl VerboseSignature {
     }
 }
 
-impl Index for VerboseSignature {
+impl Index for Signature {
     fn index(&self) -> NodeIndex {
         self.index
     }
 }
 
-pub type VerbosePartialMultisignature = SignatureSet<VerboseSignature>;
+pub type PartialMultisignature = SignatureSet<Signature>;
