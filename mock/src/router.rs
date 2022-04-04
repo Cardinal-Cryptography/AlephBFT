@@ -18,25 +18,32 @@ pub struct Peer<D> {
 #[async_trait]
 pub trait NetworkHook<D>: Send {
     /// This must complete during a single poll - the current implementation
-    /// of UnreliableRouter will panic if polling this method returns Poll::Pending.
+    /// of Router will panic if polling this method returns Poll::Pending.
     async fn update_state(&mut self, data: &mut D, sender: NodeIndex, recipient: NodeIndex);
 }
 
-pub struct UnreliableRouter<D> {
+pub struct Router<D> {
     peers: RefCell<HashMap<NodeIndex, Peer<D>>>,
     peer_list: Vec<NodeIndex>,
     hook_list: RefCell<Vec<Box<dyn NetworkHook<D>>>>,
     reliability: f64, //a number in the range [0, 1], 1.0 means perfect reliability, 0.0 means no message gets through
 }
 
-impl<D> UnreliableRouter<D> {
-    pub fn new(peer_list: Vec<NodeIndex>, reliability: f64) -> Self {
-        UnreliableRouter {
+impl<D> Router<D> {
+    pub fn new(n_members: NodeCount, reliability: f64) -> (Router<D>, Vec<Network<D>>) {
+        let peer_list = n_members.into_iterator().collect();
+        let mut router = Router {
             peers: RefCell::new(HashMap::new()),
             peer_list,
             hook_list: RefCell::new(Vec::new()),
             reliability,
+        };
+        let mut networks = Vec::new();
+        for ix in n_members.into_iterator() {
+            let network = router.connect_peer(ix);
+            networks.push(network);
         }
+        (router, networks)
     }
 
     pub fn add_hook<HK: NetworkHook<D> + 'static>(&mut self, hook: HK) {
@@ -63,7 +70,7 @@ impl<D> UnreliableRouter<D> {
     }
 }
 
-impl<D> Future for UnreliableRouter<D> {
+impl<D> Future for Router<D> {
     type Output = ();
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = &mut self;
@@ -118,18 +125,4 @@ impl<D> Future for UnreliableRouter<D> {
             Poll::Pending
         }
     }
-}
-
-pub fn configure_network<D>(
-    n_members: NodeCount,
-    reliability: f64,
-) -> (UnreliableRouter<D>, Vec<Network<D>>) {
-    let peer_list = n_members.into_iterator().collect();
-    let mut router = UnreliableRouter::new(peer_list, reliability);
-    let mut networks = Vec::new();
-    for ix in n_members.into_iterator() {
-        let network = router.connect_peer(ix);
-        networks.push(network);
-    }
-    (router, networks)
 }

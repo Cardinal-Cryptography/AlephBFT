@@ -2,7 +2,7 @@ use crate::{
     testing::{init_log, spawn_honest_member},
     NodeCount, SpawnHandle,
 };
-use aleph_bft_mock::{configure_network, Spawner};
+use aleph_bft_mock::{Router, Spawner};
 use futures::StreamExt;
 
 async fn honest_members_agree_on_batches(
@@ -16,7 +16,7 @@ async fn honest_members_agree_on_batches(
     let mut exits = Vec::new();
     let mut handles = Vec::new();
     let mut batch_rxs = Vec::new();
-    let (net_hub, networks) = configure_network(n_members, network_reliability);
+    let (net_hub, networks) = Router::new(n_members, network_reliability);
     spawner.spawn("network-hub", net_hub);
 
     for network in networks {

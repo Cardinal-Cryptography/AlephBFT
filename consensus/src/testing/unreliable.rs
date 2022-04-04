@@ -4,7 +4,7 @@ use crate::{
     testing::{init_log, spawn_honest_member, NetworkData},
     Index, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };
-use aleph_bft_mock::{configure_network, ConstantSignatureKeyBox, NetworkHook, Spawner};
+use aleph_bft_mock::{ConstantSignatureKeyBox, NetworkHook, Router, Spawner};
 use async_trait::async_trait;
 use futures::StreamExt;
 use parking_lot::Mutex;
@@ -77,7 +77,7 @@ async fn request_missing_coord() {
     let censoring_node = NodeIndex(1);
     let censoring_round = 5;
 
-    let (mut net_hub, networks) = configure_network(n_members, 1.0);
+    let (mut net_hub, networks) = Router::new(n_members, 1.0);
     net_hub.add_hook(CorruptPacket {
         recipient: censored_node,
         sender: censoring_node,

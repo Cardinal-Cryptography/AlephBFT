@@ -6,7 +6,7 @@ use crate::{
     Hasher, Network as NetworkT, NetworkData as NetworkDataT, NodeCount, NodeIndex, NodeMap,
     Recipient, Round, SessionId, Signed, SpawnHandle, TaskHandle,
 };
-use aleph_bft_mock::{configure_network, Data, Hash64, Hasher64, KeyBox, NetworkHook, Spawner};
+use aleph_bft_mock::{Data, Hash64, Hasher64, KeyBox, NetworkHook, Router, Spawner};
 use async_trait::async_trait;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, trace};
@@ -253,7 +253,7 @@ async fn honest_members_agree_on_batches_byzantine(
     let mut batch_rxs = Vec::new();
     let mut exits = Vec::new();
     let mut handles = Vec::new();
-    let (mut net_hub, networks) = configure_network(n_members, network_reliability);
+    let (mut net_hub, networks) = Router::new(n_members, network_reliability);
 
     let alert_hook = AlertHook::new();
     net_hub.add_hook(alert_hook.clone());
