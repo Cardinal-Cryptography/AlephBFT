@@ -17,10 +17,9 @@ pub use router::{NetworkHook, Peer, Router};
 pub use signable::{Signable, SignableByte};
 pub use spawner::Spawner;
 
+// to be removed
 mod constant_signature_keybox;
-
 pub use constant_signature_keybox::ConstantSignatureKeyBox;
-
 
 // ugly renames
 use aleph_bft_types::{NodeCount, NodeIndex};

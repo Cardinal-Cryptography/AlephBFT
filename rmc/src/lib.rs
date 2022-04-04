@@ -320,7 +320,7 @@ mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{
-        BadVerboseMultiKeychain, Signable, ThresholdMultiKeychain, VerboseKeyBox,
+        BadVerboseMultiKeychain, Signable, ThresholdMultiWrapper, VerboseKeyBox,
         VerbosePartialMultisignature, VerboseSignature,
     };
     use futures::{
@@ -333,7 +333,7 @@ mod tests {
     use std::{collections::HashMap, pin::Pin, time::Duration};
 
     type TestMessage = Message<Signable, VerboseSignature, VerbosePartialMultisignature>;
-    type TestMultiKeychain = ThresholdMultiKeychain<VerboseKeyBox>;
+    type TestMultiKeychain = ThresholdMultiWrapper<VerboseKeyBox>;
 
     fn prepare_keychains(node_count: NodeCount) -> Vec<TestMultiKeychain> {
         (0..node_count.0)
@@ -524,7 +524,7 @@ mod tests {
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
         let bad_hash: Signable = "65".into();
-        let bad_keybox = BadVerboseMultiKeychain::new(node_count, 0.into(), 111.into());
+        let bad_keybox = BadVerboseMultiKeychain::new(node_count, 0.into());
         let bad_msg = TestMessage::SignedHash(
             Signed::sign_with_index(bad_hash.clone(), &bad_keybox)
                 .await
