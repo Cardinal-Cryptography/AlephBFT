@@ -8,6 +8,7 @@ use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::{error, warn};
 use std::{
+    cmp::max,
     collections::{hash_map::DefaultHasher, HashSet},
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher as _},
@@ -178,10 +179,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
             if checked_unit.creator() != self.keychain.index() {
                 return Err(Error::ForeignUnit(checked_unit.creator()));
             }
-            let starting_round_candidate = checked_unit.round() + 1;
-            if starting_round_candidate > self.starting_round {
-                self.starting_round = starting_round_candidate;
-            }
+            self.starting_round = max(self.starting_round, checked_unit.round() + 1);
         }
         self.responders.insert(response.responder);
         Ok(self.status())
