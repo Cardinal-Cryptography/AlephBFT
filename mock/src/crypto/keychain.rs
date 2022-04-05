@@ -16,6 +16,12 @@ impl Keychain {
         Keychain { count, index }
     }
 
+    pub fn new_vec(node_count: NodeCount) -> Vec<Self> {
+        (0..node_count.0)
+            .map(|i| Self::new(node_count, i.into()))
+            .collect()
+    }
+
     fn quorum(&self) -> usize {
         2 * self.count.0 / 3 + 1
     }

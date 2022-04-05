@@ -330,14 +330,6 @@ mod tests {
     use std::{collections::HashMap, pin::Pin, time::Duration};
 
     type TestMessage = Message<Signable, Signature, PartialMultisignature>;
-    type TestMultiKeychain = Keychain;
-    type TestBadMultiKeychain = BadSigning<Keychain>;
-
-    fn prepare_keychains(node_count: NodeCount) -> Vec<TestMultiKeychain> {
-        (0..node_count.0)
-            .map(|i| Keychain::new(node_count, i.into()))
-            .collect()
-    }
 
     struct TestNetwork {
         outgoing_rx: Pin<Box<dyn Stream<Item = TestMessage>>>,
@@ -396,13 +388,13 @@ mod tests {
 
     struct TestData<'a> {
         network: TestNetwork,
-        rmcs: Vec<ReliableMulticast<'a, Signable, TestMultiKeychain>>,
+        rmcs: Vec<ReliableMulticast<'a, Signable, Keychain>>,
     }
 
     impl<'a> TestData<'a> {
         fn new(
             node_count: NodeCount,
-            keychains: &'a [TestMultiKeychain],
+            keychains: &'a [Keychain],
             message_filter: impl FnMut(NodeIndex, TestMessage) -> bool + 'static,
         ) -> Self {
             let (network, channels) = TestNetwork::new(node_count, message_filter);
@@ -423,16 +415,16 @@ mod tests {
         async fn collect_multisigned_hashes(
             mut self,
             count: usize,
-        ) -> HashMap<NodeIndex, Vec<Multisigned<'a, Signable, TestMultiKeychain>>> {
+        ) -> HashMap<NodeIndex, Vec<Multisigned<'a, Signable, Keychain>>> {
             let mut hashes = HashMap::new();
 
             for _ in 0..count {
                 // covert each RMC into a future returning an optional unchecked multisigned hash.
-                let rmc_futures: Vec<BoxFuture<Multisigned<'a, Signable, TestMultiKeychain>>> =
-                    self.rmcs
-                        .iter_mut()
-                        .map(|rmc| rmc.next_multisigned_hash().boxed())
-                        .collect();
+                let rmc_futures: Vec<BoxFuture<Multisigned<'a, Signable, Keychain>>> = self
+                    .rmcs
+                    .iter_mut()
+                    .map(|rmc| rmc.next_multisigned_hash().boxed())
+                    .collect();
                 tokio::select! {
                     (unchecked, i, _) = future::select_all(rmc_futures) => {
                         hashes.entry(i.into()).or_insert_with(Vec::new).push(unchecked);
@@ -450,7 +442,7 @@ mod tests {
     #[tokio::test]
     async fn simple_scenario() {
         let node_count = NodeCount(10);
-        let keychains = prepare_keychains(node_count);
+        let keychains = Keychain::new_vec(node_count);
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
         let hash: Signable = "56".into();
@@ -471,7 +463,7 @@ mod tests {
     #[tokio::test]
     async fn faulty_network() {
         let node_count = NodeCount(10);
-        let keychains = prepare_keychains(node_count);
+        let keychains = Keychain::new_vec(node_count);
         let mut rng = rand::thread_rng();
         let mut data = TestData::new(node_count, &keychains, move |_, _| rng.gen_range(0..5) == 0);
 
@@ -494,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn node_hearing_only_multisignatures() {
         let node_count = NodeCount(10);
-        let keychains = prepare_keychains(node_count);
+        let keychains = Keychain::new_vec(node_count);
         let mut data = TestData::new(node_count, &keychains, move |node_ix, message| {
             !matches!((node_ix.0, message), (0, Message::SignedHash(_)))
         });
@@ -518,11 +510,11 @@ mod tests {
     #[tokio::test]
     async fn bad_signatures_and_multisignatures_are_ignored() {
         let node_count = NodeCount(10);
-        let keychains = prepare_keychains(node_count);
+        let keychains = Keychain::new_vec(node_count);
         let mut data = TestData::new(node_count, &keychains, |_, _| true);
 
         let bad_hash: Signable = "65".into();
-        let bad_keybox: TestBadMultiKeychain = Keychain::new(node_count, 0.into()).into();
+        let bad_keybox: BadSigning<Keychain> = Keychain::new(node_count, 0.into()).into();
         let bad_msg = TestMessage::SignedHash(
             Signed::sign_with_index(bad_hash.clone(), &bad_keybox)
                 .await
