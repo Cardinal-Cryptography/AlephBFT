@@ -121,9 +121,9 @@ impl<H: Hasher, D: Data, S: Signature> From<SignatureError<NewestUnitResponse<H,
 /// The status of an ongoing collection.
 #[derive(PartialEq, Debug)]
 pub enum Status {
-    /// Received less than threshold responses.
+    /// Received less than threshold responses, counting the trivial self-response.
     Pending,
-    /// Received at least threshold responses.
+    /// Received at least threshold responses, counting the trivial self-response.
     Ready(Round),
     /// Received all possible responses.
     Finished(Round),
@@ -199,7 +199,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
         if responders == self.keychain.node_count() {
             return Finished(self.starting_round);
         }
-        if self.responders.len() >= self.threshold.0 {
+        if responders >= self.threshold {
             return Ready(self.starting_round);
         }
         Pending
@@ -371,6 +371,29 @@ mod tests {
         let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
         let responses = create_responses(
             keychains.iter().skip(1).take(3).zip(repeat(None)),
+            salt,
+            creator_id,
+        )
+        .await;
+        for response in responses {
+            assert_eq!(collection.on_newest_response(response), Ok(Pending));
+        }
+        assert_eq!(collection.status(), Pending);
+    }
+
+    #[tokio::test]
+    async fn pending_with_repeated_messages() {
+        let n_members = NodeCount(7);
+        let threshold = NodeCount(5);
+        let creator_id = NodeIndex(0);
+        let session_id = 0;
+        let max_round = 2;
+        let keychains = keychain_set(n_members);
+        let keychain = &keychains[0];
+        let validator = Validator::new(session_id, keychain, max_round, threshold);
+        let (mut collection, salt) = Collection::new(keychain, &validator, threshold);
+        let responses = create_responses(
+            repeat(&keychains[1]).take(43).zip(repeat(None)),
             salt,
             creator_id,
         )
