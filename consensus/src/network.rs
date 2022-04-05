@@ -185,12 +185,15 @@ pub(crate) async fn run<
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{
+        alerts::AlertMessage,
+        member::UnitMessage,
+        network::NetworkDataInner::{Alert, Units},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
-        NodeIndex, NodeSubset, Round, Signed,
+        Hasher, NodeIndex, NodeSubset, Round, Signed,
     };
     use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
+    use codec::{Decode, Encode};
 
     async fn test_unchecked_unit(
         creator: NodeIndex,
@@ -208,17 +211,23 @@ mod tests {
             .into_unchecked()
     }
 
+    type TestNetworkData = super::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
+    impl TestNetworkData {
+        fn new(
+            inner: super::NetworkDataInner<Hasher64, Data, Signature, PartialMultisignature>,
+        ) -> Self {
+            super::NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(inner)
+        }
+    }
+
     #[tokio::test]
     async fn decoding_network_data_units_new_unit() {
-        use NetworkDataInner::Units;
         use UnitMessage::NewUnit;
 
         let uu = test_unchecked_unit(5.into(), 43, 1729).await;
         let included_data = vec![*uu.as_signable().data()];
-        let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(NewUnit(
-            uu.clone(),
-        )));
-        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
+        let nd = TestNetworkData::new(Units(NewUnit(uu.clone())));
+        let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for NewUnit");
         let decoded = decoded.unwrap();
         assert_eq!(
@@ -239,15 +248,12 @@ mod tests {
 
     #[test]
     fn decoding_network_data_units_request_coord() {
-        use NetworkDataInner::Units;
         use UnitMessage::RequestCoord;
 
         let ni = 7.into();
         let uc = UnitCoord::new(3, 13.into());
-        let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
-            RequestCoord(ni, uc),
-        ));
-        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
+        let nd = TestNetworkData::new(Units(RequestCoord(ni, uc)));
+        let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for RequestCoord");
         let decoded = decoded.unwrap();
         assert!(
@@ -263,15 +269,12 @@ mod tests {
 
     #[tokio::test]
     async fn decoding_network_data_units_response_coord() {
-        use NetworkDataInner::Units;
         use UnitMessage::ResponseCoord;
 
         let uu = test_unchecked_unit(5.into(), 43, 1729).await;
         let included_data = vec![*uu.as_signable().data()];
-        let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
-            ResponseCoord(uu.clone()),
-        ));
-        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
+        let nd = TestNetworkData::new(Units(ResponseCoord(uu.clone())));
+        let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ResponseCoord");
         let decoded = decoded.unwrap();
         assert_eq!(
@@ -292,15 +295,12 @@ mod tests {
 
     #[test]
     fn decoding_network_data_units_request_parents() {
-        use NetworkDataInner::Units;
         use UnitMessage::RequestParents;
 
         let ni = 7.into();
         let h = 43.using_encoded(Hasher64::hash);
-        let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
-            RequestParents(ni, h),
-        ));
-        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
+        let nd = TestNetworkData::new(Units(RequestParents(ni, h)));
+        let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for RequestParents");
         let decoded = decoded.unwrap();
         assert!(
@@ -316,7 +316,6 @@ mod tests {
 
     #[tokio::test]
     async fn decoding_network_data_units_response_parents() {
-        use NetworkDataInner::Units;
         use UnitMessage::ResponseParents;
 
         let h = 43.using_encoded(Hasher64::hash);
@@ -330,10 +329,8 @@ mod tests {
         ];
         let parents = vec![p1, p2, p3];
 
-        let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Units(
-            ResponseParents(h, parents.clone()),
-        ));
-        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
+        let nd = TestNetworkData::new(Units(ResponseParents(h, parents.clone())));
+        let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ResponseParents");
         let decoded = decoded.unwrap();
         assert_eq!(
@@ -363,7 +360,6 @@ mod tests {
     #[tokio::test]
     async fn decoding_network_data_alert_fork_alert() {
         use AlertMessage::ForkAlert;
-        use NetworkDataInner::Alert;
 
         let forker = 9.into();
         let f1 = test_unchecked_unit(forker, 10, 0).await;
@@ -374,12 +370,12 @@ mod tests {
         let sender: NodeIndex = 7.into();
         let alert = crate::alerts::Alert::new(sender, (f1, f2), vec![lu1, lu2]);
 
-        let nd = NetworkData::<Hasher64, Data, Signature, PartialMultisignature>(Alert(ForkAlert(
+        let nd = TestNetworkData::new(Alert(ForkAlert(
             Signed::sign(alert.clone(), &Keychain::new(0.into(), sender))
                 .await
                 .into_unchecked(),
         )));
-        let decoded = crate::testing::NetworkData::decode(&mut &nd.encode()[..]);
+        let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ForkAlert");
         let decoded = decoded.unwrap();
         assert_eq!(
