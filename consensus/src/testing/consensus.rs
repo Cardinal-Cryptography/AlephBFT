@@ -9,7 +9,6 @@ use aleph_bft_mock::{Hasher64, Spawner};
 use codec::Encode;
 use futures::{
     channel::{
-        mpsc,
         mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
@@ -30,7 +29,7 @@ use std::{
 // Hub should be used to run simple tests in honest scenarios only.
 // Usage: 1) create an instance using new(n_members), 2) connect all n_members instances, 0, 1, 2, ..., n_members - 1.
 // 3) run the HonestHub instance as a Future.
-pub(crate) struct HonestHub {
+pub struct HonestHub {
     n_members: usize,
     ntfct_out_rxs: HashMap<NodeIndex, UnboundedReceiver<NotificationOut<Hasher64>>>,
     ntfct_in_txs: HashMap<NodeIndex, UnboundedSender<NotificationIn<Hasher64>>>,
@@ -38,7 +37,7 @@ pub(crate) struct HonestHub {
 }
 
 impl HonestHub {
-    pub(crate) fn new(n_members: usize) -> Self {
+    pub fn new(n_members: usize) -> Self {
         HonestHub {
             n_members,
             ntfct_out_rxs: HashMap::new(),
@@ -47,7 +46,7 @@ impl HonestHub {
         }
     }
 
-    pub(crate) fn connect(
+    pub fn connect(
         &mut self,
         node_ix: NodeIndex,
     ) -> (
@@ -165,7 +164,7 @@ async fn agree_on_first_batch() {
         let conf = gen_config(NodeIndex(node_ix), n_members.into());
         let (exit_tx, exit_rx) = oneshot::channel();
         exits.push(exit_tx);
-        let (batch_tx, batch_rx) = mpsc::unbounded();
+        let (batch_tx, batch_rx) = unbounded();
         batch_rxs.push(batch_rx);
         let starting_round = complete_oneshot(0);
         handles.push(spawner.spawn_essential(
@@ -202,12 +201,12 @@ async fn catches_wrong_control_hash() {
     let n_nodes = 4;
     let spawner = Spawner::new();
     let node_ix = 0;
-    let (mut tx_in, rx_in) = mpsc::unbounded();
-    let (tx_out, mut rx_out) = mpsc::unbounded();
+    let (mut tx_in, rx_in) = unbounded();
+    let (tx_out, mut rx_out) = unbounded();
 
     let conf = gen_config(NodeIndex(node_ix), n_nodes.into());
     let (exit_tx, exit_rx) = oneshot::channel();
-    let (batch_tx, _batch_rx) = mpsc::unbounded();
+    let (batch_tx, _batch_rx) = unbounded();
     let starting_round = complete_oneshot(0);
 
     let consensus_handle = spawner.spawn_essential(

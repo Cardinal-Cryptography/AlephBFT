@@ -81,10 +81,11 @@ pub struct Router<D> {
     peers: RefCell<HashMap<NodeIndex, Peer<D>>>,
     peer_list: Vec<NodeIndex>,
     hook_list: RefCell<Vec<Box<dyn NetworkHook<D>>>>,
-    reliability: f64, //a number in the range [0, 1], 1.0 means perfect reliability, 0.0 means no message gets through
+    reliability: f64,
 }
 
 impl<D> Router<D> {
+    // reliability - a number in the range [0, 1], 1.0 means perfect reliability, 0.0 means no message gets through
     pub fn new(n_members: NodeCount, reliability: f64) -> (Router<D>, Vec<Network<D>>) {
         let peer_list = n_members.into_iterator().collect();
         let mut router = Router {

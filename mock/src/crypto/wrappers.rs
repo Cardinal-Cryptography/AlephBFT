@@ -18,22 +18,22 @@ impl<
 
 /// Keychain wrapper which produces incorrect signatures
 #[derive(Debug, Clone)]
-pub struct BadSignatureWrapper<T: MK>(T);
+pub struct BadSigning<T: MK>(T);
 
-impl<T: MK> From<T> for BadSignatureWrapper<T> {
+impl<T: MK> From<T> for BadSigning<T> {
     fn from(mk: T) -> Self {
         Self(mk)
     }
 }
 
-impl<T: MK> Index for BadSignatureWrapper<T> {
+impl<T: MK> Index for BadSigning<T> {
     fn index(&self) -> NodeIndex {
         self.0.index()
     }
 }
 
 #[async_trait]
-impl<T: MK> KeychainT for BadSignatureWrapper<T> {
+impl<T: MK> KeychainT for BadSigning<T> {
     type Signature = T::Signature;
 
     async fn sign(&self, msg: &[u8]) -> Self::Signature {
@@ -52,7 +52,7 @@ impl<T: MK> KeychainT for BadSignatureWrapper<T> {
     }
 }
 
-impl<T: MK> MultiKeychainT for BadSignatureWrapper<T> {
+impl<T: MK> MultiKeychainT for BadSigning<T> {
     type PartialMultisignature = T::PartialMultisignature;
 
     fn from_signature(

@@ -319,9 +319,7 @@ impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMul
 mod tests {
     use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
-    use aleph_bft_mock::{
-        BadSignatureWrapper, Keychain, PartialMultisignature, Signable, Signature,
-    };
+    use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
     use futures::{
         channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
         future::{self, BoxFuture},
@@ -333,7 +331,7 @@ mod tests {
 
     type TestMessage = Message<Signable, Signature, PartialMultisignature>;
     type TestMultiKeychain = Keychain;
-    type TestBadMultiKeychain = BadSignatureWrapper<Keychain>;
+    type TestBadMultiKeychain = BadSigning<Keychain>;
 
     fn prepare_keychains(node_count: NodeCount) -> Vec<TestMultiKeychain> {
         (0..node_count.0)

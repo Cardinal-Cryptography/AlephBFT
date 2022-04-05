@@ -6,4 +6,4 @@ mod wrappers;
 pub use keychain::Keychain;
 pub use signable::Signable;
 pub use signature::{PartialMultisignature, Signature};
-pub use wrappers::BadSignatureWrapper;
+pub use wrappers::BadSigning;

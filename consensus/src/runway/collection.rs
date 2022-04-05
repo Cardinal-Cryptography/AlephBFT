@@ -339,8 +339,7 @@ mod tests {
         session_id: SessionId,
         keychain: &Keychain,
     ) -> UncheckedSignedUnit {
-        let data: Data = 0;
-        let full_unit = FullUnit::new(pu, data, session_id);
+        let full_unit = FullUnit::new(pu, 0, session_id);
         let signed_unit = Signed::sign(full_unit, keychain).await;
         signed_unit.into()
     }
