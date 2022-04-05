@@ -200,18 +200,18 @@ fn spawn_malicious_member(
 }
 
 #[derive(Clone)]
-pub(crate) struct AlertHook {
+pub struct AlertHook {
     alerts_sent_by_connection: Arc<Mutex<HashMap<(NodeIndex, NodeIndex), usize>>>,
 }
 
 impl AlertHook {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         AlertHook {
             alerts_sent_by_connection: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub(crate) fn count(&self, sender: NodeIndex, recipient: NodeIndex) -> usize {
+    pub fn count(&self, sender: NodeIndex, recipient: NodeIndex) -> usize {
         match self
             .alerts_sent_by_connection
             .lock()

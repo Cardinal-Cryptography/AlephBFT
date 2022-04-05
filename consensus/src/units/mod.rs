@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 mod store;
 mod validator;
-pub(crate) use store::*;
+pub use store::*;
 pub use validator::{ValidationError, Validator};
 
 /// The coordinates of a unit, i.e. creator and round. In the absence of forks this uniquely
@@ -41,31 +41,31 @@ impl UnitCoord {
 /// parents
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub struct ControlHash<H: Hasher> {
-    pub(crate) parents_mask: NodeSubset,
-    pub(crate) combined_hash: H::Hash,
+    pub parents_mask: NodeSubset,
+    pub combined_hash: H::Hash,
 }
 
 impl<H: Hasher> ControlHash<H> {
-    pub(crate) fn new(parent_map: &NodeMap<H::Hash>) -> Self {
+    pub fn new(parent_map: &NodeMap<H::Hash>) -> Self {
         ControlHash {
             parents_mask: parent_map.to_subset(),
             combined_hash: Self::combine_hashes(parent_map),
         }
     }
 
-    pub(crate) fn combine_hashes(parent_map: &NodeMap<H::Hash>) -> H::Hash {
+    pub fn combine_hashes(parent_map: &NodeMap<H::Hash>) -> H::Hash {
         parent_map.using_encoded(H::hash)
     }
 
-    pub(crate) fn parents(&self) -> impl Iterator<Item = NodeIndex> + '_ {
+    pub fn parents(&self) -> impl Iterator<Item = NodeIndex> + '_ {
         self.parents_mask.elements()
     }
 
-    pub(crate) fn n_parents(&self) -> NodeCount {
+    pub fn n_parents(&self) -> NodeCount {
         NodeCount(self.parents().count())
     }
 
-    pub(crate) fn n_members(&self) -> NodeCount {
+    pub fn n_members(&self) -> NodeCount {
         NodeCount(self.parents_mask.size())
     }
 }
@@ -78,30 +78,30 @@ pub struct PreUnit<H: Hasher> {
 }
 
 impl<H: Hasher> PreUnit<H> {
-    pub(crate) fn new(creator: NodeIndex, round: Round, control_hash: ControlHash<H>) -> Self {
+    pub fn new(creator: NodeIndex, round: Round, control_hash: ControlHash<H>) -> Self {
         PreUnit {
             coord: UnitCoord::new(round, creator),
             control_hash,
         }
     }
 
-    pub(crate) fn n_parents(&self) -> NodeCount {
+    pub fn n_parents(&self) -> NodeCount {
         self.control_hash.n_parents()
     }
 
-    pub(crate) fn n_members(&self) -> NodeCount {
+    pub fn n_members(&self) -> NodeCount {
         self.control_hash.n_members()
     }
 
-    pub(crate) fn creator(&self) -> NodeIndex {
+    pub fn creator(&self) -> NodeIndex {
         self.coord.creator()
     }
 
-    pub(crate) fn round(&self) -> Round {
+    pub fn round(&self) -> Round {
         self.coord.round()
     }
 
-    pub(crate) fn control_hash(&self) -> &ControlHash<H> {
+    pub fn control_hash(&self) -> &ControlHash<H> {
         &self.control_hash
     }
 }
@@ -132,7 +132,7 @@ impl<H: Hasher, D: Data> Clone for FullUnit<H, D> {
 }
 
 impl<H: Hasher, D: Data> FullUnit<H, D> {
-    pub(crate) fn new(pre_unit: PreUnit<H>, data: D, session_id: SessionId) -> Self {
+    pub fn new(pre_unit: PreUnit<H>, data: D, session_id: SessionId) -> Self {
         FullUnit {
             pre_unit,
             data,
@@ -140,28 +140,28 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
             hash: RwLock::new(None),
         }
     }
-    pub(crate) fn as_pre_unit(&self) -> &PreUnit<H> {
+    pub fn as_pre_unit(&self) -> &PreUnit<H> {
         &self.pre_unit
     }
-    pub(crate) fn creator(&self) -> NodeIndex {
+    pub fn creator(&self) -> NodeIndex {
         self.pre_unit.creator()
     }
-    pub(crate) fn round(&self) -> Round {
+    pub fn round(&self) -> Round {
         self.pre_unit.round()
     }
-    pub(crate) fn control_hash(&self) -> &ControlHash<H> {
+    pub fn control_hash(&self) -> &ControlHash<H> {
         self.pre_unit.control_hash()
     }
-    pub(crate) fn coord(&self) -> UnitCoord {
+    pub fn coord(&self) -> UnitCoord {
         self.pre_unit.coord
     }
-    pub(crate) fn data(&self) -> &D {
+    pub fn data(&self) -> &D {
         &self.data
     }
-    pub(crate) fn session_id(&self) -> SessionId {
+    pub fn session_id(&self) -> SessionId {
         self.session_id
     }
-    pub(crate) fn hash(&self) -> H::Hash {
+    pub fn hash(&self) -> H::Hash {
         let hash = *self.hash.read();
         match hash {
             Some(hash) => hash,
@@ -172,7 +172,7 @@ impl<H: Hasher, D: Data> FullUnit<H, D> {
             }
         }
     }
-    pub(crate) fn unit(&self) -> Unit<H> {
+    pub fn unit(&self) -> Unit<H> {
         Unit::new(self.pre_unit.clone(), self.hash())
     }
 }
@@ -190,9 +190,9 @@ impl<H: Hasher, D: Data> Index for FullUnit<H, D> {
     }
 }
 
-pub(crate) type UncheckedSignedUnit<H, D, S> = UncheckedSigned<FullUnit<H, D>, S>;
+pub type UncheckedSignedUnit<H, D, S> = UncheckedSigned<FullUnit<H, D>, S>;
 
-pub(crate) type SignedUnit<'a, H, D, KB> = Signed<'a, FullUnit<H, D>, KB>;
+pub type SignedUnit<'a, H, D, KB> = Signed<'a, FullUnit<H, D>, KB>;
 
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 pub struct Unit<H: Hasher> {
@@ -201,19 +201,19 @@ pub struct Unit<H: Hasher> {
 }
 
 impl<H: Hasher> Unit<H> {
-    pub(crate) fn new(pre_unit: PreUnit<H>, hash: H::Hash) -> Self {
+    pub fn new(pre_unit: PreUnit<H>, hash: H::Hash) -> Self {
         Unit { pre_unit, hash }
     }
-    pub(crate) fn creator(&self) -> NodeIndex {
+    pub fn creator(&self) -> NodeIndex {
         self.pre_unit.creator()
     }
-    pub(crate) fn round(&self) -> Round {
+    pub fn round(&self) -> Round {
         self.pre_unit.round()
     }
-    pub(crate) fn control_hash(&self) -> &ControlHash<H> {
+    pub fn control_hash(&self) -> &ControlHash<H> {
         self.pre_unit.control_hash()
     }
-    pub(crate) fn hash(&self) -> H::Hash {
+    pub fn hash(&self) -> H::Hash {
         self.hash
     }
 }

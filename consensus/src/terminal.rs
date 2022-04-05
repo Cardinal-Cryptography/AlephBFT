@@ -47,7 +47,7 @@ impl<H: Hasher> From<TerminalUnit<H>> for Unit<H> {
 
 impl<H: Hasher> TerminalUnit<H> {
     // creates a unit from a Control Hash Unit, that has no parents reconstructed yet
-    pub(crate) fn blank_from_unit(unit: &Unit<H>) -> Self {
+    pub fn blank_from_unit(unit: &Unit<H>) -> Self {
         let n_members = unit.control_hash().n_members();
         let n_parents = unit.control_hash().n_parents();
         TerminalUnit {
@@ -59,7 +59,7 @@ impl<H: Hasher> TerminalUnit<H> {
         }
     }
 
-    pub(crate) fn verify_control_hash(&self) -> bool {
+    pub fn verify_control_hash(&self) -> bool {
         // this will be called only after all parents have been reconstructed
 
         self.unit.control_hash().combined_hash == ControlHash::<H>::combine_hashes(&self.parents)
@@ -101,7 +101,7 @@ type SyncClosure<X, Y> = Box<dyn Fn(X) -> Y + Sync + Send + 'static>;
 /// We also refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.3 for a discussion of this component.
 
-pub(crate) struct Terminal<H: Hasher> {
+pub struct Terminal<H: Hasher> {
     node_id: NodeIndex,
     // A channel for receiving notifications (units mainly)
     ntfct_rx: Receiver<NotificationIn<H>>,
@@ -128,7 +128,7 @@ pub(crate) struct Terminal<H: Hasher> {
 }
 
 impl<H: Hasher> Terminal<H> {
-    pub(crate) fn new(
+    pub fn new(
         node_id: NodeIndex,
         ntfct_rx: Receiver<NotificationIn<H>>,
         ntfct_tx: Sender<NotificationOut<H>>,
@@ -337,7 +337,7 @@ impl<H: Hasher> Terminal<H> {
         }
     }
 
-    pub(crate) fn register_post_insert_hook(&mut self, hook: SyncClosure<TerminalUnit<H>, ()>) {
+    pub fn register_post_insert_hook(&mut self, hook: SyncClosure<TerminalUnit<H>, ()>) {
         self.post_insert.push(hook);
     }
 
@@ -348,7 +348,7 @@ impl<H: Hasher> Terminal<H> {
         }
     }
 
-    pub(crate) async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
         loop {
             futures::select! {
                 n = self.ntfct_rx.next() => {

@@ -34,7 +34,7 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub(crate) struct Spawner;
+pub struct Spawner;
 
 impl aleph_bft::SpawnHandle for Spawner {
     fn spawn(&self, _: &str, task: impl Future<Output = ()> + Send + 'static) {
@@ -51,7 +51,7 @@ impl aleph_bft::SpawnHandle for Spawner {
 
 const ALEPH_PROTOCOL_NAME: &str = "/alephbft/test/1";
 
-pub(crate) type NetworkData =
+pub type NetworkData =
     aleph_bft::NetworkData<Hasher256, Data, Signature, PartialMultisignature>;
 
 #[allow(clippy::large_enum_variant)]
@@ -239,7 +239,7 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<Request, Response>> for B
     }
 }
 
-pub(crate) struct Network {
+pub struct Network {
     msg_to_manager_tx: mpsc::UnboundedSender<(NetworkData, Recipient)>,
     msg_from_manager_rx: mpsc::UnboundedReceiver<NetworkData>,
 }
@@ -256,14 +256,14 @@ impl aleph_bft::Network<Hasher256, Data, Signature, PartialMultisignature> for N
     }
 }
 
-pub(crate) struct NetworkManager {
+pub struct NetworkManager {
     swarm: Swarm<Behaviour>,
     consensus_rx: UnboundedReceiver<(NetworkData, Recipient)>,
     block_rx: UnboundedReceiver<Block>,
 }
 
 impl Network {
-    pub(crate) async fn new(
+    pub async fn new(
         node_ix: NodeIndex,
     ) -> Result<
         (
@@ -356,7 +356,7 @@ impl Network {
 }
 
 impl NetworkManager {
-    pub(crate) async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
         loop {
             futures::select! {
                 maybe_msg = self.consensus_rx.next() => {

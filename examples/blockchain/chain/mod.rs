@@ -16,20 +16,20 @@ use std::{
     time::{self, Duration},
 };
 
-pub(crate) use data::{Data, DataProvider, DataStore, FinalizationProvider};
+pub use data::{Data, DataProvider, DataStore, FinalizationProvider};
 
 mod data;
 
 type BlockNum = u64;
 
 #[derive(Clone, Encode, Decode)]
-pub(crate) struct Block {
-    pub(crate) num: BlockNum,
-    pub(crate) data: Vec<u8>,
+pub struct Block {
+    pub num: BlockNum,
+    pub data: Vec<u8>,
 }
 
 impl Block {
-    pub(crate) fn new(num: BlockNum, size: usize) -> Self {
+    pub fn new(num: BlockNum, size: usize) -> Self {
         debug!(target: "Blockchain-chain", "Started creating block {:?}", num);
         // Not extremely random, but good enough.
         let data: Vec<u8> = (0..size)
@@ -40,22 +40,22 @@ impl Block {
     }
 }
 
-pub(crate) type BlockPlan = Arc<dyn Fn(BlockNum) -> NodeIndex + Sync + Send + 'static>;
+pub type BlockPlan = Arc<dyn Fn(BlockNum) -> NodeIndex + Sync + Send + 'static>;
 
-pub(crate) struct ChainConfig {
+pub struct ChainConfig {
     // Our NodeIndex.
-    pub(crate) node_ix: NodeIndex,
+    pub node_ix: NodeIndex,
     // Number of random bytes to include in the block.
-    pub(crate) data_size: usize,
+    pub data_size: usize,
     // Delay between blocks
-    pub(crate) blocktime_ms: u64,
+    pub blocktime_ms: u64,
     // Delay before the first block should be created
-    pub(crate) init_delay_ms: u64,
+    pub init_delay_ms: u64,
     // f(k) means who should author the kth block
-    pub(crate) authorship_plan: BlockPlan,
+    pub authorship_plan: BlockPlan,
 }
 
-pub(crate) fn gen_chain_config(
+pub fn gen_chain_config(
     node_ix: NodeIndex,
     n_members: usize,
     data_size: usize,
@@ -82,7 +82,7 @@ pub(crate) fn gen_chain_config(
 // 3) enough time has passed -- to maintain blocktime of roughly config.blocktime_ms milliseconds.
 // This process holds two channel endpoints: block_rx to receive blocks from the network and
 // block_tx to push created blocks to the network (to send them to all the remaining nodes).
-pub(crate) async fn run_blockchain(
+pub async fn run_blockchain(
     config: ChainConfig,
     mut data_store: DataStore,
     current_block: Arc<Mutex<BlockNum>>,

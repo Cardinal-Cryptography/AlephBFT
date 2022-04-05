@@ -20,7 +20,7 @@ use std::{
 
 mod io;
 
-pub(crate) type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);
+pub type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);
 
 #[derive(Debug, Decode, Encode, Derivative)]
 #[derivative(PartialEq, Eq, Hash)]
@@ -80,7 +80,7 @@ impl<H: Hasher, D: Data, S: Signature> Alert<H, D, S> {
         self.proof.0.as_signable().creator()
     }
 
-    pub(crate) fn included_data(&self) -> Vec<D> {
+    pub fn included_data(&self) -> Vec<D> {
         // Only legit units might end up in the DAG, we can ignore the fork proof.
         self.legit_units
             .iter()
@@ -114,7 +114,7 @@ pub enum AlertMessage<H: Hasher, D: Data, S: Signature, MS: PartialMultisignatur
 }
 
 impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H, D, S, MS> {
-    pub(crate) fn included_data(&self) -> Vec<D> {
+    pub fn included_data(&self) -> Vec<D> {
         match self {
             Self::ForkAlert(unchecked_alert) => unchecked_alert.as_signable().included_data(),
             Self::RmcMessage(_, _) => Vec::new(),
@@ -156,7 +156,7 @@ struct Alerter<'a, H: Hasher, D: Data, MK: MultiKeychain> {
     exiting: bool,
 }
 
-pub(crate) struct AlertConfig {
+pub struct AlertConfig {
     pub n_members: NodeCount,
     pub session_id: SessionId,
 }
@@ -387,7 +387,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     }
 }
 
-pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
+pub async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     keychain: MK,
     messages_for_network: Sender<(
         AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,

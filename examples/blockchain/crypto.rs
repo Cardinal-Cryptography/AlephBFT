@@ -4,7 +4,7 @@ use codec::{Decode, Encode};
 use sha3::{Digest, Sha3_256};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub(crate) struct Hasher256;
+pub struct Hasher256;
 
 impl aleph_bft::Hasher for Hasher256 {
     type Hash = [u8; 32];
@@ -17,11 +17,11 @@ impl aleph_bft::Hasher for Hasher256 {
 
 // This is not cryptographically secure, mocked only for demonstration purposes
 #[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
-pub(crate) struct Signature;
+pub struct Signature;
 
 // This is not cryptographically secure, mocked only for demonstration purposes
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-pub(crate) struct PartialMultisignature {
+pub struct PartialMultisignature {
     signed_by: Vec<NodeIndex>,
 }
 
@@ -41,9 +41,9 @@ impl aleph_bft::PartialMultisignature for PartialMultisignature {
 
 // This is not cryptographically secure, mocked only for demonstration purposes
 #[derive(Clone)]
-pub(crate) struct KeyBox {
-    pub(crate) count: usize,
-    pub(crate) index: NodeIndex,
+pub struct KeyBox {
+    pub count: usize,
+    pub index: NodeIndex,
 }
 
 #[async_trait]

@@ -172,10 +172,10 @@ impl<W: Write + Send> NetworkHook<aleph_mock::Hasher64, Data, Signature, Partial
 }
 
 #[derive(Default)]
-pub(crate) struct NetworkDataEncoding {}
+pub struct NetworkDataEncoding {}
 
 impl NetworkDataEncoding {
-    pub(crate) fn encode_into<W: Write>(
+    pub fn encode_into<W: Write>(
         &self,
         data: &FuzzNetworkData,
         writer: &mut W,
@@ -183,7 +183,7 @@ impl NetworkDataEncoding {
         writer.write_all(&data.encode()[..])
     }
 
-    pub(crate) fn decode_from<R: Read>(
+    pub fn decode_from<R: Read>(
         &self,
         reader: &mut R,
     ) -> core::result::Result<FuzzNetworkData, codec::Error> {

@@ -8,13 +8,13 @@ use log::{error, info, warn};
 use std::fmt::Debug;
 
 #[derive(Encode, Decode, Clone, Debug)]
-pub(crate) enum NetworkDataInner<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
+pub enum NetworkDataInner<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
     Units(UnitMessage<H, D, S>),
     Alert(AlertMessage<H, D, S, MS>),
 }
 
 impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> NetworkDataInner<H, D, S, MS> {
-    pub(crate) fn included_data(&self) -> Vec<D> {
+    pub fn included_data(&self) -> Vec<D> {
         match self {
             Self::Units(message) => message.included_data(),
             Self::Alert(message) => message.included_data(),
@@ -25,7 +25,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> NetworkDataInn
 /// NetworkData is the opaque format for all data that a committee member needs to send to other nodes.
 #[derive(Clone, Debug)]
 pub struct NetworkData<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature>(
-    pub(crate) NetworkDataInner<H, D, S, MS>,
+    pub NetworkDataInner<H, D, S, MS>,
 );
 
 impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> Encode
@@ -158,7 +158,7 @@ impl<
     }
 }
 
-pub(crate) async fn run<
+pub async fn run<
     H: Hasher,
     D: Data,
     S: Signature,
