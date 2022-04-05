@@ -212,7 +212,7 @@ async fn honest_members_agree_on_batches_byzantine(
     let spawner = Spawner::new();
     let mut batch_rxs = Vec::new();
     let mut exits = Vec::new();
-    let mut handles = Vec::<TaskHandle>::new();
+    let mut handles = Vec::new();
     let (mut net_hub, networks) = configure_network(n_members, network_reliability);
 
     let alert_hook = AlertHook::new();
@@ -233,7 +233,6 @@ async fn honest_members_agree_on_batches_byzantine(
                 network,
             );
             batch_rxs.push(batch_rx);
-
             (exit_tx, handle)
         };
         exits.push(exit_tx);

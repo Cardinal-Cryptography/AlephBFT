@@ -628,9 +628,9 @@ pub fn spawn_honest_member(
     let data_provider = DataProvider::new(node_index);
     let (finalization_provider, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
-    let (member_exit_tx, member_exit_rx) = oneshot::channel();
+    let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
-    let read = Cursor::new((*units.lock()).clone());
+    let unit_reader = Cursor::new((*units.lock()).clone());
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);
         run_honest_member(
@@ -640,16 +640,16 @@ pub fn spawn_honest_member(
             BackupMock {
                 data: units.clone(),
             },
-            read,
+            unit_reader,
             finalization_provider,
             keybox,
             spawner_inner.clone(),
-            member_exit_rx,
+            exit_rx,
         )
         .await
     };
-    let member_handle = spawner.spawn_essential("member", member_task);
-    (finalization_rx, member_exit_tx, member_handle)
+    let handle = spawner.spawn_essential("member", member_task);
+    (finalization_rx, exit_tx, handle)
 }
 
 pub fn complete_oneshot<T: std::fmt::Debug>(t: T) -> oneshot::Receiver<T> {
