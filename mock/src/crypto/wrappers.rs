@@ -9,6 +9,12 @@ pub trait MK:
     KeychainT<Signature = Signature> + MultiKeychainT<PartialMultisignature = PartialMultisignature>
 {
 }
+impl<
+        T: KeychainT<Signature = Signature>
+            + MultiKeychainT<PartialMultisignature = PartialMultisignature>,
+    > MK for T
+{
+}
 
 /// Keychain wrapper which produces incorrect signatures
 #[derive(Debug, Clone)]

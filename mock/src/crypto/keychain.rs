@@ -63,5 +63,3 @@ impl MultiKeychainT for Keychain {
         partial.iter().all(|(i, sgn)| self.verify(msg, sgn, i))
     }
 }
-
-impl crate::crypto::wrappers::MK for Keychain {}
