@@ -180,7 +180,7 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     data_provider: DP,
-    unit_backup: UB,
+    _unit_backup: UB,
     _unit_reader: UR,
     finalization_handler: FH,
     after_catch_up_delay: bool,
@@ -257,7 +257,7 @@ where
             rx_consensus: config.rx_consensus,
             ordered_batch_rx: config.ordered_batch_rx,
             data_provider: config.data_provider,
-            unit_backup: config.unit_backup,
+            _unit_backup: config.unit_backup,
             _unit_reader: config.unit_reader,
             finalization_handler: config.finalization_handler,
             after_catch_up_delay: false,
@@ -589,25 +589,11 @@ where
         }
     }
 
-    fn backup_data(
-        &mut self,
-        u: UncheckedSignedUnit<H, D, MK::Signature>,
-    ) -> Result<(), std::io::Error> {
-        trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), u.as_signable().hash());
-        self.unit_backup.write_all(&u.encode())?;
-        self.unit_backup.flush()?;
-        trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), u.as_signable().hash());
-        Ok(())
-    }
-
     async fn on_create(&mut self, u: PreUnit<H>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         let data = self.data_provider.get_data().await;
         let full_unit = FullUnit::new(u, data, self.session_id);
         let signed_unit = Signed::sign(full_unit, self.keybox).await;
-        if let Err(err) = self.backup_data(signed_unit.clone().into_unchecked()) {
-            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {:?}", self.index(), signed_unit.as_signable().hash(), err);
-        }
         self.store.add_unit(signed_unit.clone(), false);
     }
 
