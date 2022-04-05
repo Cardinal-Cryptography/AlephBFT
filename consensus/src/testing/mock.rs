@@ -619,9 +619,9 @@ pub fn spawn_honest_member(
     let unit_backup = BackupMock { data: units };
     let local_io = LocalIO::new(
         data_provider,
+        finalization_handler,
         unit_backup,
         unit_reader,
-        finalization_handler,
     );
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);

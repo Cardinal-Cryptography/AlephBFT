@@ -40,9 +40,9 @@ pub struct Config {
 #[derive(Clone)]
 pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read> {
     pub data_provider: DP,
+    pub finalization_handler: FH,
     pub unit_backup: UB,
     pub unit_reader: UR,
-    pub finalization_handler: FH,
     _phantom: PhantomData<D>,
 }
 
@@ -51,15 +51,15 @@ impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Re
 {
     pub fn new(
         data_provider: DP,
+        finalization_handler: FH,
         unit_backup: UB,
         unit_reader: UR,
-        finalization_handler: FH,
     ) -> LocalIO<D, DP, FH, UB, UR> {
         LocalIO {
             data_provider,
+            finalization_handler,
             unit_backup,
             unit_reader,
-            finalization_handler,
             _phantom: PhantomData,
         }
     }
