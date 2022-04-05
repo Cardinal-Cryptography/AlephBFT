@@ -1,7 +1,10 @@
-use crate::{Round, SessionId};
-use std::{sync::Arc, time::Duration};
-
-use crate::{NodeCount, NodeIndex};
+use crate::{Data, DataProvider, FinalizationHandler, NodeCount, NodeIndex, Round, SessionId};
+use std::{
+    io::{Read, Write},
+    marker::PhantomData,
+    sync::Arc,
+    time::Duration,
+};
 
 pub type DelaySchedule = Arc<dyn Fn(usize) -> Duration + Sync + Send + 'static>;
 
@@ -32,6 +35,34 @@ pub struct Config {
     pub delay_config: DelayConfig,
     /// Maximum allowable round of a unit.
     pub max_round: Round,
+}
+
+#[derive(Clone)]
+pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read> {
+    pub data_provider: DP,
+    pub unit_backup: UB,
+    pub unit_reader: UR,
+    pub finalization_handler: FH,
+    _phantom: PhantomData<D>,
+}
+
+impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read>
+    LocalIO<D, DP, FH, UB, UR>
+{
+    pub fn new(
+        data_provider: DP,
+        unit_backup: UB,
+        unit_reader: UR,
+        finalization_handler: FH,
+    ) -> LocalIO<D, DP, FH, UB, UR> {
+        LocalIO {
+            data_provider,
+            unit_backup,
+            unit_reader,
+            finalization_handler,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 pub fn exponential_slowdown(

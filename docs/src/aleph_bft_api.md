@@ -67,7 +67,7 @@ pub trait KeyBox: Index + Clone + Send {
 
 A typical implementation of KeyBox would be a collection of `N` public keys, an index `i` and a single private key corresponding to the public key number `i`. The meaning of `sign` is then to produce a signature using the given private key, and `verify(msg, s, j)` is to verify whether the signature `s` under the message `msg` is correct with respect to the public key of the `j`th node.
 
-#### 3.1.4 Read & Write
+#### 3.1.4 Read & Write – recovering mid session crashes
 
 The `std::io::Write` and `std::io::Read` traits are used for creating backups of Units created in a session. This is a part of crash recovery. Units created are needed for member to recover after crash during a session for Aleph to be BFT. This means that user needs to provide two traits `std::io::Write` and `std::io::Read` that are used for storing and reading Unit that are created by member. At first (without any crash) `std::io::Read` should return nothing. After crash it should contain all data that was stored before in this session.
 

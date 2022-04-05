@@ -1,13 +1,12 @@
 use crate::{
-    config::Config,
     network,
     runway::{
         self, NewestUnitResponse, Request, Response, RunwayIO, RunwayNotificationIn,
         RunwayNotificationOut,
     },
     units::{UncheckedSignedUnit, UnitCoord},
-    Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount, NodeIndex,
-    Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, LocalIO, MultiKeychain, Network,
+    NodeCount, NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -397,7 +396,6 @@ where
 /// For a detailed description of the consensus implemented by `run_session` see
 /// [docs for devs](https://cardinal-cryptography.github.io/AlephBFT/index.html)
 /// or the [original paper](https://arxiv.org/abs/1908.05156).
-#[allow(clippy::too_many_arguments)]
 pub async fn run_session<
     H: Hasher,
     D: Data,
@@ -410,11 +408,8 @@ pub async fn run_session<
     MK: MultiKeychain,
 >(
     config: Config,
+    local_io: LocalIO<D, DP, FH, UB, UR>,
     network: N,
-    data_provider: DP,
-    unit_backup: UB,
-    unit_reader: UR,
-    finalization_handler: FH,
     keybox: MK,
     spawn_handle: SH,
     mut exit: oneshot::Receiver<()>,
@@ -459,11 +454,8 @@ pub async fn run_session<
     };
     let runway_handle = runway::run(
         config.clone(),
+        local_io,
         keybox.clone(),
-        data_provider,
-        finalization_handler,
-        unit_backup,
-        unit_reader,
         spawn_handle.clone(),
         runway_io,
         exit_stream,

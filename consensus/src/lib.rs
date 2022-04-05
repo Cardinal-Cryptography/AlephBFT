@@ -19,7 +19,7 @@ pub use aleph_bft_types::{
     PartialMultisignature, PartiallyMultisigned, Recipient, Round, SessionId, Signable, Signature,
     SignatureError, SignatureSet, Signed, SpawnHandle, TaskHandle, UncheckedSigned,
 };
-pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
+pub use config::{default_config, exponential_slowdown, Config, DelayConfig, LocalIO};
 pub use member::run_session;
 pub use network::NetworkData;
 

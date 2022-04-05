@@ -6,9 +6,9 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, Validator,
     },
-    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signable, Signature, Signed,
-    SpawnHandle, UncheckedSigned,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, LocalIO, MultiKeychain,
+    NodeCount, NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signable,
+    Signature, Signed, SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -824,14 +824,10 @@ pub(crate) struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
     pub(crate) resolved_requests: Sender<Request<H>>,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run<H, D, MK, DP, UB, UR, FH, SH>(
     config: Config,
+    local_io: LocalIO<D, DP, FH, UB, UR>,
     keychain: MK,
-    data_provider: DP,
-    finalization_handler: FH,
-    unit_backup: UB,
-    unit_reader: UR,
     spawn_handle: SH,
     runway_io: RunwayIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
@@ -902,10 +898,10 @@ pub(crate) async fn run<H, D, MK, DP, UB, UR, FH, SH>(
 
     let runway_config = RunwayConfig {
         keychain: &keychain,
-        data_provider,
-        unit_backup,
-        unit_reader,
-        finalization_handler,
+        data_provider: local_io.data_provider,
+        unit_backup: local_io.unit_backup,
+        unit_reader: local_io.unit_reader,
+        finalization_handler: local_io.finalization_handler,
         alerts_for_alerter,
         notifications_from_alerter,
         tx_consensus,

@@ -27,7 +27,7 @@ use crate::{
     runway::{NotificationIn, NotificationOut},
     units::{Unit, UnitCoord},
     Config, DataProvider as DataProviderT, DelayConfig,
-    FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT,
+    FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT, LocalIO,
     MultiKeychain as MultiKeychainT, Network as NetworkT, NodeCount, NodeIndex,
     PartialMultisignature as PartialMultisignatureT, Receiver, Recipient, Round, Sender,
     SpawnHandle, TaskHandle,
@@ -578,30 +578,15 @@ impl Write for BackupMock {
 
 pub type ReaderMock = Cursor<Vec<u8>>;
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_honest_member<N: 'static + NetworkT<NetworkData>>(
     config: Config,
+    local_io: LocalIO<Data, DataProvider, FinalizationHandler, BackupMock, ReaderMock>,
     network: N,
-    data_provider: DataProvider,
-    unit_backup: BackupMock,
-    unit_reader: ReaderMock,
-    finalization_provider: FinalizationHandler,
     keybox: KeyBox,
     spawn_handle: Spawner,
     exit: oneshot::Receiver<()>,
 ) {
-    run_session(
-        config,
-        network,
-        data_provider,
-        unit_backup,
-        unit_reader,
-        finalization_provider,
-        keybox,
-        spawn_handle,
-        exit,
-    )
-    .await
+    run_session(config, local_io, network, keybox, spawn_handle, exit).await
 }
 
 pub fn configure_network(
@@ -626,22 +611,24 @@ pub fn spawn_honest_member(
     network: impl 'static + NetworkT<NetworkData>,
 ) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
     let data_provider = DataProvider::new(node_index);
-    let (finalization_provider, finalization_rx) = FinalizationHandler::new();
+    let (finalization_handler, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
     let unit_reader = Cursor::new((*units.lock()).clone());
+    let unit_backup = BackupMock { data: units };
+    let local_io = LocalIO::new(
+        data_provider,
+        unit_backup,
+        unit_reader,
+        finalization_handler,
+    );
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);
         run_honest_member(
             config,
+            local_io,
             network,
-            data_provider,
-            BackupMock {
-                data: units.clone(),
-            },
-            unit_reader,
-            finalization_provider,
             keybox,
             spawner_inner.clone(),
             exit_rx,
