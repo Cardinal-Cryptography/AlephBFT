@@ -14,11 +14,10 @@ mod terminal;
 mod units;
 
 pub use aleph_bft_types::{
-    Backup, Data, DataProvider, FinalizationHandler, Hasher, IncompleteMultisignatureError, Index,
-    Indexed, IntoBackup, IntoReader, KeyBox, MultiKeychain, Multisigned, Network, NodeCount,
-    NodeIndex, NodeMap, NodeSubset, PartialMultisignature, PartiallyMultisigned, Reader, Recipient,
-    Round, SessionId, Signable, Signature, SignatureError, SignatureSet, Signed, SpawnHandle,
-    TaskHandle, UncheckedSigned,
+    Data, DataProvider, FinalizationHandler, Hasher, IncompleteMultisignatureError, Index, Indexed,
+    KeyBox, MultiKeychain, Multisigned, Network, NodeCount, NodeIndex, NodeMap, NodeSubset,
+    PartialMultisignature, PartiallyMultisigned, Recipient, Round, SessionId, Signable, Signature,
+    SignatureError, SignatureSet, Signed, SpawnHandle, TaskHandle, UncheckedSigned,
 };
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
 pub use member::run_session;

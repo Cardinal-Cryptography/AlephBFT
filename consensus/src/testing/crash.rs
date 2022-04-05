@@ -23,7 +23,7 @@ async fn honest_members_agree_on_batches(
     for network in networks {
         let ix = network.index();
         if n_alive.into_range().contains(&ix) {
-            let (batch_rx, mut exit_txs, mut new_handles) = spawn_honest_member(
+            let (batch_rx, exit_tx, handle) = spawn_honest_member(
                 spawner.clone(),
                 ix,
                 n_members,
@@ -31,8 +31,8 @@ async fn honest_members_agree_on_batches(
                 network,
             );
             batch_rxs.push(batch_rx);
-            exits.append(&mut exit_txs);
-            handles.append(&mut new_handles);
+            exits.push(exit_tx);
+            handles.push(handle);
         }
     }
 

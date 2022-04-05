@@ -6,9 +6,8 @@ use crate::{
         RunwayNotificationOut,
     },
     units::{UncheckedSignedUnit, UnitCoord},
-    Backup, Data, DataProvider, FinalizationHandler, Hasher, IntoBackup, IntoReader, MultiKeychain,
-    Network, NodeCount, NodeIndex, Reader, Receiver, Recipient, Sender, Signature, SpawnHandle,
-    UncheckedSigned,
+    Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount, NodeIndex,
+    Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -25,6 +24,7 @@ use std::{
     collections::{BinaryHeap, HashSet},
     convert::TryInto,
     fmt::Debug,
+    io::{Read, Write},
     time,
 };
 
@@ -402,9 +402,9 @@ pub async fn run_session<
     H: Hasher,
     D: Data,
     DP: DataProvider<D>,
-    IB: IntoBackup,
-    IR: IntoReader,
     FH: FinalizationHandler<D>,
+    UB: Write,
+    UR: Read,
     N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
     MK: MultiKeychain,
@@ -412,16 +412,13 @@ pub async fn run_session<
     config: Config,
     network: N,
     data_provider: DP,
-    unit_pre_backup: IB,
-    unit_pre_reader: IR,
+    unit_backup: UB,
+    unit_reader: UR,
     finalization_handler: FH,
     keybox: MK,
     spawn_handle: SH,
     mut exit: oneshot::Receiver<()>,
-) where
-    IB::Into: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
-    IR::Into: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
-{
+) {
     let index = config.node_ix;
     info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", index);
 
@@ -460,8 +457,6 @@ pub async fn run_session<
         unit_messages_for_network: runway_messages_for_network,
         resolved_requests: resolved_requests_tx,
     };
-    let unit_backup = unit_pre_backup.into_backup::<UncheckedSignedUnit<H, D, MK::Signature>>();
-    let unit_reader = unit_pre_reader.into_reader::<UncheckedSignedUnit<H, D, MK::Signature>>();
     let runway_handle = runway::run(
         config.clone(),
         keybox.clone(),

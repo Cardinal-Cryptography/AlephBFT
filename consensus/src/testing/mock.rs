@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use codec::{Codec, Decode, Encode};
+use codec::{Decode, Encode};
 use log::{debug, error};
 use parking_lot::Mutex;
 
@@ -15,6 +15,7 @@ use std::{
     cell::RefCell,
     collections::{hash_map::DefaultHasher, HashMap},
     hash::Hasher as StdHasher,
+    io::{Cursor, Write},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -25,11 +26,11 @@ use crate::{
     exponential_slowdown, run_session,
     runway::{NotificationIn, NotificationOut},
     units::{Unit, UnitCoord},
-    Backup as BackupT, Config, DataProvider as DataProviderT, DelayConfig,
-    FinalizationHandler as FinalizationHandlerT, Hasher, Index, IntoBackup as IntoBackupT,
-    IntoReader as IntoReaderT, KeyBox as KeyBoxT, MultiKeychain as MultiKeychainT,
-    Network as NetworkT, NodeCount, NodeIndex, PartialMultisignature as PartialMultisignatureT,
-    Reader as ReaderT, Receiver, Recipient, Round, Sender, SpawnHandle, TaskHandle,
+    Config, DataProvider as DataProviderT, DelayConfig,
+    FinalizationHandler as FinalizationHandlerT, Hasher, Index, KeyBox as KeyBoxT,
+    MultiKeychain as MultiKeychainT, Network as NetworkT, NodeCount, NodeIndex,
+    PartialMultisignature as PartialMultisignatureT, Receiver, Recipient, Round, Sender,
+    SpawnHandle, TaskHandle,
 };
 
 pub fn init_log() {
@@ -494,98 +495,6 @@ impl DataProvider {
     }
 }
 
-type SavedUnit = Vec<u8>;
-
-struct UnitSaver {
-    rx: UnboundedReceiver<SavedUnit>,
-    units: Arc<Mutex<Vec<SavedUnit>>>,
-}
-
-impl UnitSaver {
-    async fn run(mut self) {
-        loop {
-            if let Some(unit) = self.rx.next().await {
-                println!("Saver received unit {:?}", unit);
-                self.units.lock().push(unit);
-            } else {
-                println!("NO UNIT CAN BE RECEIVED");
-                return;
-            }
-        }
-    }
-}
-
-pub(crate) struct IntoBackup {
-    tx: UnboundedSender<SavedUnit>,
-}
-
-impl IntoBackupT for IntoBackup {
-    type Into = Backup;
-
-    fn into_backup<T: Codec + Send + Sized + Sync + 'static>(self) -> Self::Into {
-        Backup { tx: self.tx }
-    }
-}
-
-impl IntoBackup {
-    fn new(units: Arc<Mutex<Vec<SavedUnit>>>) -> (IntoBackup, UnitSaver) {
-        let (tx, rx) = unbounded();
-        (IntoBackup { tx }, UnitSaver { rx, units })
-    }
-}
-
-pub(crate) struct Backup {
-    tx: UnboundedSender<SavedUnit>,
-}
-
-#[async_trait]
-impl<T: Codec + Send + Sized + Sync + 'static> BackupT<T> for Backup {
-    async fn save(&self, unit: T) {
-        if let Err(e) = self.tx.unbounded_send(unit.encode()) {
-            error!(target: "unit-backup", "Error when sending data from Backup {:?}.", e);
-        }
-    }
-}
-
-pub(crate) struct IntoReader {
-    units: Vec<SavedUnit>,
-}
-
-impl IntoReaderT for IntoReader {
-    type Into = Reader;
-
-    fn into_reader<T: Codec + Send + Sized + Sync + 'static>(self) -> Self::Into {
-        Reader {
-            units: self.units,
-            index: 0,
-        }
-    }
-}
-
-impl IntoReader {
-    fn new(units: Vec<SavedUnit>) -> IntoReader {
-        IntoReader { units }
-    }
-}
-
-pub(crate) struct Reader {
-    units: Vec<SavedUnit>,
-    index: usize,
-}
-
-#[async_trait]
-impl<T: Codec + Send + Sized + Sync> ReaderT<T> for Reader {
-    fn next(&mut self) -> Option<T> {
-        match self.units.get_mut(self.index) {
-            Some(encoded) => {
-                self.index += 1;
-                T::decode(&mut encoded.as_slice()).ok()
-            }
-            None => None,
-        }
-    }
-}
-
 pub(crate) struct FinalizationHandler {
     tx: Sender<Data>,
 }
@@ -653,13 +562,29 @@ impl MultiKeychainT for KeyBox {
     }
 }
 
+pub struct BackupMock {
+    data: Arc<Mutex<Vec<u8>>>,
+}
+
+impl Write for BackupMock {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
+        self.data.lock().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+}
+
+pub type ReaderMock = Cursor<Vec<u8>>;
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_honest_member<N: 'static + NetworkT<NetworkData>>(
     config: Config,
     network: N,
     data_provider: DataProvider,
-    unit_into_backup: IntoBackup,
-    unit_into_reader: IntoReader,
+    unit_backup: BackupMock,
+    unit_reader: ReaderMock,
     finalization_provider: FinalizationHandler,
     keybox: KeyBox,
     spawn_handle: Spawner,
@@ -669,8 +594,8 @@ pub(crate) async fn run_honest_member<N: 'static + NetworkT<NetworkData>>(
         config,
         network,
         data_provider,
-        unit_into_backup,
-        unit_into_reader,
+        unit_backup,
+        unit_reader,
         finalization_provider,
         keybox,
         spawn_handle,
@@ -697,30 +622,25 @@ pub fn spawn_honest_member(
     spawner: Spawner,
     node_index: NodeIndex,
     n_members: NodeCount,
-    units: Arc<Mutex<Vec<SavedUnit>>>,
+    units: Arc<Mutex<Vec<u8>>>,
     network: impl 'static + NetworkT<NetworkData>,
-) -> (
-    UnboundedReceiver<Data>,
-    Vec<oneshot::Sender<()>>,
-    Vec<TaskHandle>,
-) {
+) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
     let data_provider = DataProvider::new(node_index);
-    let (unit_backup, unit_saver) = IntoBackup::new(units.clone());
-    let unit_reader = IntoReader::new((*units.lock()).clone());
-
     let (finalization_provider, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
     let (member_exit_tx, member_exit_rx) = oneshot::channel();
-    let (saver_exit_tx, saver_exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
+    let read = Cursor::new((*units.lock()).clone());
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);
         run_honest_member(
             config,
             network,
             data_provider,
-            unit_backup,
-            unit_reader,
+            BackupMock {
+                data: units.clone(),
+            },
+            read,
             finalization_provider,
             keybox,
             spawner_inner.clone(),
@@ -728,19 +648,8 @@ pub fn spawn_honest_member(
         )
         .await
     };
-    let saver_task = async move {
-        tokio::select! {
-            _ = unit_saver.run() => {}
-            _ = saver_exit_rx => {}
-        }
-    };
     let member_handle = spawner.spawn_essential("member", member_task);
-    let saver_handle = spawner.spawn_essential("unit saver", saver_task);
-    (
-        finalization_rx,
-        vec![member_exit_tx, saver_exit_tx],
-        vec![member_handle, saver_handle],
-    )
+    (finalization_rx, member_exit_tx, member_handle)
 }
 
 pub fn complete_oneshot<T: std::fmt::Debug>(t: T) -> oneshot::Receiver<T> {

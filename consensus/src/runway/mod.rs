@@ -6,9 +6,9 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, Validator,
     },
-    Backup, Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain,
-    NodeCount, NodeIndex, NodeMap, Reader, Receiver, Recipient, Round, Sender, SessionId, Signable,
-    Signature, Signed, SpawnHandle, UncheckedSigned,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
+    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signable, Signature, Signed,
+    SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -21,6 +21,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     convert::TryFrom,
     hash::{Hash, Hasher as _},
+    io::{Read, Write},
     time::Duration,
 };
 
@@ -157,8 +158,8 @@ where
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
-    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UB: Write,
+    UR: Read,
     FH: FinalizationHandler<D>,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -180,7 +181,7 @@ where
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     data_provider: DP,
     unit_backup: UB,
-    unit_reader: UR,
+    _unit_reader: UR,
     finalization_handler: FH,
     after_catch_up_delay: bool,
     starting_round_sender: Option<oneshot::Sender<Round>>,
@@ -195,8 +196,8 @@ struct RunwayConfig<
     H: Hasher,
     D: Data,
     DP: DataProvider<D>,
-    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
-    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UB: Write,
+    UR: Read,
     FH: FinalizationHandler<D>,
     MK: MultiKeychain,
 > {
@@ -227,8 +228,8 @@ where
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
-    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UB: Write,
+    UR: Read,
     FH: FinalizationHandler<D>,
 {
     fn new(config: RunwayConfig<'a, H, D, DP, UB, UR, FH, MK>) -> Self {
@@ -257,7 +258,7 @@ where
             ordered_batch_rx: config.ordered_batch_rx,
             data_provider: config.data_provider,
             unit_backup: config.unit_backup,
-            unit_reader: config.unit_reader,
+            _unit_reader: config.unit_reader,
             finalization_handler: config.finalization_handler,
             after_catch_up_delay: false,
             starting_round_sender: Some(config.starting_round_sender),
@@ -588,15 +589,26 @@ where
         }
     }
 
+    fn backup_data(
+        &mut self,
+        u: UncheckedSignedUnit<H, D, MK::Signature>,
+    ) -> Result<(), std::io::Error> {
+        trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), u.as_signable().hash());
+        self.unit_backup.write_all(&u.encode())?;
+        self.unit_backup.flush()?;
+        trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), u.as_signable().hash());
+        Ok(())
+    }
+
     async fn on_create(&mut self, u: PreUnit<H>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         let data = self.data_provider.get_data().await;
         let full_unit = FullUnit::new(u, data, self.session_id);
         let hash = full_unit.hash();
         let signed_unit = Signed::sign(full_unit, self.keybox).await;
-        trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), hash);
-        self.unit_backup.save(signed_unit.clone().into()).await;
-        trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), hash);
+        if let Err(err) = self.backup_data(signed_unit.clone().into_unchecked()) {
+            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {:?}", self.index(), hash, err);
+        }
         self.store.add_unit(signed_unit.clone(), false);
     }
 
@@ -752,10 +764,6 @@ where
             self.exiting = true
         };
 
-        while self.unit_reader.next().is_some() {
-            // TODO implement handling units
-        }
-
         let mut catch_up_delay = futures_timer::Delay::new(Duration::from_secs(5)).fuse();
 
         info!(target: "AlephBFT-runway", "{:?} Runway started.", index);
@@ -847,8 +855,8 @@ pub(crate) async fn run<H, D, MK, DP, UB, UR, FH, SH>(
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    UB: Backup<UncheckedSignedUnit<H, D, MK::Signature>>,
-    UR: Reader<UncheckedSignedUnit<H, D, MK::Signature>>,
+    UB: Write,
+    UR: Read,
     FH: FinalizationHandler<D>,
     SH: SpawnHandle,
 {

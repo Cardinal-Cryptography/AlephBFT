@@ -183,7 +183,7 @@ fn spawn_malicious_member(
     n_members: NodeCount,
     round_to_fork: Round,
     network: Network,
-) -> (Vec<oneshot::Sender<()>>, Vec<TaskHandle>) {
+) -> (oneshot::Sender<()>, TaskHandle) {
     let (exit_tx, exit_rx) = oneshot::channel();
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);
@@ -199,7 +199,7 @@ fn spawn_malicious_member(
         lesniak.run_session(exit_rx).await;
     };
     let task_handle = spawner.spawn_essential("malicious-member", member_task);
-    (vec![exit_tx], vec![task_handle])
+    (exit_tx, task_handle)
 }
 
 async fn honest_members_agree_on_batches_byzantine(
@@ -222,10 +222,10 @@ async fn honest_members_agree_on_batches_byzantine(
 
     for network in networks {
         let ix = network.index();
-        let (mut exit_txs, mut new_handles) = if !n_honest.into_range().contains(&ix) {
+        let (exit_tx, handle) = if !n_honest.into_range().contains(&ix) {
             spawn_malicious_member(spawner.clone(), ix, n_members, 2, network)
         } else {
-            let (batch_rx, exit_txs, handles) = spawn_honest_member(
+            let (batch_rx, exit_tx, handle) = spawn_honest_member(
                 spawner.clone(),
                 ix,
                 n_members,
@@ -233,10 +233,11 @@ async fn honest_members_agree_on_batches_byzantine(
                 network,
             );
             batch_rxs.push(batch_rx);
-            (exit_txs, handles)
+
+            (exit_tx, handle)
         };
-        exits.append(&mut exit_txs);
-        handles.append(&mut new_handles);
+        exits.push(exit_tx);
+        handles.push(handle);
     }
 
     let mut batches = Vec::new();

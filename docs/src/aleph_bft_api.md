@@ -67,43 +67,32 @@ pub trait KeyBox: Index + Clone + Send {
 
 A typical implementation of KeyBox would be a collection of `N` public keys, an index `i` and a single private key corresponding to the public key number `i`. The meaning of `sign` is then to produce a signature using the given private key, and `verify(msg, s, j)` is to verify whether the signature `s` under the message `msg` is correct with respect to the public key of the `j`th node.
 
-#### 3.1.3 IntoBackup, IntoReader.
+#### 3.1.3 Read, Write
 
-The `IntoBackup` and `IntoReader` traits are used for creating backups of Units created in a session. This is a part of crash recovery. Units created are needed for member to recover after crash during a session for Aleph to be BFT. This means that user needs to provide two traits `IntoBackup` and `IntoReader` that are used for storing and reading Unit that are created by member. At first (without any crash) `IntoReader` should return nothing. After crash it should contain all data that was stored before in this session.
+The `std::io::Write` and `std::io::Read` traits are used for creating backups of Units created in a session. This is a part of crash recovery. Units created are needed for member to recover after crash during a session for Aleph to be BFT. This means that user needs to provide two traits `std::io::Write` and `std::io::Read` that are used for storing and reading Unit that are created by member. At first (without any crash) `std::io::Read` should return nothing. After crash it should contain all data that was stored before in this session.
 
-`IntoBackup` trait upon being consumed by `into_backup` method should return a struct implementing `Backup<T>` trait. It should implement for all `T: Codec + Send + Sync` a way of buckuping a data generated during session. **If member crashed `Backup<T>` should append data that was saved before the crash.**
+[`std::io::Write`](https://doc.rust-lang.org/std/io/trait.Write.html#) should provide a way of writing data generated during session which should be backed up. **If member crashed `std::io::Write` should append data that was saved before the crash.**
 ```rust
-pub trait Backup<T: Codec + Send + Sync>: Send + Sync {
-    async fn save(&self, data: T);
-}
+pub trait Write {
+    fn write(&mut self, buf: &[u8]) -> Result<usize>;
+    fn flush(&mut self) -> Result<()>;
 
-pub trait IntoBackup {
-    type Into;
-
-    fn into_backup<T: Codec + Send + Sync + 'static>(self) -> Self::Into
-    where
-        Self::Into: Backup<T>;
+	...
 }
 ```
 
-`IntoReader` trait upon being consumed by `into_reader` method should return a struct implementing `Reader<T>` trait. It should implement for all `T: Codec + Send + Sync` a way of retreiving buckups of all data generated during session by this member in case of crash. **`Reader<T>` should have a copy of all data so that calling `save(...)` method of `Backup<T>` has no effect on `Reader<T>` and calling `save(...)` does not consume data originally stored by `Backup<T>`.**
+[`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html#) should provide a way of retreiving backups of all data generated during session by this member in case of crash. **`std::io::Read` should have a copy of all data so that writing to `std::io::Write` has no effect on reading.**
 ```rust
-pub trait Reader<T: Codec + Send + Sync>: Send + Sync {
-    fn next(&mut self) -> Option<T>;
-}
+pub trait Read {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize>;
 
-pub trait IntoReader {
-    type Into;
-
-    fn into_reader<T: Codec + Send + Sync + 'static>(self) -> Self::Into
-    where
-        Self::Into: Reader<T>;
+	...
 }
 ```
 
 ### 3.2 Examples
 
-While the implementations of `KeyBox`, `IntoBackup`, `IntoReader` and `Network` are pretty much universal, the implementation of `DataProvider` and `FinalizationHandler` depends on the specific application. We consider two examples here.
+While the implementations of `KeyBox`, `std::io::Write`, `std::io::Read` and `Network` are pretty much universal, the implementation of `DataProvider` and `FinalizationHandler` depends on the specific application. We consider two examples here.
 
 #### 3.2.1 Blockchain Finality Gadget.
 
