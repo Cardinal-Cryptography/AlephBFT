@@ -604,10 +604,9 @@ where
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         let data = self.data_provider.get_data().await;
         let full_unit = FullUnit::new(u, data, self.session_id);
-        let hash = full_unit.hash();
         let signed_unit = Signed::sign(full_unit, self.keybox).await;
         if let Err(err) = self.backup_data(signed_unit.clone().into_unchecked()) {
-            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {:?}", self.index(), hash, err);
+            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {:?}", self.index(), signed_unit.as_signable().hash(), err);
         }
         self.store.add_unit(signed_unit.clone(), false);
     }
