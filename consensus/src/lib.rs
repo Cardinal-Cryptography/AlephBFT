@@ -11,8 +11,6 @@ mod member;
 mod network;
 mod runway;
 mod terminal;
-#[cfg(test)]
-mod testing;
 mod units;
 
 pub use aleph_bft_types::{
