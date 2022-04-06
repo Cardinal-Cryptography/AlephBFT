@@ -6,9 +6,9 @@ use crate::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, Validator,
     },
-    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, LocalIO, MultiKeychain,
-    NodeCount, NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId,
-    Signature, Signed, SpawnHandle, UncheckedSigned,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
+    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signature, Signed,
+    SpawnHandle, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -16,11 +16,7 @@ use futures::{
     pin_mut, Future, FutureExt, StreamExt,
 };
 use log::{debug, error, info, trace, warn};
-use std::{
-    collections::HashSet,
-    convert::TryFrom,
-    io::{Read, Write},
-};
+use std::{collections::HashSet, convert::TryFrom};
 
 mod collection;
 
@@ -107,15 +103,13 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-struct Runway<'a, H, D, MK, DP, FH, UB, UR>
+struct Runway<'a, H, D, MK, DP, FH>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
-    UB: Write,
-    UR: Read,
 {
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
@@ -135,8 +129,6 @@ where
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     data_provider: DP,
     finalization_handler: FH,
-    _unit_backup: UB,
-    _unit_reader: UR,
     exiting: bool,
 }
 
@@ -145,16 +137,12 @@ struct RunwayConfig<
     D: Data,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
-    UB: Write,
-    UR: Read,
     MK: MultiKeychain,
 > {
     session_id: SessionId,
     max_round: Round,
     data_provider: DP,
     finalization_handler: FH,
-    unit_backup: UB,
-    unit_reader: UR,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -167,18 +155,16 @@ struct RunwayConfig<
     resolved_requests: Sender<Request<H>>,
 }
 
-impl<'a, H, D, MK, DP, FH, UB, UR> Runway<'a, H, D, MK, DP, FH, UB, UR>
+impl<'a, H, D, MK, DP, FH> Runway<'a, H, D, MK, DP, FH>
 where
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
     DP: DataProvider<D>,
-    UB: Write,
-    UR: Read,
     FH: FinalizationHandler<D>,
 {
     fn new(
-        config: RunwayConfig<H, D, DP, FH, UB, UR, MK>,
+        config: RunwayConfig<H, D, DP, FH, MK>,
         keychain: &'a MK,
         validator: &'a Validator<'a, MK>,
     ) -> Self {
@@ -188,8 +174,6 @@ where
             max_round,
             data_provider,
             finalization_handler,
-            unit_backup,
-            unit_reader,
             alerts_for_alerter,
             notifications_from_alerter,
             tx_consensus,
@@ -218,8 +202,6 @@ where
             ordered_batch_rx,
             data_provider,
             finalization_handler,
-            _unit_backup: unit_backup,
-            _unit_reader: unit_reader,
             responses_for_collection,
             session_id,
             exiting: false,
@@ -732,9 +714,10 @@ fn trivial_start(
     Ok(async {})
 }
 
-pub(crate) async fn run<H, D, MK, DP, FH, UB, UR, SH>(
+pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     config: Config,
-    local_io: LocalIO<D, DP, FH, UB, UR>,
+    data_provider: DP,
+    finalization_handler: FH,
     keychain: MK,
     spawn_handle: SH,
     runway_io: RunwayIO<H, D, MK>,
@@ -745,8 +728,6 @@ pub(crate) async fn run<H, D, MK, DP, FH, UB, UR, SH>(
     MK: MultiKeychain,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
-    UB: Write,
-    UR: Read,
     SH: SpawnHandle,
 {
     let (tx_consensus, consensus_stream) = mpsc::unbounded();
@@ -822,10 +803,8 @@ pub(crate) async fn run<H, D, MK, DP, FH, UB, UR, SH>(
     pin_mut!(starting_round_handle);
 
     let runway_config = RunwayConfig {
-        data_provider: local_io.data_provider,
-        finalization_handler: local_io.finalization_handler,
-        unit_backup: local_io.unit_backup,
-        unit_reader: local_io.unit_reader,
+        data_provider,
+        finalization_handler,
         alerts_for_alerter,
         notifications_from_alerter,
         tx_consensus,

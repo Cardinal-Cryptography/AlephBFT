@@ -5,8 +5,8 @@ use crate::{
         RunwayNotificationOut,
     },
     units::{UncheckedSignedUnit, UnitCoord},
-    Config, Data, DataProvider, FinalizationHandler, Hasher, LocalIO, MultiKeychain, Network,
-    NodeCount, NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
+    NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{
@@ -24,6 +24,7 @@ use std::{
     convert::TryInto,
     fmt::Debug,
     io::{Read, Write},
+    marker::PhantomData,
     time,
 };
 
@@ -103,6 +104,34 @@ impl<H: Hasher, D: Data, S: Signature> Ord for ScheduledTask<H, D, S> {
 impl<H: Hasher, D: Data, S: Signature> PartialOrd for ScheduledTask<H, D, S> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone)]
+pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read> {
+    data_provider: DP,
+    finalization_handler: FH,
+    _unit_backup: UB,
+    _unit_reader: UR,
+    _phantom: PhantomData<D>,
+}
+
+impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read>
+    LocalIO<D, DP, FH, UB, UR>
+{
+    pub fn new(
+        data_provider: DP,
+        finalization_handler: FH,
+        unit_backup: UB,
+        unit_reader: UR,
+    ) -> LocalIO<D, DP, FH, UB, UR> {
+        LocalIO {
+            data_provider,
+            finalization_handler,
+            _unit_backup: unit_backup,
+            _unit_reader: unit_reader,
+            _phantom: PhantomData,
+        }
     }
 }
 
@@ -454,7 +483,8 @@ pub async fn run_session<
     };
     let runway_handle = runway::run(
         config.clone(),
-        local_io,
+        local_io.data_provider,
+        local_io.finalization_handler,
         keybox.clone(),
         spawn_handle.clone(),
         runway_io,
