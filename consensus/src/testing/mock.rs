@@ -562,11 +562,11 @@ impl MultiKeychainT for KeyBox {
     }
 }
 
-pub struct BackupMock {
+pub struct SaverMock {
     data: Arc<Mutex<Vec<u8>>>,
 }
 
-impl Write for BackupMock {
+impl Write for SaverMock {
     fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
         self.data.lock().extend_from_slice(buf);
         Ok(buf.len())
@@ -576,11 +576,11 @@ impl Write for BackupMock {
     }
 }
 
-pub type ReaderMock = Cursor<Vec<u8>>;
+pub type LoaderMock = Cursor<Vec<u8>>;
 
 pub(crate) async fn run_honest_member<N: 'static + NetworkT<NetworkData>>(
     config: Config,
-    local_io: LocalIO<Data, DataProvider, FinalizationHandler, BackupMock, ReaderMock>,
+    local_io: LocalIO<Data, DataProvider, FinalizationHandler, SaverMock, LoaderMock>,
     network: N,
     keybox: KeyBox,
     spawn_handle: Spawner,
@@ -615,14 +615,9 @@ pub fn spawn_honest_member(
     let config = gen_config(node_index, n_members);
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
-    let unit_reader = Cursor::new((*units.lock()).clone());
-    let unit_backup = BackupMock { data: units };
-    let local_io = LocalIO::new(
-        data_provider,
-        finalization_handler,
-        unit_backup,
-        unit_reader,
-    );
+    let unit_loader = LoaderMock::new((*units.lock()).clone());
+    let unit_saver = SaverMock { data: units };
+    let local_io = LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
     let member_task = async move {
         let keybox = KeyBox::new(n_members, node_index);
         run_honest_member(

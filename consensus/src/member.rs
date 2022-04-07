@@ -108,28 +108,28 @@ impl<H: Hasher, D: Data, S: Signature> PartialOrd for ScheduledTask<H, D, S> {
 }
 
 #[derive(Clone)]
-pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read> {
+pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Read> {
     data_provider: DP,
     finalization_handler: FH,
-    _unit_backup: UB,
-    _unit_reader: UR,
+    _unit_saver: US,
+    _unit_loader: UL,
     _phantom: PhantomData<D>,
 }
 
-impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, UB: Write, UR: Read>
-    LocalIO<D, DP, FH, UB, UR>
+impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Read>
+    LocalIO<D, DP, FH, US, UL>
 {
     pub fn new(
         data_provider: DP,
         finalization_handler: FH,
-        unit_backup: UB,
-        unit_reader: UR,
-    ) -> LocalIO<D, DP, FH, UB, UR> {
+        unit_saver: US,
+        unit_loader: UL,
+    ) -> LocalIO<D, DP, FH, US, UL> {
         LocalIO {
             data_provider,
             finalization_handler,
-            _unit_backup: unit_backup,
-            _unit_reader: unit_reader,
+            _unit_saver: unit_saver,
+            _unit_loader: unit_loader,
             _phantom: PhantomData,
         }
     }
@@ -430,14 +430,14 @@ pub async fn run_session<
     D: Data,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
-    UB: Write,
-    UR: Read,
+    US: Write,
+    UL: Read,
     N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<D, DP, FH, UB, UR>,
+    local_io: LocalIO<D, DP, FH, US, UL>,
     network: N,
     keybox: MK,
     spawn_handle: SH,
