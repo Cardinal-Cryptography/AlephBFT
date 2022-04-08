@@ -9,6 +9,7 @@ pub trait MK:
     KeychainT<Signature = Signature> + MultiKeychainT<PartialMultisignature = PartialMultisignature>
 {
 }
+
 impl<
         T: KeychainT<Signature = Signature>
             + MultiKeychainT<PartialMultisignature = PartialMultisignature>,

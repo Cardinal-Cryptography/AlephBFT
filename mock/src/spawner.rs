@@ -1,8 +1,8 @@
 use aleph_bft_types::{SpawnHandle, TaskHandle};
 use futures::{channel::oneshot, Future};
 
-#[derive(Clone)]
-pub struct Spawner {}
+#[derive(Clone, Default)]
+pub struct Spawner;
 
 impl SpawnHandle for Spawner {
     fn spawn(&self, _name: &str, task: impl Future<Output = ()> + Send + 'static) {
@@ -26,11 +26,5 @@ impl SpawnHandle for Spawner {
 impl Spawner {
     pub fn new() -> Self {
         Spawner {}
-    }
-}
-
-impl Default for Spawner {
-    fn default() -> Self {
-        Spawner::new()
     }
 }
