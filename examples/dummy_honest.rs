@@ -131,7 +131,7 @@ impl DataProvider {
     }
 }
 
-pub struct FinalizationHandler {
+pub(crate) struct FinalizationHandler {
     tx: UnboundedSender<Data>,
 }
 
@@ -145,7 +145,7 @@ impl aleph_bft::FinalizationHandler<Data> for FinalizationHandler {
 }
 
 impl FinalizationHandler {
-    pub fn new() -> (Self, UnboundedReceiver<Data>) {
+    pub(crate) fn new() -> (Self, UnboundedReceiver<Data>) {
         let (tx, rx) = mpsc::unbounded();
 
         (Self { tx }, rx)
@@ -158,7 +158,7 @@ struct Signature;
 
 // This is not cryptographically secure, mocked only for demonstration purposes
 #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-pub struct PartialMultisignature {
+pub(crate) struct PartialMultisignature {
     signed_by: Vec<NodeIndex>,
 }
 

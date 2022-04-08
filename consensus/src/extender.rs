@@ -5,7 +5,7 @@ use log::{debug, info, warn};
 
 use crate::{Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender};
 
-pub struct ExtenderUnit<H: Hasher> {
+pub(crate) struct ExtenderUnit<H: Hasher> {
     creator: NodeIndex,
     round: Round,
     parents: NodeMap<H::Hash>,
@@ -14,7 +14,12 @@ pub struct ExtenderUnit<H: Hasher> {
 }
 
 impl<H: Hasher> ExtenderUnit<H> {
-    pub fn new(creator: NodeIndex, round: Round, hash: H::Hash, parents: NodeMap<H::Hash>) -> Self {
+    pub(crate) fn new(
+        creator: NodeIndex,
+        round: Round,
+        hash: H::Hash,
+        parents: NodeMap<H::Hash>,
+    ) -> Self {
         ExtenderUnit {
             creator,
             round,
@@ -56,7 +61,7 @@ impl CacheState {
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component.
 
-pub struct Extender<H: Hasher> {
+pub(crate) struct Extender<H: Hasher> {
     node_id: NodeIndex,
     electors: Receiver<ExtenderUnit<H>>,
     state: CacheState,
@@ -69,7 +74,7 @@ pub struct Extender<H: Hasher> {
 }
 
 impl<H: Hasher> Extender<H> {
-    pub fn new(
+    pub(crate) fn new(
         node_id: NodeIndex,
         n_members: NodeCount,
         electors: Receiver<ExtenderUnit<H>>,
@@ -289,7 +294,7 @@ impl<H: Hasher> Extender<H> {
         }
     }
 
-    pub async fn extend(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>) {
         loop {
             futures::select! {
                 v = self.electors.next() => {

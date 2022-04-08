@@ -29,7 +29,7 @@ use std::{
 
 /// A message concerning units, either about new units or some requests for them.
 #[derive(Debug, Encode, Decode, Clone)]
-pub enum UnitMessage<H: Hasher, D: Data, S: Signature> {
+pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
     /// For disseminating newly created units.
     NewUnit(UncheckedSignedUnit<H, D, S>),
     /// Request for a unit by its coord.
@@ -47,7 +47,7 @@ pub enum UnitMessage<H: Hasher, D: Data, S: Signature> {
 }
 
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
-    pub fn included_data(&self) -> Vec<D> {
+    pub(crate) fn included_data(&self) -> Vec<D> {
         match self {
             Self::NewUnit(uu) => vec![uu.as_signable().data().clone()],
             Self::RequestCoord(_, _) => Vec::new(),

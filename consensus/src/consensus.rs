@@ -14,7 +14,7 @@ use crate::{
     Hasher, Receiver, Round, Sender, SpawnHandle,
 };
 
-pub async fn run<H: Hasher + 'static>(
+pub(crate) async fn run<H: Hasher + 'static>(
     conf: Config,
     incoming_notifications: Receiver<NotificationIn<H>>,
     outgoing_notifications: Sender<NotificationOut<H>>,

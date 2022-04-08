@@ -33,8 +33,8 @@ impl From<GeneralConfig> for Config {
 }
 
 pub struct IO<H: Hasher> {
-    pub incoming_parents: Receiver<Unit<H>>,
-    pub outgoing_units: Sender<NotificationOut<H>>,
+    pub(crate) incoming_parents: Receiver<Unit<H>>,
+    pub(crate) outgoing_units: Sender<NotificationOut<H>>,
 }
 
 async fn create_unit<H: Hasher>(

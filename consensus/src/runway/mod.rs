@@ -26,7 +26,7 @@ pub use collection::{NewestUnitResponse, Salt};
 
 /// Type for incoming notifications: Runway to Consensus.
 #[derive(Clone, PartialEq)]
-pub enum NotificationIn<H: Hasher> {
+pub(crate) enum NotificationIn<H: Hasher> {
     /// A notification carrying units. This might come either from multicast or
     /// from a response to a request. This is of no importance at this layer.
     NewUnits(Vec<Unit<H>>),
@@ -36,7 +36,7 @@ pub enum NotificationIn<H: Hasher> {
 
 /// Type for outgoing notifications: Consensus to Runway.
 #[derive(Debug, PartialEq)]
-pub enum NotificationOut<H: Hasher> {
+pub(crate) enum NotificationOut<H: Hasher> {
     /// Notification about a preunit created by this Consensus Node. Member is meant to
     /// disseminate this preunit among other nodes.
     CreatedPreUnit(PreUnit<H>, Vec<H::Hash>),
@@ -56,19 +56,19 @@ pub enum Request<H: Hasher> {
     NewestUnit(Salt),
 }
 
-pub enum Response<H: Hasher, D: Data, S: Signature> {
+pub(crate) enum Response<H: Hasher, D: Data, S: Signature> {
     Coord(UncheckedSignedUnit<H, D, S>),
     Parents(H::Hash, Vec<UncheckedSignedUnit<H, D, S>>),
     NewestUnit(UncheckedSigned<NewestUnitResponse<H, D, S>, S>),
 }
 
-pub enum RunwayNotificationOut<H: Hasher, D: Data, S: Signature> {
+pub(crate) enum RunwayNotificationOut<H: Hasher, D: Data, S: Signature> {
     NewUnit(UncheckedSignedUnit<H, D, S>),
     Request(Request<H>, Recipient),
     Response(Response<H, D, S>, NodeIndex),
 }
 
-pub enum RunwayNotificationIn<H: Hasher, D: Data, S: Signature> {
+pub(crate) enum RunwayNotificationIn<H: Hasher, D: Data, S: Signature> {
     NewUnit(UncheckedSignedUnit<H, D, S>),
     Request(Request<H>, NodeIndex),
     Response(Response<H, D, S>),
@@ -663,16 +663,16 @@ where
     }
 }
 
-pub struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
-    pub alert_messages_for_network: Sender<(
+pub(crate) struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
+    pub(crate) alert_messages_for_network: Sender<(
         AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
         Recipient,
     )>,
-    pub alert_messages_from_network:
+    pub(crate) alert_messages_from_network:
         Receiver<AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>>,
-    pub unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
-    pub unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
-    pub resolved_requests: Sender<Request<H>>,
+    pub(crate) unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
+    pub(crate) unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
+    pub(crate) resolved_requests: Sender<Request<H>>,
 }
 
 #[cfg(feature = "initial_unit_collection")]
@@ -714,7 +714,7 @@ fn trivial_start(
     Ok(async {})
 }
 
-pub async fn run<H, D, MK, DP, FH, SH>(
+pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     config: Config,
     keychain: MK,
     data_provider: DP,

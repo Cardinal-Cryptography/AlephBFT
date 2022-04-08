@@ -5,7 +5,7 @@ use log::{trace, warn};
 /// to the Terminal. We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component and the notion of "legit" units.
 
-pub struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
+pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
     by_coord: HashMap<UnitCoord, SignedUnit<'a, H, D, KB>>,
     by_hash: HashMap<H::Hash, SignedUnit<'a, H, D, KB>>,
     parents: HashMap<H::Hash, Vec<H::Hash>>,
@@ -16,7 +16,7 @@ pub struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
 }
 
 impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
-    pub fn new(n_nodes: NodeCount, max_round: Round) -> Self {
+    pub(crate) fn new(n_nodes: NodeCount, max_round: Round) -> Self {
         UnitStore {
             by_coord: HashMap::new(),
             by_hash: HashMap::new(),
@@ -28,23 +28,23 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         }
     }
 
-    pub fn unit_by_coord(&self, coord: UnitCoord) -> Option<&SignedUnit<'a, H, D, KB>> {
+    pub(crate) fn unit_by_coord(&self, coord: UnitCoord) -> Option<&SignedUnit<'a, H, D, KB>> {
         self.by_coord.get(&coord)
     }
 
-    pub fn unit_by_hash(&self, hash: &H::Hash) -> Option<&SignedUnit<'a, H, D, KB>> {
+    pub(crate) fn unit_by_hash(&self, hash: &H::Hash) -> Option<&SignedUnit<'a, H, D, KB>> {
         self.by_hash.get(hash)
     }
 
-    pub fn contains_hash(&self, hash: &H::Hash) -> bool {
+    pub(crate) fn contains_hash(&self, hash: &H::Hash) -> bool {
         self.by_hash.contains_key(hash)
     }
 
-    pub fn contains_coord(&self, coord: &UnitCoord) -> bool {
+    pub(crate) fn contains_coord(&self, coord: &UnitCoord) -> bool {
         self.by_coord.contains_key(coord)
     }
 
-    pub fn newest_unit(
+    pub(crate) fn newest_unit(
         &self,
         index: NodeIndex,
     ) -> Option<UncheckedSignedUnit<H, D, KB::Signature>> {
@@ -59,25 +59,25 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
     }
 
     // Outputs new legit units that are supposed to be sent to Consensus and empties the buffer.
-    pub fn yield_buffer_units(&mut self) -> Vec<SignedUnit<'a, H, D, KB>> {
+    pub(crate) fn yield_buffer_units(&mut self) -> Vec<SignedUnit<'a, H, D, KB>> {
         std::mem::take(&mut self.legit_buffer)
     }
 
     // Outputs None if this is not a newly-discovered fork or Some(sv) where (su, sv) form a fork
-    pub fn is_new_fork(&self, fu: &FullUnit<H, D>) -> Option<SignedUnit<'a, H, D, KB>> {
+    pub(crate) fn is_new_fork(&self, fu: &FullUnit<H, D>) -> Option<SignedUnit<'a, H, D, KB>> {
         if self.contains_hash(&fu.hash()) {
             return None;
         }
         self.unit_by_coord(fu.coord()).cloned()
     }
 
-    pub fn is_forker(&self, node_id: NodeIndex) -> bool {
+    pub(crate) fn is_forker(&self, node_id: NodeIndex) -> bool {
         self.is_forker[node_id]
     }
 
     // Marks a node as a forker and outputs all units in store created by this node.
     // The returned vector is sorted w.r.t. increasing rounds.
-    pub fn mark_forker(&mut self, forker: NodeIndex) -> Vec<SignedUnit<'a, H, D, KB>> {
+    pub(crate) fn mark_forker(&mut self, forker: NodeIndex) -> Vec<SignedUnit<'a, H, D, KB>> {
         if self.is_forker[forker] {
             warn!(target: "AlephBFT-unit-store", "Trying to mark the node {:?} as forker for the second time.", forker);
         }
@@ -87,7 +87,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             .collect()
     }
 
-    pub fn add_unit(&mut self, su: SignedUnit<'a, H, D, KB>, alert: bool) {
+    pub(crate) fn add_unit(&mut self, su: SignedUnit<'a, H, D, KB>, alert: bool) {
         let hash = su.as_signable().hash();
         let creator = su.as_signable().creator();
 
@@ -111,11 +111,11 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         }
     }
 
-    pub fn add_parents(&mut self, hash: H::Hash, parents: Vec<H::Hash>) {
+    pub(crate) fn add_parents(&mut self, hash: H::Hash, parents: Vec<H::Hash>) {
         self.parents.insert(hash, parents);
     }
 
-    pub fn get_parents(&mut self, hash: H::Hash) -> Option<&Vec<H::Hash>> {
+    pub(crate) fn get_parents(&mut self, hash: H::Hash) -> Option<&Vec<H::Hash>> {
         self.parents.get(&hash)
     }
 }
