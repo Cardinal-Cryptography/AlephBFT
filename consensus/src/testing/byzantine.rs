@@ -109,8 +109,7 @@ impl<'a> MaliciousMember<'a> {
             let control_hash = ControlHash::<Hasher64>::new(&parents);
             let new_preunit = PreUnit::<Hasher64>::new(self.node_ix, round, control_hash);
             if round != self.forking_round {
-                let data = 0;
-                let full_unit = FullUnit::new(new_preunit, data, self.session_id);
+                let full_unit = FullUnit::new(new_preunit, 0, self.session_id);
                 let signed_unit = Signed::sign(full_unit, self.keybox).await;
                 self.on_unit_received(signed_unit.clone());
                 self.send_legit_unit(signed_unit);
