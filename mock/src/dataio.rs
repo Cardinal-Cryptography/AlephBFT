@@ -2,6 +2,11 @@ use aleph_bft_types::{DataProvider as DataProviderT, FinalizationHandler as Fina
 use async_trait::async_trait;
 use futures::channel::mpsc::unbounded;
 use log::error;
+use parking_lot::Mutex;
+use std::{
+    io::{Cursor, Write},
+    sync::Arc,
+};
 
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
 type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;
@@ -44,3 +49,25 @@ impl FinalizationHandler {
         (Self { tx }, rx)
     }
 }
+
+pub struct Saver {
+    data: Arc<Mutex<Vec<u8>>>,
+}
+
+impl Saver {
+    pub fn new(data: Arc<Mutex<Vec<u8>>>) -> Self {
+        Self { data }
+    }
+}
+
+impl Write for Saver {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, std::io::Error> {
+        self.data.lock().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+}
+
+pub type Loader = Cursor<Vec<u8>>;

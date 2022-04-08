@@ -8,14 +8,15 @@ mod dag;
 mod unreliable;
 
 use crate::{
-    exponential_slowdown, run_session, Config, DelayConfig, Network as NetworkT, NodeCount,
-    NodeIndex, SpawnHandle, TaskHandle,
+    exponential_slowdown, run_session, Config, DelayConfig, LocalIO, Network as NetworkT,
+    NodeCount, NodeIndex, SpawnHandle, TaskHandle,
 };
 use aleph_bft_mock::{
-    Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Network as MockNetwork,
-    PartialMultisignature, Signature, Spawner,
+    Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Loader, Network as MockNetwork,
+    PartialMultisignature, Saver, Signature, Spawner,
 };
 use futures::channel::{mpsc::UnboundedReceiver, oneshot};
+use parking_lot::Mutex;
 use std::{sync::Arc, time::Duration};
 
 pub type NetworkData = crate::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
@@ -57,20 +58,23 @@ pub fn spawn_honest_member(
     spawner: Spawner,
     node_index: NodeIndex,
     n_members: NodeCount,
+    units: Arc<Mutex<Vec<u8>>>,
     network: impl 'static + NetworkT<NetworkData>,
 ) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
     let data_provider = DataProvider::new();
-    let (finalization_provider, finalization_rx) = FinalizationHandler::new();
+    let (finalization_handler, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
+    let unit_loader = Loader::new((*units.lock()).clone());
+    let unit_saver = Saver::new(units);
+    let local_io = LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
     let member_task = async move {
         let keybox = Keychain::new(n_members, node_index);
         run_session(
             config,
+            local_io,
             network,
-            data_provider,
-            finalization_provider,
             keybox,
             spawner_inner.clone(),
             exit_rx,

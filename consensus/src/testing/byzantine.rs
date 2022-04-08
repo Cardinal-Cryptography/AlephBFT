@@ -264,8 +264,13 @@ async fn honest_members_agree_on_batches_byzantine(
         let (exit_tx, handle) = if !n_honest.into_range().contains(&ix) {
             spawn_malicious_member(spawner.clone(), ix, n_members, 2, network)
         } else {
-            let (batch_rx, exit_tx, handle) =
-                spawn_honest_member(spawner.clone(), ix, n_members, network);
+            let (batch_rx, exit_tx, handle) = spawn_honest_member(
+                spawner.clone(),
+                ix,
+                n_members,
+                Arc::new(Mutex::new(vec![])),
+                network,
+            );
             batch_rxs.push(batch_rx);
             (exit_tx, handle)
         };
