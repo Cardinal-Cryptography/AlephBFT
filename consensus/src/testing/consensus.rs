@@ -29,7 +29,7 @@ use std::{
 // Hub should be used to run simple tests in honest scenarios only.
 // Usage: 1) create an instance using new(n_members), 2) connect all n_members instances, 0, 1, 2, ..., n_members - 1.
 // 3) run the HonestHub instance as a Future.
-pub struct HonestHub {
+pub(crate) struct HonestHub {
     n_members: usize,
     ntfct_out_rxs: HashMap<NodeIndex, UnboundedReceiver<NotificationOut<Hasher64>>>,
     ntfct_in_txs: HashMap<NodeIndex, UnboundedSender<NotificationIn<Hasher64>>>,
@@ -37,7 +37,7 @@ pub struct HonestHub {
 }
 
 impl HonestHub {
-    pub fn new(n_members: usize) -> Self {
+    pub(crate) fn new(n_members: usize) -> Self {
         HonestHub {
             n_members,
             ntfct_out_rxs: HashMap::new(),
@@ -46,7 +46,7 @@ impl HonestHub {
         }
     }
 
-    pub fn connect(
+    pub(crate) fn connect(
         &mut self,
         node_ix: NodeIndex,
     ) -> (
