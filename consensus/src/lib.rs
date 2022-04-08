@@ -13,6 +13,9 @@ mod runway;
 mod terminal;
 mod units;
 
+#[cfg(test)]
+mod testing;
+
 pub use aleph_bft_types::{
     Data, DataProvider, FinalizationHandler, Hasher, IncompleteMultisignatureError, Index, Indexed,
     KeyBox, MultiKeychain, Multisigned, Network, NodeCount, NodeIndex, NodeMap, NodeSubset,

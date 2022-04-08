@@ -32,8 +32,7 @@ impl NetworkHook<NetworkData> for CorruptPacket {
             let full_unit = us.clone().into_signable();
             let index = full_unit.index();
             if full_unit.round() == self.round && full_unit.creator() == self.creator {
-                let bad_keychain: BadSigning<Keychain> =
-                    Keychain::new(0.into(), index).into();
+                let bad_keychain: BadSigning<Keychain> = Keychain::new(0.into(), index).into();
                 *us = Signed::sign(full_unit, &bad_keychain).await.into();
             }
         }
