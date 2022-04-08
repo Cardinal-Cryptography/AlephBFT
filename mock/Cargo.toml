@@ -13,7 +13,7 @@ license = "Apache-2.0"
 readme = "../README.md"
 
 [dependencies]
-aleph-bft-types = { path = "../types" }
+aleph-bft-types = { path = "../types", version = "0.2" }
 async-trait = "0.1"
 codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
 futures = "0.3"
