@@ -131,7 +131,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H
 enum AlerterResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>, Recipient),
     ForkResponse(Option<ForkingNotification<H, D, S>>, H::Hash),
-    AlertRequest(AlertMessage<H, D, S, MS>, Recipient),
+    AlertRequest(H::Hash, Recipient),
     RmcMessage(RmcMessage<H::Hash, S, MS>),
 }
 
@@ -345,9 +345,8 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
                         None
                     }
                 } else {
-                    let message = AlertMessage::AlertRequest(self.index(), *hash);
                     Some(AlerterResponse::AlertRequest(
-                        message,
+                        *hash,
                         Recipient::Node(sender),
                     ))
                 }
@@ -433,8 +432,9 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
                                 &mut alerter.exiting,
                             );
                         }
-                        Some(AlerterResponse::AlertRequest(request, recipient)) => {
-                            io.send_message_for_network(request, recipient, &mut alerter.exiting);
+                        Some(AlerterResponse::AlertRequest(hash, peer)) => {
+                            let message = AlertMessage::AlertRequest(alerter.index(), hash);
+                            io.send_message_for_network(message, peer, &mut alerter.exiting);
                         }
                         Some(AlerterResponse::RmcMessage(message)) => {
                             if io.messages_for_rmc.unbounded_send(message).is_err() {
