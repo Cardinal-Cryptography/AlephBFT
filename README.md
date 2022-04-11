@@ -31,7 +31,7 @@ in the AlephBFT toolset.
 
 ### Documentation
 
-Every package is documented on [docs.rs][docs-link]. A comprehensive documentation
+Every package is documented on [docs.rs][docs-link]. Comprehensive documentation
 is available as a [mdBook][reference-link].
 
 ### Implementation status
@@ -39,10 +39,10 @@ is available as a [mdBook][reference-link].
 Highlights:
 - The protocol is asynchronous, so it's driven by consensus events as opposed
   to some clock ticks.
-- The performance is also optimal in partially synchronous environment.
+- The performance is still optimal in a partially synchronous environment.
 - BFT - secure if less than one third of the committee is malicious.
 - Secure against fork bombs.
-- Optimized network overhead.
+- Lowered network overhead of sending DAG parent information.
 - Thorough testing, including malicious scenarios, and high code coverage.
 
 More details are available [in the book][reference-link-implementation-details].
