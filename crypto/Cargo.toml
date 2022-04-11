@@ -9,7 +9,7 @@ license = "Apache-2.0"
 categories = ["cryptography"]
 repository = "https://github.com/Cardinal-Cryptography/AlephBFT"
 readme = "./README.md"
-description = "Utilities for node addressing and message signing in the aleph-bft package".
+description = "Utilities for node addressing and message signing in the aleph-bft package."
 
 [dependencies]
 async-trait = "0.1"
