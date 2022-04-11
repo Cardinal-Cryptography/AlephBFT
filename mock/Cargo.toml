@@ -1,16 +1,14 @@
 [package]
 name = "aleph-bft-mock"
 version = "0.2.0"
-publish = false
 edition = "2021"
 authors = ["Cardinal Cryptography"]
-categories = ["algorithms", "data-structures", "cryptography", "database"]
 documentation = "https://docs.rs/?"
 homepage = "https://alephzero.org"
-repository = "https://github.com/cardinal-cryptography/?"
-keywords = ["asynchronous", "consensus", "bft", "blockchain", "distributed-systems"]
 license = "Apache-2.0"
-readme = "../README.md"
+repository = "https://github.com/Cardinal-Cryptography/AlephBFT"
+readme = "./README.md"
+description = "Mock implementations of traits required by the aleph-bft package. Do NOT use outside of testing!"
 
 [dependencies]
 aleph-bft-types = { path = "../types", version = "0.2" }
