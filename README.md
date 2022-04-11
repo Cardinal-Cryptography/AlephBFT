@@ -52,7 +52,7 @@ More details are available [in the book][reference-link-implementation-details].
 - Import AlephBFT in your crate
   ```toml
   [dependencies]
-  aleph-bft = "^0.11"
+  aleph-bft = "^0.12"
   ```
 - The main entry point is the `run_session` function, which returns a Future that runs the
   consensus algorithm.
@@ -191,7 +191,7 @@ The implementation in this repository is funded by [Aleph Zero Foundation][webpa
 [//]: ### "general links"
 [reference-link]: https://Cardinal-Cryptography.github.io/AlephBFT/index.html
 [reference-link-implementation-details]: https://cardinal-cryptography.github.io/AlephBFT/differences.html
-[reference-link-api]: https://cardinal-cryptography.github.io/AlephBFT/implementation-details.html
+[reference-link-api]: https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html
 [paper-link]: https://arxiv.org/abs/1908.05156
 [old-paper-link]: https://arxiv.org/abs/1810.05256
 [aleph-node-link]: https://github.com/Cardinal-Cryptography/aleph-node
