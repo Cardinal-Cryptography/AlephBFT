@@ -873,4 +873,91 @@ mod tests {
             None,
         );
     }
+
+    #[tokio::test]
+    async fn who_is_forking_ok() {
+        let n_members = NodeCount(7);
+        let own_index = NodeIndex(0);
+        let forker_index = NodeIndex(6);
+        let own_keychain = Keychain::new(n_members, own_index);
+        let forker_keychain = Keychain::new(n_members, forker_index);
+        let own_node = Alerter::new(
+            &own_keychain,
+            AlertConfig {
+                n_members,
+                session_id: 0,
+            },
+        );
+        let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members).await;
+        assert_eq!(own_node.who_is_forking(&fork_proof), Some(forker_index));
+    }
+
+    #[tokio::test]
+    async fn who_is_forking_wrong_session() {
+        let n_members = NodeCount(7);
+        let own_index = NodeIndex(0);
+        let forker_index = NodeIndex(6);
+        let own_keychain = Keychain::new(n_members, own_index);
+        let forker_keychain = Keychain::new(n_members, forker_index);
+        let own_node = Alerter::new(
+            &own_keychain,
+            AlertConfig {
+                n_members,
+                session_id: 1,
+            },
+        );
+        let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members).await;
+        assert_eq!(own_node.who_is_forking(&fork_proof), None);
+    }
+
+    #[tokio::test]
+    async fn who_is_forking_different_creators() {
+        let n_members = NodeCount(7);
+        let keychains: Vec<_> = (0..n_members.0)
+            .map(|i| Keychain::new(n_members, NodeIndex(i)))
+            .collect();
+        let own_node = Alerter::new(
+            &keychains[0],
+            AlertConfig {
+                n_members,
+                session_id: 1,
+            },
+        );
+        let fork_proof = {
+            let unit_0 = full_unit(n_members, NodeIndex(6), 0, 0);
+            let unit_1 = full_unit(n_members, NodeIndex(5), 0, 0);
+            let signed_unit_0 = Signed::sign(unit_0, &keychains[6]).await.into_unchecked();
+            let signed_unit_1 = Signed::sign(unit_1, &keychains[5]).await.into_unchecked();
+            (signed_unit_0, signed_unit_1)
+        };
+        assert_eq!(own_node.who_is_forking(&fork_proof), None);
+    }
+
+    #[tokio::test]
+    async fn who_is_forking_different_rounds() {
+        let n_members = NodeCount(7);
+        let own_index = NodeIndex(0);
+        let forker_index = NodeIndex(6);
+        let own_keychain = Keychain::new(n_members, own_index);
+        let forker_keychain = Keychain::new(n_members, forker_index);
+        let own_node = Alerter::new(
+            &own_keychain,
+            AlertConfig {
+                n_members,
+                session_id: 0,
+            },
+        );
+        let fork_proof = {
+            let unit_0 = full_unit(n_members, forker_index, 0, 0);
+            let unit_1 = full_unit(n_members, forker_index, 1, 0);
+            let signed_unit_0 = Signed::sign(unit_0, &forker_keychain)
+                .await
+                .into_unchecked();
+            let signed_unit_1 = Signed::sign(unit_1, &forker_keychain)
+                .await
+                .into_unchecked();
+            (signed_unit_0, signed_unit_1)
+        };
+        assert_eq!(own_node.who_is_forking(&fork_proof), None);
+    }
 }
