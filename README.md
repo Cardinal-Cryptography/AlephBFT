@@ -23,7 +23,7 @@ API enabling seamless application to various problems. The prime application of
 the repository is the consensus engine (sometimes called the "finality gadget")
 of the [Aleph Zero blockchain][aleph-node-link].
 
-The code is split into several rust packages, each having its own directory -
+The code is split into several Rust packages, each having its own directory -
 see the `Cargo.toml` file, which defines the layout of the whole workspace.
 The main package, `aleph-bft`, is located in the `consensus` directory.
 Additionally, every other package has a short README describing its role
@@ -89,7 +89,7 @@ rid of this dependency.
 
 ### Toolchain
 
-This release was built and tested against the `nightly-2021-10-24` rust toolchain.
+This release was built and tested against the `nightly-2021-10-24` Rust toolchain.
 If you want to use another version, edit the `rust-toolchain` file, or use an [override](https://rust-lang.github.io/rustup/overrides.html) with higher priority.
 
 ### Tests

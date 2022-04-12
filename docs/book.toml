@@ -1,7 +1,7 @@
 [book]
 authors = ["Cardinal Cryptography"]
 language = "en"
-description = "Documentation of the rust implementation of Aleph protocol"
+description = "Documentation of the Rust implementation of Aleph protocol"
 multilingual = false
 title = "AlephBFT"
 
