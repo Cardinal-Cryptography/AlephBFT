@@ -1,0 +1,7 @@
+[package]
+name = "aleph-bft-examples-blockchain"
+version = "0.1.0"
+edition = "2021"
+authors = ["Cardinal Cryptography"]
+license = "Apache-2.0"
+publish = false

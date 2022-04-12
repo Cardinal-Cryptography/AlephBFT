@@ -43,6 +43,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "aleph-bft-examples-blockchain"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "derivative",
+ "futures",
+ "futures-timer",
+ "log",
+ "parity-scale-codec",
+ "parking_lot",
+ "rand",
+]
+
+[[package]]
+name = "aleph-bft-examples-dummy-honest"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "derivative",
+ "futures",
+ "futures-timer",
+ "log",
+ "parity-scale-codec",
+ "parking_lot",
+ "rand",
+]
+
+[[package]]
 name = "aleph-bft-mock"
 version = "0.2.1"
 dependencies = [
