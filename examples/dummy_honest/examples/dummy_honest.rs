@@ -1,21 +1,13 @@
-use aleph_bft::{run_session, NodeCount, NodeIndex, Recipient, TaskHandle};
-use async_trait::async_trait;
+use aleph_bft::{run_session, Recipient};
+use aleph_bft_mock::{
+    Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Loader, PartialMultisignature,
+    Saver, Signature, Spawner,
+};
 use codec::{Decode, Encode};
 use futures::{
-    channel::{
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
-    Future, FutureExt, StreamExt,
+    channel::{mpsc, oneshot},
+    FutureExt, StreamExt,
 };
-use log::{debug, error, info, warn};
-use std::{
-    collections::{hash_map::DefaultHasher, HashSet},
-    error::Error,
-    hash::Hasher as StdHasher,
-    time::Duration,
-};
-
 use libp2p::{
     development_transport,
     floodsub::{self, Floodsub, FloodsubEvent},
@@ -24,6 +16,11 @@ use libp2p::{
     swarm::{NetworkBehaviourEventProcess, SwarmBuilder},
     NetworkBehaviour, PeerId, Swarm,
 };
+use log::{debug, info, warn};
+use parking_lot::Mutex;
+use std::{error::Error, sync::Arc, time::Duration};
+
+const ALEPH_PROTOCOL_NAME: &str = "aleph";
 
 const USAGE_MSG: &str = "Missing arg. Usage
     cargo run --example honest my_id n_members n_finalized
@@ -60,181 +57,33 @@ async fn main() {
     let (close_network, exit) = oneshot::channel();
     tokio::spawn(async move { manager.run(exit).await });
 
-    let data_io = DataProvider::new();
-    let (finalization_provider, mut finalized_rx) = FinalizationHandler::new();
+    let data_provider = DataProvider::new();
+    let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
+
+    let units = Arc::new(Mutex::new(vec![]));
+    let unit_loader = Loader::new((*units.lock()).clone());
+    let unit_saver = Saver::new(units);
+    let local_io =
+        aleph_bft::LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
 
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
-        let keybox = KeyBox {
-            count: n_members,
-            index: my_id.into(),
-        };
+        let keychain = Keychain::new(n_members.into(), my_id.into());
         let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
-        run_session(
-            config,
-            network,
-            data_io,
-            finalization_provider,
-            keybox,
-            Spawner {},
-            exit,
-        )
-        .await
+        run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
-    let mut finalized = HashSet::new();
+    let mut finalized = vec![];
     while let Some(data) = finalized_rx.next().await {
-        if !finalized.contains(&data) {
-            finalized.insert(data);
-        }
+        finalized.push(data);
         debug!(target: "dummy-honest", "Got new batch. Finalized = {:?}", finalized.len());
-        if finalized.len() == n_finalized {
+        if finalized.len() >= n_finalized {
             break;
         }
     }
     close_member.send(()).expect("should send");
     close_network.send(()).expect("should send");
 }
-
-// This is not cryptographically secure, mocked only for demonstration purposes
-#[derive(PartialEq, Eq, Clone, Debug)]
-struct Hasher64;
-
-impl aleph_bft::Hasher for Hasher64 {
-    type Hash = [u8; 8];
-
-    fn hash(x: &[u8]) -> Self::Hash {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(x);
-        hasher.finish().to_ne_bytes()
-    }
-}
-
-type Data = u64;
-struct DataProvider {
-    next_data: Data,
-}
-
-#[async_trait]
-impl aleph_bft::DataProvider<Data> for DataProvider {
-    async fn get_data(&mut self) -> Data {
-        let d = self.next_data;
-        self.next_data += 1;
-
-        d
-    }
-}
-
-impl DataProvider {
-    fn new() -> Self {
-        Self { next_data: 0 }
-    }
-}
-
-pub(crate) struct FinalizationHandler {
-    tx: UnboundedSender<Data>,
-}
-
-#[async_trait]
-impl aleph_bft::FinalizationHandler<Data> for FinalizationHandler {
-    async fn data_finalized(&mut self, d: Data) {
-        if let Err(e) = self.tx.unbounded_send(d) {
-            error!(target: "finalization-provider", "Error when sending data from FinalizationHandler {:?}.", e);
-        }
-    }
-}
-
-impl FinalizationHandler {
-    pub(crate) fn new() -> (Self, UnboundedReceiver<Data>) {
-        let (tx, rx) = mpsc::unbounded();
-
-        (Self { tx }, rx)
-    }
-}
-
-// This is not cryptographically secure, mocked only for demonstration purposes
-#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode)]
-struct Signature;
-
-// This is not cryptographically secure, mocked only for demonstration purposes
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode)]
-pub(crate) struct PartialMultisignature {
-    signed_by: Vec<NodeIndex>,
-}
-
-impl aleph_bft::PartialMultisignature for PartialMultisignature {
-    type Signature = Signature;
-    fn add_signature(self, _: &Self::Signature, index: NodeIndex) -> Self {
-        let Self { mut signed_by } = self;
-        for id in &signed_by {
-            if *id == index {
-                return Self { signed_by };
-            }
-        }
-        signed_by.push(index);
-        Self { signed_by }
-    }
-}
-
-// This is not cryptographically secure, mocked only for demonstration purposes
-#[derive(Clone)]
-struct KeyBox {
-    count: usize,
-    index: NodeIndex,
-}
-
-#[async_trait]
-impl aleph_bft::KeyBox for KeyBox {
-    type Signature = Signature;
-
-    fn node_count(&self) -> NodeCount {
-        self.count.into()
-    }
-
-    async fn sign(&self, _msg: &[u8]) -> Self::Signature {
-        Signature {}
-    }
-    fn verify(&self, _msg: &[u8], _sgn: &Self::Signature, _index: NodeIndex) -> bool {
-        true
-    }
-}
-
-impl aleph_bft::MultiKeychain for KeyBox {
-    type PartialMultisignature = PartialMultisignature;
-    fn from_signature(&self, _: &Self::Signature, index: NodeIndex) -> Self::PartialMultisignature {
-        let signed_by = vec![index];
-        PartialMultisignature { signed_by }
-    }
-    fn is_complete(&self, _: &[u8], partial: &Self::PartialMultisignature) -> bool {
-        (self.count * 2) / 3 < partial.signed_by.len()
-    }
-}
-
-impl aleph_bft::Index for KeyBox {
-    fn index(&self) -> NodeIndex {
-        self.index
-    }
-}
-
-#[derive(Clone)]
-struct Spawner;
-
-impl aleph_bft::SpawnHandle for Spawner {
-    fn spawn(&self, _: &str, task: impl Future<Output = ()> + Send + 'static) {
-        tokio::spawn(task);
-    }
-    fn spawn_essential(
-        &self,
-        _: &str,
-        task: impl Future<Output = ()> + Send + 'static,
-    ) -> TaskHandle {
-        Box::pin(async move { tokio::spawn(task).await.map_err(|_| ()) })
-    }
-}
-
-const ALEPH_PROTOCOL_NAME: &str = "aleph";
-
-type NetworkData = aleph_bft::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
 
 #[derive(NetworkBehaviour)]
 struct Behaviour {
@@ -270,13 +119,41 @@ impl NetworkBehaviourEventProcess<FloodsubEvent> for Behaviour {
     }
 }
 
+struct NetworkManager {
+    swarm: Swarm<Behaviour>,
+    outgoing_rx: mpsc::UnboundedReceiver<Vec<u8>>,
+}
+
+impl NetworkManager {
+    async fn run(&mut self, exit: oneshot::Receiver<()>) {
+        let mut exit = exit.into_stream();
+        loop {
+            tokio::select! {
+                maybe_pm = self.outgoing_rx.next() => {
+                    if let Some(message) = maybe_pm {
+                        let floodsub = &mut self.swarm.behaviour_mut().floodsub;
+                        let topic = floodsub::Topic::new(ALEPH_PROTOCOL_NAME);
+                        floodsub.publish(topic, message);
+                    }
+                }
+                event = self.swarm.next() => {
+                    event.unwrap();
+                }
+                _ = exit.next() => break,
+            }
+        }
+    }
+}
+
+type NetworkData = aleph_bft::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
+
 struct Network {
     outgoing_tx: mpsc::UnboundedSender<Vec<u8>>,
     msg_rx: mpsc::UnboundedReceiver<Vec<u8>>,
 }
 
 #[async_trait::async_trait]
-impl aleph_bft::Network<Hasher64, Data, Signature, PartialMultisignature> for Network {
+impl aleph_bft::Network<NetworkData> for Network {
     fn send(&self, data: NetworkData, _recipient: Recipient) {
         if let Err(e) = self.outgoing_tx.unbounded_send(data.encode()) {
             warn!(target: "dummy-honest", "Failed network send: {:?}", e)
@@ -287,11 +164,6 @@ impl aleph_bft::Network<Hasher64, Data, Signature, PartialMultisignature> for Ne
             NetworkData::decode(&mut &msg[..]).expect("honest network data should decode")
         })
     }
-}
-
-struct NetworkManager {
-    swarm: Swarm<Behaviour>,
-    outgoing_rx: mpsc::UnboundedReceiver<Vec<u8>>,
 }
 
 impl Network {
@@ -335,26 +207,5 @@ impl Network {
         let network_manager = NetworkManager { swarm, outgoing_rx };
 
         Ok((network, network_manager))
-    }
-}
-
-impl NetworkManager {
-    async fn run(&mut self, exit: oneshot::Receiver<()>) {
-        let mut exit = exit.into_stream();
-        loop {
-            tokio::select! {
-                maybe_pm = self.outgoing_rx.next() => {
-                    if let Some(message) = maybe_pm {
-                        let floodsub = &mut self.swarm.behaviour_mut().floodsub;
-                        let topic = floodsub::Topic::new(ALEPH_PROTOCOL_NAME);
-                        floodsub.publish(topic, message);
-                    }
-                }
-                event = self.swarm.next() => {
-                    event.unwrap();
-                }
-                _ = exit.next() => break,
-            }
-        }
     }
 }

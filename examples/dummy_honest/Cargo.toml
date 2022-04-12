@@ -1,17 +1,19 @@
 [package]
 name = "aleph-bft-examples-dummy-honest"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2021"
 authors = ["Cardinal Cryptography"]
 license = "Apache-2.0"
 publish = false
 
-[dependencies]
+[dev-dependencies]
+aleph-bft = { path = "../../consensus", version = "*" }
+aleph-bft-mock = { path = "../../mock", version = "*" }
 async-trait = "0.1"
 codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
-derivative = "2.2.0"
+env_logger = "0.9"
 futures = "0.3"
-futures-timer = "3.0"
+libp2p = { version ="0.39", features = ["mdns", "tcp-tokio"]}
 log = "0.4"
 parking_lot = "0.12"
-rand = "0.8"
+tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
