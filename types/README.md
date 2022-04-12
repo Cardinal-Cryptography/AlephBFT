@@ -7,7 +7,7 @@
 This package is a part of the AlephBFT toolset. For more information, see the README
 in the top-level directory.
 
-Traits that need to be implemented by the user.
+Contains traits that need to be implemented by the user.
 
 [crate-image]: https://img.shields.io/crates/v/aleph-bft-types.svg
 [crate-link]: https://crates.io/crates/aleph-bft-types

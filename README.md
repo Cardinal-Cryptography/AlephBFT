@@ -34,6 +34,13 @@ in the AlephBFT toolset.
 Every package is documented on [docs.rs][docs-link]. Comprehensive documentation
 is available as a [mdBook][reference-link].
 
+The book can be built locally (assuming you have installed `rustup`):
+```
+cargo install mdbook
+cd docs
+mdbook serve --open
+```
+
 ### Implementation status
 
 Highlights:
@@ -162,14 +169,14 @@ tools with `install_cov_tools.sh`.
   for a version without randomness first, as it gives an incredibly simple and at the same time
   secure and robust BFT consensus protocol. Adding randomness introduces some complexity into the
   protocol, so it makes sense to add it on top of a well-tested, working product. The API of the
-  protocol will not change and we will make the use of randomness configurable.
+  protocol will not change, and we will make the use of randomness configurable.
 - We see a big value in keeping a critical piece of code such as a consensus protocol as
   self-contained as possible, so we would like to get rid of the only major dependency -
   `parity-scale-codec`
 
 ### License
 
-AlephBFT is licensed under the terms of the the Apache License 2.0.
+AlephBFT is licensed under the terms of the Apache License 2.0.
 
 ### Funding
 
