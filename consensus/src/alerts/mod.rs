@@ -129,9 +129,24 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H
 /// forward them appropriately.
 #[derive(Debug, PartialEq, Eq)]
 enum AlerterResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> {
+    /// A copy of a fork alert.
+    ///
+    /// This variant should be handled by sending the contained `Alert` via the
+    /// network to the contained `Recipient`.
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>, Recipient),
+    /// A response to a valid fork alert.
+    ///
+    /// This variant should be handled by starting RMC on the contained hash
+    /// and sending the contained notification (if present) via the network.
     ForkResponse(Option<ForkingNotification<H, D, S>>, H::Hash),
+    /// A request for a fork alert from another node.
+    ///
+    /// This variant should be handled by sending the request via the network
+    /// to the contained `Recipient`.
     AlertRequest(H::Hash, Recipient),
+    /// An internal RMC message, with the sender being the local node.
+    ///
+    /// This variant should be handled by sending the message.
     RmcMessage(RmcMessage<H::Hash, S, MS>),
 }
 
