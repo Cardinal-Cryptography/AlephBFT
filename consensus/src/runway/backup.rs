@@ -2,7 +2,10 @@ use crate::{units::UncheckedSignedUnit, Data, Hasher, Round, Sender, Signature};
 use codec::{Decode, Encode, Error as CodecError};
 use futures::channel::oneshot;
 use log::{error, warn};
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    marker::PhantomData,
+};
 
 #[derive(Debug)]
 /// Backup load error. Could be either caused by io error from Reader, or by decoding.
@@ -24,38 +27,41 @@ impl From<CodecError> for LoaderError {
 }
 
 /// Abstraction over Unit backup saving mechanism
-pub struct _UnitSaver<W: Write> {
+pub struct _UnitSaver<W: Write, H: Hasher, D: Data, S: Signature> {
     inner: W,
+    _phantom: PhantomData<(H, D, S)>,
 }
 
 /// Abstraction over Unit backup loading mechanism
-pub struct _UnitLoader<R: Read> {
+pub struct _UnitLoader<R: Read, H: Hasher, D: Data, S: Signature> {
     inner: R,
+    _phantom: PhantomData<(H, D, S)>,
 }
 
-impl<W: Write> _UnitSaver<W> {
+impl<W: Write, H: Hasher, D: Data, S: Signature> _UnitSaver<W, H, D, S> {
     pub fn _new(write: W) -> Self {
-        Self { inner: write }
+        Self {
+            inner: write,
+            _phantom: PhantomData,
+        }
     }
 
-    pub fn _save<H: Hasher, D: Data, S: Signature>(
-        &mut self,
-        unit: UncheckedSignedUnit<H, D, S>,
-    ) -> Result<(), std::io::Error> {
+    pub fn _save(&mut self, unit: UncheckedSignedUnit<H, D, S>) -> Result<(), std::io::Error> {
         self.inner.write_all(&unit.encode())?;
         self.inner.flush()?;
         Ok(())
     }
 }
 
-impl<R: Read> _UnitLoader<R> {
+impl<R: Read, H: Hasher, D: Data, S: Signature> _UnitLoader<R, H, D, S> {
     pub fn _new(read: R) -> Self {
-        Self { inner: read }
+        Self {
+            inner: read,
+            _phantom: PhantomData,
+        }
     }
 
-    fn _load<H: Hasher, D: Data, S: Signature>(
-        mut self,
-    ) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
+    fn _load(mut self) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
         let mut buf = Vec::new();
         self.inner.read_to_end(&mut buf)?;
         let input = &mut &buf[..];
@@ -68,7 +74,7 @@ impl<R: Read> _UnitLoader<R> {
 }
 
 fn _load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
-    unit_loader: _UnitLoader<R>,
+    unit_loader: _UnitLoader<R, H, D, S>,
 ) -> Result<(Vec<UncheckedSignedUnit<H, D, S>>, Round), LoaderError> {
     let (rounds, units): (Vec<_>, Vec<_>) = unit_loader
         ._load()?
@@ -95,7 +101,7 @@ fn _on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
 /// round from unit collection + 1) it sends `Some(starting_round)` by
 /// `starting_round_tx`. If Units are not compatible it sends `None` by `starting_round_tx`
 pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
-    unit_loader: _UnitLoader<R>,
+    unit_loader: _UnitLoader<R, H, D, S>,
     loaded_unit_tx: Sender<UncheckedSignedUnit<H, D, S>>,
     starting_round_tx: oneshot::Sender<Option<Round>>,
     highest_response_rx: oneshot::Receiver<Round>,
