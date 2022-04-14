@@ -21,7 +21,7 @@ use std::{collections::HashSet, convert::TryFrom};
 mod backup;
 mod collection;
 
-pub use backup::{UnitLoader, UnitSaver, _run_loading_mechanism as run_backup_loading_mechanism};
+pub use backup::{UnitLoader, UnitSaver};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
 pub use collection::{NewestUnitResponse, Salt};

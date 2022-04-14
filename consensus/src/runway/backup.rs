@@ -76,10 +76,11 @@ fn _on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
     }
 }
 
-/// Loading mechanism first Unit data from `unit_loader` and awaits on response from unit collection.
-/// If loaded Units are compatible with unit collection result (meaning highest unit is from round at least
-/// unit_collection + 1) it send all loaded units by `loaded_unit_tx` and sends starting round number by
-/// `starting_round_tx`. If Units are not compatible it sends no Units and `None` by `starting_round_tx`
+/// Loads Unit data from `unit_loader` and awaits on response from unit collection.
+/// It sends all loaded units by `loaded_unit_tx`.
+/// If loaded Units are compatible with the unit collection result (meaning the highest unit is from at least
+/// round from unit collection + 1) it sends `Some(starting_round)` by
+/// `starting_round_tx`. If Units are not compatible it sends `None` by `starting_round_tx`
 pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, UL: UnitLoader<H, D, S>>(
     unit_loader: UL,
     loaded_unit_tx: Sender<UncheckedSignedUnit<H, D, S>>,
@@ -94,6 +95,14 @@ pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, UL: UnitLo
             return;
         }
     };
+
+    for u in units {
+        if let Err(e) = loaded_unit_tx.unbounded_send(u) {
+            error!(target: "AlephBFT-runway", "could not send loaded unit: {:?}", e);
+            _on_shutdown(starting_round_tx);
+            return;
+        }
+    }
 
     let highest_response = match highest_response_rx.await {
         Ok(highest_response) => highest_response,
@@ -110,14 +119,6 @@ pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, UL: UnitLo
         _on_shutdown(starting_round_tx);
         return;
     };
-
-    for u in units {
-        if let Err(e) = loaded_unit_tx.unbounded_send(u) {
-            error!(target: "AlephBFT-runway", "could not send loaded unit: {:?}", e);
-            _on_shutdown(starting_round_tx);
-            return;
-        }
-    }
 
     if let Err(e) = starting_round_tx.send(Some(starting_round)) {
         error!(target: "AlephBFT-runway", "could not send starting round: {:?}", e);
@@ -280,7 +281,7 @@ mod tests {
 
     #[tokio::test]
     async fn loaded_smaller_then_collected() {
-        let (task, mut loaded_unit_rx, highest_response_tx, starting_round_rx, _) =
+        let (task, mut loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
             prepare_test(3, false).await;
 
         let handle = tokio::spawn(async {
@@ -292,12 +293,15 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(None));
+        for unit in data {
+            assert_eq!(loaded_unit_rx.next().await, Some(unit));
+        }
         assert_eq!(loaded_unit_rx.try_next().unwrap(), None);
     }
 
     #[tokio::test]
     async fn nothing_collected() {
-        let (task, mut loaded_unit_rx, highest_response_tx, starting_round_rx, _) =
+        let (task, mut loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
             prepare_test(3, false).await;
 
         let handle = tokio::spawn(async {
@@ -309,6 +313,9 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(None));
+        for unit in data {
+            assert_eq!(loaded_unit_rx.next().await, Some(unit));
+        }
         assert_eq!(loaded_unit_rx.try_next().unwrap(), None);
     }
 

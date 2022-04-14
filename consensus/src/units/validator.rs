@@ -132,7 +132,7 @@ mod tests {
     use super::{ValidationError::*, Validator as GenericValidator};
     use crate::{
         creation::Creator as GenericCreator,
-        units::tests::{
+        units::{
             add_units, create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit,
         },
         NodeCount, NodeIndex,
