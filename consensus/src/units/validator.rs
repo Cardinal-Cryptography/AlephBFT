@@ -132,9 +132,7 @@ mod tests {
     use super::{ValidationError::*, Validator as GenericValidator};
     use crate::{
         creation::Creator as GenericCreator,
-        units::{
-            add_units, create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit,
-        },
+        units::{create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit},
         NodeCount, NodeIndex,
     };
     use aleph_bft_mock::{Hasher64, Keychain};
@@ -230,7 +228,7 @@ mod tests {
             .take(5)
             .collect();
         let creator = &mut creators[0];
-        add_units(creator, &round_0_units);
+        creator.add_units(&round_0_units);
         let keychain = Keychain::new(n_members, creator_id);
         let validator = Validator::new(session_id, &keychain, max_round, threshold);
         let (preunit, _) = creator
@@ -261,7 +259,7 @@ mod tests {
                 .map(|(preunit, _)| preunit_to_unit(preunit, session_id))
                 .collect();
             for creator in creators.iter_mut() {
-                add_units(creator, &units);
+                creator.add_units(&units);
             }
         }
         let creator = &creators[0];

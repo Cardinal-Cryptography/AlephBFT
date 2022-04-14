@@ -33,9 +33,11 @@ pub fn preunit_to_unit(preunit: PreUnit, session_id: SessionId) -> Unit {
     FullUnit::new(preunit, 0, session_id).unit()
 }
 
-pub fn add_units(creator: &mut Creator, units: &[Unit]) {
-    for unit in units {
-        creator.add_unit(unit);
+impl Creator {
+    pub fn add_units(&mut self, units: &[Unit]) {
+        for unit in units {
+            self.add_unit(unit);
+        }
     }
 }
 

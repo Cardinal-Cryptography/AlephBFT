@@ -90,7 +90,7 @@ impl<H: Hasher> Creator<H> {
 mod tests {
     use super::Creator as GenericCreator;
     use crate::{
-        units::{add_units, create_units, creator_set, preunit_to_unit},
+        units::{create_units, creator_set, preunit_to_unit},
         NodeCount, NodeIndex,
     };
     use aleph_bft_mock::Hasher64;
@@ -122,7 +122,7 @@ mod tests {
             .collect();
         let expected_hashes: Vec<_> = new_units.iter().map(|u| u.hash()).collect();
         let creator = &mut creators[0];
-        add_units(creator, &new_units);
+        creator.add_units(&new_units);
         let round = 1;
         assert_eq!(creator.current_round(), 0);
         let (preunit, parent_hashes) = creator
@@ -142,7 +142,7 @@ mod tests {
             .collect();
         let expected_hashes: Vec<_> = new_units.iter().map(|u| u.hash()).collect();
         let creator = &mut creators[0];
-        add_units(creator, &new_units);
+        creator.add_units(&new_units);
         let round = 1;
         assert_eq!(creator.current_round(), 0);
         let (preunit, parent_hashes) = creator
@@ -181,7 +181,7 @@ mod tests {
             .map(|(pu, _)| preunit_to_unit(pu, 0))
             .collect();
         let creator = &mut creators[0];
-        add_units(creator, &new_units);
+        creator.add_units(&new_units);
         let round = 1;
         assert_eq!(creator.current_round(), 0);
         assert!(creator.create_unit(round).is_none())
@@ -220,7 +220,7 @@ mod tests {
                 .collect();
             let expected_hashes: HashSet<_> = new_units.iter().map(|u| u.hash()).collect();
             for creator in creators.iter_mut() {
-                add_units(creator, &new_units);
+                creator.add_units(&new_units);
             }
             expected_hashes_per_round.push(expected_hashes);
         }
@@ -256,7 +256,7 @@ mod tests {
             .map(|(pu, _)| preunit_to_unit(pu, 0))
             .collect();
         let creator = &mut creators[0];
-        add_units(creator, &new_units);
+        creator.add_units(&new_units);
         let round = 1;
         assert!(creator.create_unit(round).is_none());
     }

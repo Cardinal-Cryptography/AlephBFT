@@ -130,8 +130,8 @@ mod tests {
     use super::_run_loading_mechanism as run_loading_mechanism;
     use crate::{
         units::{
-            add_units, create_units, creator_set, preunit_to_unchecked_signed_unit,
-            preunit_to_unit, UncheckedSignedUnit as GenericUncheckedSignedUnit,
+            create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit,
+            UncheckedSignedUnit as GenericUncheckedSignedUnit,
         },
         NodeCount, NodeIndex, Receiver, Round,
     };
@@ -183,7 +183,7 @@ mod tests {
                 .map(|(pre_unit, _)| preunit_to_unit(pre_unit, session_id))
                 .collect();
             for creator in creators.iter_mut() {
-                add_units(creator, &new_units);
+                creator.add_units(&new_units);
             }
         }
         let unit_loader = Loader::new(encoded_data);

@@ -13,9 +13,7 @@ mod testing;
 mod validator;
 pub(crate) use store::*;
 #[cfg(test)]
-pub use testing::{
-    add_units, create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit,
-};
+pub use testing::{create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit};
 pub use validator::{ValidationError, Validator};
 
 /// The coordinates of a unit, i.e. creator and round. In the absence of forks this uniquely
