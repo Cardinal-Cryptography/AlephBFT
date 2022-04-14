@@ -4,8 +4,6 @@ use crate::{
 };
 use aleph_bft_mock::{Router, Spawner};
 use futures::StreamExt;
-use parking_lot::Mutex;
-use std::sync::Arc;
 
 async fn honest_members_agree_on_batches(
     n_members: NodeCount,
@@ -22,15 +20,10 @@ async fn honest_members_agree_on_batches(
     spawner.spawn("network-hub", net_hub);
 
     for network in networks {
-        let ix = network.index();
+        let ix = network.0.index();
         if n_alive.into_range().contains(&ix) {
-            let (batch_rx, exit_tx, handle) = spawn_honest_member(
-                spawner.clone(),
-                ix,
-                n_members,
-                Arc::new(Mutex::new(vec![])),
-                network,
-            );
+            let (batch_rx, _, exit_tx, handle) =
+                spawn_honest_member(spawner.clone(), ix, n_members, vec![], network.0);
             batch_rxs.push(batch_rx);
             exits.push(exit_tx);
             handles.push(handle);

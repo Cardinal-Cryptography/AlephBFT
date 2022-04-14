@@ -27,41 +27,41 @@ impl From<CodecError> for LoaderError {
 }
 
 /// Abstraction over Unit backup saving mechanism
-pub struct _UnitSaver<W: Write, H: Hasher, D: Data, S: Signature> {
+pub struct UnitSaver<W: Write, H: Hasher, D: Data, S: Signature> {
     inner: W,
     _phantom: PhantomData<(H, D, S)>,
 }
 
 /// Abstraction over Unit backup loading mechanism
-pub struct _UnitLoader<R: Read, H: Hasher, D: Data, S: Signature> {
+pub struct UnitLoader<R: Read, H: Hasher, D: Data, S: Signature> {
     inner: R,
     _phantom: PhantomData<(H, D, S)>,
 }
 
-impl<W: Write, H: Hasher, D: Data, S: Signature> _UnitSaver<W, H, D, S> {
-    pub fn _new(write: W) -> Self {
+impl<W: Write, H: Hasher, D: Data, S: Signature> UnitSaver<W, H, D, S> {
+    pub fn new(write: W) -> Self {
         Self {
             inner: write,
             _phantom: PhantomData,
         }
     }
 
-    pub fn _save(&mut self, unit: UncheckedSignedUnit<H, D, S>) -> Result<(), std::io::Error> {
+    pub fn save(&mut self, unit: UncheckedSignedUnit<H, D, S>) -> Result<(), std::io::Error> {
         self.inner.write_all(&unit.encode())?;
         self.inner.flush()?;
         Ok(())
     }
 }
 
-impl<R: Read, H: Hasher, D: Data, S: Signature> _UnitLoader<R, H, D, S> {
-    pub fn _new(read: R) -> Self {
+impl<R: Read, H: Hasher, D: Data, S: Signature> UnitLoader<R, H, D, S> {
+    pub fn new(read: R) -> Self {
         Self {
             inner: read,
             _phantom: PhantomData,
         }
     }
 
-    fn _load(mut self) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
+    fn load(mut self) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
         let mut buf = Vec::new();
         self.inner.read_to_end(&mut buf)?;
         let input = &mut &buf[..];
@@ -73,11 +73,11 @@ impl<R: Read, H: Hasher, D: Data, S: Signature> _UnitLoader<R, H, D, S> {
     }
 }
 
-fn _load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
-    unit_loader: _UnitLoader<R, H, D, S>,
+fn load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
+    unit_loader: UnitLoader<R, H, D, S>,
 ) -> Result<(Vec<UncheckedSignedUnit<H, D, S>>, Round), LoaderError> {
     let (rounds, units): (Vec<_>, Vec<_>) = unit_loader
-        ._load()?
+        .load()?
         .into_iter()
         .map(|u| (u.as_signable().coord().round(), u))
         .unzip();
@@ -89,7 +89,7 @@ fn _load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
     Ok((units, next_round))
 }
 
-fn _on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
+fn on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
     if starting_round_tx.send(None).is_err() {
         warn!(target: "AlephBFT-runway", "Coulnd not send `None` starting round.");
     }
@@ -100,17 +100,17 @@ fn _on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
 /// If loaded Units are compatible with the unit collection result (meaning the highest unit is from at least
 /// round from unit collection + 1) it sends `Some(starting_round)` by
 /// `starting_round_tx`. If Units are not compatible it sends `None` by `starting_round_tx`
-pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
-    unit_loader: _UnitLoader<R, H, D, S>,
+pub async fn run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
+    unit_loader: UnitLoader<R, H, D, S>,
     loaded_unit_tx: Sender<UncheckedSignedUnit<H, D, S>>,
     starting_round_tx: oneshot::Sender<Option<Round>>,
     highest_response_rx: oneshot::Receiver<Round>,
 ) {
-    let (units, next_round) = match _load_backup(unit_loader) {
+    let (units, next_round) = match load_backup(unit_loader) {
         Ok((units, next_round)) => (units, next_round),
         Err(e) => {
             error!(target: "AlephBFT-runway", "unable to load unit backup: {:?}", e);
-            _on_shutdown(starting_round_tx);
+            on_shutdown(starting_round_tx);
             return;
         }
     };
@@ -118,7 +118,7 @@ pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
     for u in units {
         if let Err(e) = loaded_unit_tx.unbounded_send(u) {
             error!(target: "AlephBFT-runway", "could not send loaded unit: {:?}", e);
-            _on_shutdown(starting_round_tx);
+            on_shutdown(starting_round_tx);
             return;
         }
     }
@@ -127,7 +127,7 @@ pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
         Ok(highest_response) => highest_response,
         Err(e) => {
             error!(target: "AlephBFT-runway", "unable to receive response from unit collections: {:?}", e);
-            _on_shutdown(starting_round_tx);
+            on_shutdown(starting_round_tx);
             return;
         }
     };
@@ -135,7 +135,7 @@ pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
     let starting_round = next_round;
     if starting_round < highest_response {
         error!(target: "AlephBFT-runway", "backup and unit collection missmatch. Backup got: {:?}, collection got: {:?}", starting_round, highest_response);
-        _on_shutdown(starting_round_tx);
+        on_shutdown(starting_round_tx);
         return;
     };
 
@@ -146,7 +146,7 @@ pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
 
 #[cfg(test)]
 mod tests {
-    use super::{_UnitLoader as UnitLoader, _run_loading_mechanism as run_loading_mechanism};
+    use super::{run_loading_mechanism, UnitLoader};
     use crate::{
         units::{
             create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit,
@@ -205,7 +205,7 @@ mod tests {
                 creator.add_units(&new_units);
             }
         }
-        let unit_loader = UnitLoader::_new(Loader::new(encoded_data));
+        let unit_loader = UnitLoader::new(Loader::new(encoded_data));
         let (loaded_unit_tx, loaded_unit_rx) = unbounded();
         let (starting_round_tx, starting_round_rx) = oneshot::channel();
         let (highest_response_tx, highest_response_rx) = oneshot::channel();

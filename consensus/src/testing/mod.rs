@@ -3,6 +3,7 @@ mod alerts;
 mod byzantine;
 mod consensus;
 mod crash;
+mod crash_recovery;
 mod creation;
 mod dag;
 mod unreliable;
@@ -58,16 +59,22 @@ pub fn spawn_honest_member(
     spawner: Spawner,
     node_index: NodeIndex,
     n_members: NodeCount,
-    units: Arc<Mutex<Vec<u8>>>,
+    units: Vec<u8>,
     network: impl 'static + NetworkT<NetworkData>,
-) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
+) -> (
+    UnboundedReceiver<Data>,
+    Arc<Mutex<Vec<u8>>>,
+    oneshot::Sender<()>,
+    TaskHandle,
+) {
     let data_provider = DataProvider::new();
     let (finalization_handler, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);
     let (exit_tx, exit_rx) = oneshot::channel();
     let spawner_inner = spawner.clone();
-    let unit_loader = Loader::new((*units.lock()).clone());
-    let unit_saver = Saver::new(units);
+    let unit_loader = Loader::new(units);
+    let saved_state = Arc::new(Mutex::new(vec![]));
+    let unit_saver = Saver::new(saved_state.clone());
     let local_io = LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
     let member_task = async move {
         let keybox = Keychain::new(n_members, node_index);
@@ -82,5 +89,5 @@ pub fn spawn_honest_member(
         .await
     };
     let handle = spawner.spawn_essential("member", member_task);
-    (finalization_rx, exit_tx, handle)
+    (finalization_rx, saved_state, exit_tx, handle)
 }

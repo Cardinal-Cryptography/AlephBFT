@@ -1,7 +1,10 @@
 use aleph_bft_types::{Network as NetworkT, NodeCount, NodeIndex, Recipient};
 use async_trait::async_trait;
 use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    channel::{
+        mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+        oneshot,
+    },
     Future, StreamExt,
 };
 use log::debug;
@@ -77,27 +80,36 @@ pub trait NetworkHook<D>: Send {
     async fn update_state(&mut self, data: &mut D, sender: NodeIndex, recipient: NodeIndex);
 }
 
+type ReconnectReceiver<D> = UnboundedReceiver<(NodeIndex, oneshot::Sender<Network<D>>)>;
+type ReconnectSender<D> = UnboundedSender<(NodeIndex, oneshot::Sender<Network<D>>)>;
+
 pub struct Router<D> {
     peers: RefCell<HashMap<NodeIndex, Peer<D>>>,
     peer_list: Vec<NodeIndex>,
     hook_list: RefCell<Vec<Box<dyn NetworkHook<D>>>>,
+    _peer_reconnect_rx: ReconnectReceiver<D>,
     reliability: f64,
 }
 
 impl<D> Router<D> {
     // reliability - a number in the range [0, 1], 1.0 means perfect reliability, 0.0 means no message gets through
-    pub fn new(n_members: NodeCount, reliability: f64) -> (Router<D>, Vec<Network<D>>) {
+    pub fn new(
+        n_members: NodeCount,
+        reliability: f64,
+    ) -> (Router<D>, Vec<(Network<D>, ReconnectSender<D>)>) {
         let peer_list = n_members.into_iterator().collect();
+        let (reconnect_tx, peer_reconnect_rx) = unbounded();
         let mut router = Router {
             peers: RefCell::new(HashMap::new()),
             peer_list,
             hook_list: RefCell::new(Vec::new()),
+            _peer_reconnect_rx: peer_reconnect_rx,
             reliability,
         };
         let mut networks = Vec::new();
         for ix in n_members.into_iterator() {
             let network = router.connect_peer(ix);
-            networks.push(network);
+            networks.push((network, reconnect_tx.clone()));
         }
         (router, networks)
     }

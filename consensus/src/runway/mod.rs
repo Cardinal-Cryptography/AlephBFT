@@ -15,13 +15,19 @@ use futures::{
     future::FusedFuture,
     pin_mut, Future, FutureExt, StreamExt,
 };
+
 use log::{debug, error, info, trace, warn};
-use std::{collections::HashSet, convert::TryFrom};
+use std::{
+    collections::HashSet,
+    convert::TryFrom,
+    io::{Read, Write},
+    marker::PhantomData,
+};
 
 mod backup;
 mod collection;
 
-pub use backup::{_UnitLoader as UnitLoader, _UnitSaver as UnitSaver};
+use backup::{UnitLoader, UnitSaver};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
 pub use collection::{NewestUnitResponse, Salt};
@@ -105,13 +111,14 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-struct Runway<'a, H, D, MK, DP, FH>
+struct Runway<'a, H, D, W, DP, FH, MK>
 where
     H: Hasher,
     D: Data,
-    MK: MultiKeychain,
+    W: Write,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
+    MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
@@ -121,6 +128,7 @@ where
     validator: &'a Validator<'a, MK>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
+    unit_messages_from_backup: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
     unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     responses_for_collection:
@@ -131,12 +139,14 @@ where
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     data_provider: DP,
     finalization_handler: FH,
+    unit_saver: UnitSaver<W, H, D, MK::Signature>,
     exiting: bool,
 }
 
 struct RunwayConfig<
     H: Hasher,
     D: Data,
+    W: Write,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
     MK: MultiKeychain,
@@ -145,10 +155,12 @@ struct RunwayConfig<
     max_round: Round,
     data_provider: DP,
     finalization_handler: FH,
+    unit_saver: UnitSaver<W, H, D, MK::Signature>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
     rx_consensus: Receiver<NotificationOut<H>>,
+    unit_messages_from_backup: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
     unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     responses_for_collection:
@@ -157,16 +169,18 @@ struct RunwayConfig<
     resolved_requests: Sender<Request<H>>,
 }
 
-impl<'a, H, D, MK, DP, FH> Runway<'a, H, D, MK, DP, FH>
+impl<'a, H, D, W, DP, FH, MK> Runway<'a, H, D, W, DP, FH, MK>
 where
     H: Hasher,
     D: Data,
-    MK: MultiKeychain,
+    W: Write,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
+
+    MK: MultiKeychain,
 {
     fn new(
-        config: RunwayConfig<H, D, DP, FH, MK>,
+        config: RunwayConfig<H, D, W, DP, FH, MK>,
         keychain: &'a MK,
         validator: &'a Validator<'a, MK>,
     ) -> Self {
@@ -176,10 +190,12 @@ where
             max_round,
             data_provider,
             finalization_handler,
+            unit_saver,
             alerts_for_alerter,
             notifications_from_alerter,
             tx_consensus,
             rx_consensus,
+            unit_messages_from_backup,
             unit_messages_from_network,
             unit_messages_for_network,
             responses_for_collection,
@@ -197,6 +213,7 @@ where
             resolved_requests,
             alerts_for_alerter,
             notifications_from_alerter,
+            unit_messages_from_backup,
             unit_messages_from_network,
             unit_messages_for_network,
             tx_consensus,
@@ -204,6 +221,7 @@ where
             ordered_batch_rx,
             data_provider,
             finalization_handler,
+            unit_saver,
             responses_for_collection,
             session_id,
             exiting: false,
@@ -466,6 +484,13 @@ where
         let data = self.data_provider.get_data().await;
         let full_unit = FullUnit::new(u, data, self.session_id);
         let signed_unit = Signed::sign(full_unit, self.keychain).await;
+        let h = signed_unit.as_signable().hash();
+        trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), h);
+        if let Err(err) = self.unit_saver.save(signed_unit.clone().into_unchecked()) {
+            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {:?}", self.index(), h, err);
+        } else {
+            trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), h);
+        }
         self.store.add_unit(signed_unit.clone(), false);
     }
 
@@ -640,6 +665,10 @@ where
                     }
                 },
 
+                unit = self.unit_messages_from_backup.next() => {
+                    self.on_unit_received(unit, false);
+                },
+
                 batch = self.ordered_batch_rx.next() => match batch {
                     Some(batch) => self.on_ordered_batch(batch).await,
                     None => {
@@ -665,7 +694,7 @@ where
     }
 }
 
-pub(crate) struct RunwayIO<H: Hasher, D: Data, MK: MultiKeychain> {
+pub(crate) struct NetworkIO<H: Hasher, D: Data, MK: MultiKeychain> {
     pub(crate) alert_messages_for_network: Sender<(
         AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
         Recipient,
@@ -683,7 +712,7 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
     validator: &'a Validator<'a, MK>,
     threshold: NodeCount,
     unit_messages_for_network: &Sender<RunwayNotificationOut<H, D, MK::Signature>>,
-    starting_round_sender: oneshot::Sender<Round>,
+    unit_collection_sender: oneshot::Sender<Round>,
     responses_from_runway: Receiver<
         UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
     >,
@@ -697,7 +726,7 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
         return Err(());
     };
     let collection = CollectionIO::new(
-        starting_round_sender,
+        unit_collection_sender,
         responses_from_runway,
         resolved_requests,
         collection,
@@ -716,20 +745,63 @@ fn trivial_start(
     Ok(async {})
 }
 
-pub(crate) async fn run<H, D, MK, DP, FH, SH>(
+pub struct RunwayIO<
+    H: Hasher,
+    D: Data,
+    S: Signature,
+    US: Write,
+    UL: Read,
+    DP: DataProvider<D>,
+    FH: FinalizationHandler<D>,
+> {
+    pub data_provider: DP,
+    pub finalization_handler: FH,
+    pub unit_saver: UnitSaver<US, H, D, S>,
+    pub unit_loader: UnitLoader<UL, H, D, S>,
+    _phantom: PhantomData<(H, D, S)>,
+}
+
+impl<
+        H: Hasher,
+        D: Data,
+        S: Signature,
+        US: Write,
+        UL: Read,
+        DP: DataProvider<D>,
+        FH: FinalizationHandler<D>,
+    > RunwayIO<H, D, S, US, UL, DP, FH>
+{
+    pub fn new(
+        data_provider: DP,
+        finalization_handler: FH,
+        unit_saver: US,
+        unit_loader: UL,
+    ) -> Self {
+        RunwayIO {
+            data_provider,
+            finalization_handler,
+            unit_saver: UnitSaver::new(unit_saver),
+            unit_loader: UnitLoader::new(unit_loader),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+pub(crate) async fn run<H, D, W, R, MK, DP, FH, SH>(
     config: Config,
-    data_provider: DP,
-    finalization_handler: FH,
+    runway_io: RunwayIO<H, D, MK::Signature, W, R, DP, FH>,
     keychain: MK,
     spawn_handle: SH,
-    runway_io: RunwayIO<H, D, MK>,
+    network_io: NetworkIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
 ) where
     H: Hasher,
     D: Data,
-    MK: MultiKeychain,
+    W: Write,
+    R: Read,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
+    MK: MultiKeychain,
     SH: SpawnHandle,
 {
     let (tx_consensus, consensus_stream) = mpsc::unbounded();
@@ -744,8 +816,8 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     };
     let (alerter_exit, exit_stream) = oneshot::channel();
     let alerter_keychain = keychain.clone();
-    let alert_messages_for_network = runway_io.alert_messages_for_network;
-    let alert_messages_from_network = runway_io.alert_messages_from_network;
+    let alert_messages_for_network = network_io.alert_messages_for_network;
+    let alert_messages_from_network = network_io.alert_messages_from_network;
     let alerter_handle = spawn_handle.spawn_essential("runway/alerter", async move {
         alerts::run(
             alerter_keychain,
@@ -763,7 +835,9 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     let (consensus_exit, exit_stream) = oneshot::channel();
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
+    let (unit_collections_sender, unit_collection_result) = oneshot::channel();
     let (starting_round_sender, starting_round) = oneshot::channel();
+    let (loaded_units_tx, loaded_units_rx) = mpsc::unbounded();
 
     let consensus_handle = spawn_handle.spawn_essential("runway/consensus", async move {
         consensus::run(
@@ -784,38 +858,56 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
     let threshold = (keychain.node_count() * 2) / 3 + NodeCount(1);
     let validator = Validator::new(config.session_id, &keychain, config.max_round, threshold);
     let (responses_for_collection, responses_from_runway) = mpsc::unbounded();
+
+    let backup_loading_handle = backup::run_loading_mechanism(
+        runway_io.unit_loader,
+        loaded_units_tx,
+        starting_round_sender,
+        unit_collection_result,
+    )
+    .fuse();
+    pin_mut!(backup_loading_handle);
+
     #[cfg(feature = "initial_unit_collection")]
     let starting_round_handle = match initial_unit_collection(
         &keychain,
         &validator,
         threshold,
-        &runway_io.unit_messages_for_network,
-        starting_round_sender,
+        &network_io.unit_messages_for_network,
+        unit_collections_sender,
         responses_from_runway,
-        runway_io.resolved_requests.clone(),
+        network_io.resolved_requests.clone(),
     ) {
         Ok(handle) => handle.fuse(),
         Err(_) => return,
     };
     #[cfg(not(feature = "initial_unit_collection"))]
-    let starting_round_handle = match trivial_start(starting_round_sender) {
+    let starting_round_handle = match trivial_start(unit_collections_sender) {
         Ok(handle) => handle.fuse(),
         Err(_) => return,
     };
+    let RunwayIO {
+        data_provider,
+        finalization_handler,
+        unit_saver,
+        ..
+    } = runway_io;
     pin_mut!(starting_round_handle);
 
     let runway_config = RunwayConfig {
         data_provider,
         finalization_handler,
+        unit_saver,
         alerts_for_alerter,
         notifications_from_alerter,
         tx_consensus,
         rx_consensus,
-        unit_messages_from_network: runway_io.unit_messages_from_network,
-        unit_messages_for_network: runway_io.unit_messages_for_network,
+        unit_messages_from_backup: loaded_units_rx,
+        unit_messages_from_network: network_io.unit_messages_from_network,
+        unit_messages_for_network: network_io.unit_messages_for_network,
         ordered_batch_rx,
         responses_for_collection,
-        resolved_requests: runway_io.resolved_requests,
+        resolved_requests: network_io.resolved_requests,
         session_id: config.session_id,
         max_round: config.max_round,
     };
@@ -840,6 +932,9 @@ pub(crate) async fn run<H, D, MK, DP, FH, SH>(
             },
             _ = starting_round_handle => {
                 debug!(target: "AlephBFT-runway", "{:?} Starting round task terminated.", index);
+            },
+            _ = backup_loading_handle => {
+                debug!(target: "AlephBFT-runway", "{:?} Backup loading task terminated.", index);
             },
             _ = &mut exit => break,
         }
