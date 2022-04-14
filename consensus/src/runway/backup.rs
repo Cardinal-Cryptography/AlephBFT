@@ -5,6 +5,7 @@ use log::{error, warn};
 use std::io::{Read, Write};
 
 #[derive(Debug)]
+/// Backup load error. Could be either caused by io error from Reader, or by decoding.
 pub enum LoaderError {
     IO(std::io::Error),
     Codec(CodecError),
@@ -22,10 +23,12 @@ impl From<CodecError> for LoaderError {
     }
 }
 
+/// Abstraction over Unit backup saving mechanism
 pub trait UnitSaver<H: Hasher, D: Data, S: Signature> {
     fn save(&mut self, unit: UncheckedSignedUnit<H, D, S>) -> Result<(), std::io::Error>;
 }
 
+/// Abstraction over Unit backup loading mechanism
 pub trait UnitLoader<H: Hasher, D: Data, S: Signature> {
     fn load(self) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError>;
 }
@@ -73,6 +76,10 @@ fn _on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
     }
 }
 
+/// Loading mechanism first Unit data from `unit_loader` and awaits on response from unit collection.
+/// If loaded Units are compatible with unit collection result (meaning highest unit is from round at least
+/// unit_collection + 1) it send all loaded units by `loaded_unit_tx` and sends starting round number by
+/// `starting_round_tx`. If Units are not compatible it sends no Units and `None` by `starting_round_tx`
 pub async fn _run_loading_mechanism<H: Hasher, D: Data, S: Signature, UL: UnitLoader<H, D, S>>(
     unit_loader: UL,
     loaded_unit_tx: Sender<UncheckedSignedUnit<H, D, S>>,
