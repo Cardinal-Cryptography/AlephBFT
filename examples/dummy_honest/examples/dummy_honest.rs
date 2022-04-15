@@ -19,27 +19,25 @@ use libp2p::{
 use log::{debug, info, warn};
 use parking_lot::Mutex;
 use std::{error::Error, sync::Arc, time::Duration};
+use clap::Parser;
 
 const ALEPH_PROTOCOL_NAME: &str = "aleph";
 
-const USAGE_MSG: &str = "Missing arg. Usage
-    cargo run --example honest my_id n_members n_finalized
+/// Dummy honest node example.
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Our index
+    #[clap(long)]
+    my_id: usize,
 
-    my_id -- our index
-    n_members -- size of the committee
-    n_finalized -- number of data to be finalized";
+    /// Size of the committee
+    #[clap(long)]
+    n_members: usize,
 
-fn parse_arg(n: usize) -> usize {
-    if let Some(int) = std::env::args().nth(n) {
-        match int.parse::<usize>() {
-            Ok(int) => int,
-            Err(err) => {
-                panic!("Failed to parse arg {:?}", err);
-            }
-        }
-    } else {
-        panic!("{}", USAGE_MSG);
-    }
+    /// Number of data to be finalized
+    #[clap(long)]
+    n_finalized : usize,
 }
 
 #[tokio::main]
@@ -48,9 +46,7 @@ async fn main() {
         .filter_module("dummy_honest", log::LevelFilter::Info)
         .init();
 
-    let my_id = parse_arg(1);
-    let n_members = parse_arg(2);
-    let n_finalized = parse_arg(3);
+    let args = Args::parse();
 
     info!(target: "dummy-honest", "Getting network up.");
     let (network, mut manager) = Network::new().await.unwrap();
@@ -68,8 +64,8 @@ async fn main() {
 
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
-        let keychain = Keychain::new(n_members.into(), my_id.into());
-        let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
+        let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
+        let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
@@ -77,7 +73,7 @@ async fn main() {
     while let Some(data) = finalized_rx.next().await {
         finalized.push(data);
         debug!(target: "dummy-honest", "Got new batch. Finalized = {:?}", finalized.len());
-        if finalized.len() >= n_finalized {
+        if finalized.len() >= args.n_finalized {
             break;
         }
     }
