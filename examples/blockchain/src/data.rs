@@ -1,10 +1,7 @@
-use crate::{chain::BlockNum, network::NetworkData};
+use crate::{BlockNum, NetworkData};
 use async_trait::async_trait;
-use futures::channel::{
-    mpsc,
-    mpsc::{UnboundedReceiver, UnboundedSender},
-};
-use log::{debug, error};
+use futures::channel::mpsc::UnboundedSender;
+use log::debug;
 use parking_lot::Mutex;
 use std::{
     collections::{HashMap, HashSet},
@@ -129,26 +126,5 @@ impl DataProvider {
             },
             current_block,
         )
-    }
-}
-
-pub struct FinalizationHandler {
-    tx: UnboundedSender<Data>,
-}
-
-#[async_trait]
-impl aleph_bft::FinalizationHandler<Data> for FinalizationHandler {
-    async fn data_finalized(&mut self, d: Data) {
-        if let Err(e) = self.tx.unbounded_send(d) {
-            error!(target: "finalization-provider", "Error when sending data from FinalizationHandler {:?}.", e);
-        }
-    }
-}
-
-impl FinalizationHandler {
-    pub fn new() -> (Self, UnboundedReceiver<Data>) {
-        let (tx, rx) = mpsc::unbounded();
-
-        (Self { tx }, rx)
     }
 }

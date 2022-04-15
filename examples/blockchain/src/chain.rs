@@ -1,4 +1,4 @@
-use crate::network::NetworkData;
+use crate::{network::NetworkData, DataStore};
 use aleph_bft::NodeIndex;
 use codec::{Decode, Encode};
 use futures::{
@@ -16,11 +16,7 @@ use std::{
     time::{self, Duration},
 };
 
-pub use data::{Data, DataProvider, DataStore, FinalizationHandler};
-
-mod data;
-
-type BlockNum = u64;
+pub type BlockNum = u32;
 
 #[derive(Clone, Encode, Decode)]
 pub struct Block {
@@ -48,9 +44,9 @@ pub struct ChainConfig {
     // Number of random bytes to include in the block.
     pub data_size: usize,
     // Delay between blocks
-    pub blocktime_ms: u64,
+    pub blocktime_ms: BlockNum,
     // Delay before the first block should be created
-    pub init_delay_ms: u64,
+    pub init_delay_ms: BlockNum,
     // f(k) means who should author the kth block
     pub authorship_plan: BlockPlan,
 }
@@ -59,11 +55,11 @@ pub fn gen_chain_config(
     node_ix: NodeIndex,
     n_members: usize,
     data_size: usize,
-    blocktime_ms: u64,
-    init_delay_ms: u64,
+    blocktime_ms: BlockNum,
+    init_delay_ms: BlockNum,
 ) -> ChainConfig {
     //Round robin block authorship plan.
-    let authorship_plan = Arc::new(move |num: u64| NodeIndex((num as usize) % n_members));
+    let authorship_plan = Arc::new(move |num: BlockNum| NodeIndex((num as usize) % n_members));
     ChainConfig {
         node_ix,
         data_size,
@@ -92,14 +88,14 @@ pub async fn run_blockchain(
     mut exit: oneshot::Receiver<()>,
 ) {
     let start_time = time::Instant::now();
-    for block_num in 1u64.. {
+    for block_num in 1.. {
         while *current_block.lock() < block_num {
             let curr_author = (config.authorship_plan)(block_num);
             if curr_author == config.node_ix {
                 // We need to create the block, but at the right time
                 let curr_time = time::Instant::now();
                 let block_delay_ms = (block_num - 1) * config.blocktime_ms + config.init_delay_ms;
-                let block_creation_time = start_time + Duration::from_millis(block_delay_ms);
+                let block_creation_time = start_time + Duration::from_millis(block_delay_ms.into());
                 if curr_time >= block_creation_time {
                     let block = Block::new(block_num, config.data_size);
                     blocks_for_network

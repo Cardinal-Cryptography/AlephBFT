@@ -1,8 +1,6 @@
-use crate::{
-    chain::{Block, Data},
-    crypto::{Hasher256, PartialMultisignature, Signature},
-};
-use aleph_bft::{NodeIndex, Recipient, TaskHandle};
+use crate::{Block, Data};
+use aleph_bft::{NodeIndex, Recipient};
+use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use futures::{
     channel::{
@@ -10,7 +8,7 @@ use futures::{
         oneshot,
     },
     prelude::*,
-    Future, FutureExt, StreamExt,
+    FutureExt, StreamExt,
 };
 use libp2p::{
     core::upgrade,
@@ -28,25 +26,9 @@ use libp2p::{
 use log::{debug, info, trace, warn};
 use std::{collections::HashMap, error::Error, io, iter, time::Duration};
 
-#[derive(Clone)]
-pub struct Spawner;
-
-impl aleph_bft::SpawnHandle for Spawner {
-    fn spawn(&self, _: &str, task: impl Future<Output = ()> + Send + 'static) {
-        tokio::spawn(task);
-    }
-    fn spawn_essential(
-        &self,
-        _: &str,
-        task: impl Future<Output = ()> + Send + 'static,
-    ) -> TaskHandle {
-        Box::pin(async move { tokio::spawn(task).await.map_err(|_| ()) })
-    }
-}
-
 const ALEPH_PROTOCOL_NAME: &str = "/alephbft/test/1";
 
-pub type NetworkData = aleph_bft::NetworkData<Hasher256, Data, Signature, PartialMultisignature>;
+pub type NetworkData = aleph_bft::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Encode, Decode)]

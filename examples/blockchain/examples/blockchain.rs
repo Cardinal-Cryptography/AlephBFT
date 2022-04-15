@@ -1,10 +1,9 @@
 extern crate aleph_bft_examples_blockchain;
 
-use aleph_bft::{run_session, NodeIndex};
+use aleph_bft::run_session;
 use aleph_bft_examples_blockchain::{
-    chain::{gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationHandler},
-    crypto::KeyBox,
-    network::{Network, Spawner},
+    gen_chain_config, run_blockchain, BlockNum, DataProvider, DataStore, FinalizationHandler,
+    Keychain, Network, Spawner,
 };
 use aleph_bft_mock::{Loader, Saver};
 use chrono::Local;
@@ -16,8 +15,8 @@ use std::{io::Write, sync::Arc, time};
 
 const TXS_PER_BLOCK: usize = 50000;
 const TX_SIZE: usize = 300;
-const BLOCK_TIME_MS: u64 = 1000;
-const INITIAL_DELAY_MS: u64 = 5000;
+const BLOCK_TIME_MS: BlockNum = 1000;
+const INITIAL_DELAY_MS: BlockNum = 5000;
 
 /// Blockchain example.
 #[derive(Parser, Debug)]
@@ -52,7 +51,6 @@ async fn main() {
         .init();
 
     let args = Args::parse();
-    let my_node_ix = NodeIndex(args.my_id);
     let start_time = time::Instant::now();
     info!(target: "Blockchain-main", "Getting network up.");
     let (
@@ -62,7 +60,7 @@ async fn main() {
         block_from_network_rx,
         message_for_network,
         message_from_network,
-    ) = Network::new(my_node_ix)
+    ) = Network::new(args.my_id.into())
         .await
         .expect("Libp2p network set-up should succeed.");
     let (data_provider, current_block) = DataProvider::new();
@@ -74,7 +72,7 @@ async fn main() {
 
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = gen_chain_config(
-        my_node_ix,
+        args.my_id.into(),
         args.n_members,
         data_size,
         BLOCK_TIME_MS,
@@ -96,10 +94,7 @@ async fn main() {
 
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
-        let keychain = KeyBox {
-            count: args.n_members,
-            index: args.my_id.into(),
-        };
+        let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
         let units = Arc::new(Mutex::new(vec![]));
         let unit_loader = Loader::new((*units.lock()).clone());
@@ -118,7 +113,7 @@ async fn main() {
             "Got new batch. Highest finalized = {:?}",
             max_block_finalized
         );
-        if max_block_finalized >= args.n_finalized as u64 {
+        if max_block_finalized >= args.n_finalized as u32 {
             break;
         }
     }
