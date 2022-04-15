@@ -16,7 +16,7 @@ use std::{
     time::{self, Duration},
 };
 
-pub use data::{Data, DataProvider, DataStore, FinalizationProvider};
+pub use data::{Data, DataProvider, DataStore, FinalizationHandler};
 
 mod data;
 

@@ -132,20 +132,20 @@ impl DataProvider {
     }
 }
 
-pub struct FinalizationProvider {
+pub struct FinalizationHandler {
     tx: UnboundedSender<Data>,
 }
 
 #[async_trait]
-impl aleph_bft::FinalizationHandler<Data> for FinalizationProvider {
+impl aleph_bft::FinalizationHandler<Data> for FinalizationHandler {
     async fn data_finalized(&mut self, d: Data) {
         if let Err(e) = self.tx.unbounded_send(d) {
-            error!(target: "finalization-provider", "Error when sending data from FinalizationProvider {:?}.", e);
+            error!(target: "finalization-provider", "Error when sending data from FinalizationHandler {:?}.", e);
         }
     }
 }
 
-impl FinalizationProvider {
+impl FinalizationHandler {
     pub fn new() -> (Self, UnboundedReceiver<Data>) {
         let (tx, rx) = mpsc::unbounded();
 

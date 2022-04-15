@@ -2,7 +2,7 @@ extern crate aleph_bft_examples_blockchain;
 
 use aleph_bft::{run_session, NodeIndex};
 use aleph_bft_examples_blockchain::{
-    chain::{gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationProvider},
+    chain::{gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationHandler},
     crypto::KeyBox,
     network::{Network, Spawner},
 };
@@ -66,7 +66,7 @@ async fn main() {
         .await
         .expect("Libp2p network set-up should succeed.");
     let (data_provider, current_block) = DataProvider::new();
-    let (finalization_provider, mut finalized_rx) = FinalizationProvider::new();
+    let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
     let data_store = DataStore::new(current_block.clone(), message_for_network);
 
     let (close_network, exit) = oneshot::channel();
@@ -104,12 +104,8 @@ async fn main() {
         let units = Arc::new(Mutex::new(vec![]));
         let unit_loader = Loader::new((*units.lock()).clone());
         let unit_saver = Saver::new(units);
-        let local_io = aleph_bft::LocalIO::new(
-            data_provider,
-            finalization_provider,
-            unit_saver,
-            unit_loader,
-        );
+        let local_io =
+            aleph_bft::LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
