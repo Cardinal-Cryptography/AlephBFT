@@ -8,6 +8,7 @@ use aleph_bft_examples_blockchain::{
 };
 use aleph_bft_mock::{Loader, Saver};
 use chrono::Local;
+use clap::Parser;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, info};
 use parking_lot::Mutex;
@@ -18,24 +19,21 @@ const TX_SIZE: usize = 300;
 const BLOCK_TIME_MS: u64 = 1000;
 const INITIAL_DELAY_MS: u64 = 5000;
 
-const USAGE_MSG: &str = "Missing arg. Usage
-    cargo run --example blockchain my_id n_members n_finalized
+/// Blockchain example.
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// Our index
+    #[clap(long)]
+    my_id: usize,
 
-    my_id -- our index
-    n_members -- size of the committee
-    n_finalized -- number of data to be finalized";
+    /// Size of the committee
+    #[clap(long)]
+    n_members: usize,
 
-fn parse_arg(n: usize) -> usize {
-    if let Some(int) = std::env::args().nth(n) {
-        match int.parse::<usize>() {
-            Ok(int) => int,
-            Err(err) => {
-                panic!("Failed to parse arg {:?}", err);
-            }
-        }
-    } else {
-        panic!("{}", USAGE_MSG);
-    }
+    /// Number of data to be finalized
+    #[clap(long)]
+    n_finalized: usize,
 }
 
 #[tokio::main]
@@ -53,10 +51,8 @@ async fn main() {
         .filter(None, log::LevelFilter::Debug)
         .init();
 
-    let my_id = parse_arg(1);
-    let n_members = parse_arg(2);
-    let n_finalized = parse_arg(3);
-    let my_node_ix = NodeIndex(my_id);
+    let args = Args::parse();
+    let my_node_ix = NodeIndex(args.my_id);
     let start_time = time::Instant::now();
     info!(target: "Blockchain-main", "Getting network up.");
     let (
@@ -79,7 +75,7 @@ async fn main() {
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = gen_chain_config(
         my_node_ix,
-        n_members,
+        args.n_members,
         data_size,
         BLOCK_TIME_MS,
         INITIAL_DELAY_MS,
@@ -101,10 +97,10 @@ async fn main() {
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
         let keychain = KeyBox {
-            count: n_members,
-            index: my_id.into(),
+            count: args.n_members,
+            index: args.my_id.into(),
         };
-        let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
+        let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
         let units = Arc::new(Mutex::new(vec![]));
         let unit_loader = Loader::new((*units.lock()).clone());
         let unit_saver = Saver::new(units);
@@ -126,13 +122,13 @@ async fn main() {
             "Got new batch. Highest finalized = {:?}",
             max_block_finalized
         );
-        if max_block_finalized >= n_finalized as u64 {
+        if max_block_finalized >= args.n_finalized as u64 {
             break;
         }
     }
     let stop_time = time::Instant::now();
     let tot_millis = (stop_time - start_time).as_millis() - INITIAL_DELAY_MS as u128;
-    let tps = (n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
+    let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
     close_member.send(()).expect("should send");
     close_chain.send(()).expect("should send");
