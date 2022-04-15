@@ -9,6 +9,7 @@ members = [
 
     # Example crates.
     "examples/dummy_honest",
+    "examples/blockchain",
 ]
 
 exclude = [

@@ -11,9 +11,9 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) type Data = BlockNum;
+pub type Data = BlockNum;
 
-pub(crate) struct DataStore {
+pub struct DataStore {
     next_message_id: u32,
     current_block: Arc<Mutex<BlockNum>>,
     available_blocks: HashSet<BlockNum>,
@@ -24,7 +24,7 @@ pub(crate) struct DataStore {
 }
 
 impl DataStore {
-    pub(crate) fn new(
+    pub fn new(
         current_block: Arc<Mutex<BlockNum>>,
         messages_for_member: UnboundedSender<NetworkData>,
     ) -> Self {
@@ -55,7 +55,7 @@ impl DataStore {
         self.pending_messages.insert(message_id, message);
     }
 
-    pub(crate) fn add_message(&mut self, message: NetworkData) {
+    pub fn add_message(&mut self, message: NetworkData) {
         let requirements: Vec<_> = message
             .included_data()
             .into_iter()
@@ -95,7 +95,7 @@ impl DataStore {
         self.dependent_messages.remove(&num);
     }
 
-    pub(crate) fn add_block(&mut self, num: BlockNum) {
+    pub fn add_block(&mut self, num: BlockNum) {
         debug!(target: "data-store", "Added block {:?}.", num);
         self.available_blocks.insert(num);
         self.push_messages(num);
@@ -109,7 +109,7 @@ impl DataStore {
 }
 
 #[derive(Clone)]
-pub(crate) struct DataProvider {
+pub struct DataProvider {
     current_block: Arc<Mutex<BlockNum>>,
 }
 
@@ -121,7 +121,7 @@ impl aleph_bft::DataProvider<Data> for DataProvider {
 }
 
 impl DataProvider {
-    pub(crate) fn new() -> (Self, Arc<Mutex<BlockNum>>) {
+    pub fn new() -> (Self, Arc<Mutex<BlockNum>>) {
         let current_block = Arc::new(Mutex::new(0));
         (
             DataProvider {
@@ -132,7 +132,7 @@ impl DataProvider {
     }
 }
 
-pub(crate) struct FinalizationProvider {
+pub struct FinalizationProvider {
     tx: UnboundedSender<Data>,
 }
 
@@ -146,7 +146,7 @@ impl aleph_bft::FinalizationHandler<Data> for FinalizationProvider {
 }
 
 impl FinalizationProvider {
-    pub(crate) fn new() -> (Self, UnboundedReceiver<Data>) {
+    pub fn new() -> (Self, UnboundedReceiver<Data>) {
         let (tx, rx) = mpsc::unbounded();
 
         (Self { tx }, rx)

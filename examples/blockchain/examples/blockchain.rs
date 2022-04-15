@@ -1,16 +1,17 @@
-use futures::{channel::oneshot, StreamExt};
-use log::{debug, info};
+extern crate aleph_bft_examples_blockchain;
 
 use aleph_bft::{run_session, NodeIndex};
-use chain::{gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationProvider};
+use aleph_bft_examples_blockchain::{
+    chain::{gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationProvider},
+    crypto::KeyBox,
+    network::{Network, Spawner},
+};
+use aleph_bft_mock::{Loader, Saver};
 use chrono::Local;
-use crypto::KeyBox;
-use network::{Network, Spawner};
-use std::{io::Write, time};
-
-mod chain;
-mod crypto;
-mod network;
+use futures::{channel::oneshot, StreamExt};
+use log::{debug, info};
+use parking_lot::Mutex;
+use std::{io::Write, sync::Arc, time};
 
 const TXS_PER_BLOCK: usize = 50000;
 const TX_SIZE: usize = 300;
@@ -99,21 +100,21 @@ async fn main() {
 
     let (close_member, exit) = oneshot::channel();
     tokio::spawn(async move {
-        let keybox = KeyBox {
+        let keychain = KeyBox {
             count: n_members,
             index: my_id.into(),
         };
         let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
-        run_session(
-            config,
-            network,
+        let units = Arc::new(Mutex::new(vec![]));
+        let unit_loader = Loader::new((*units.lock()).clone());
+        let unit_saver = Saver::new(units);
+        let local_io = aleph_bft::LocalIO::new(
             data_provider,
             finalization_provider,
-            keybox,
-            Spawner {},
-            exit,
-        )
-        .await
+            unit_saver,
+            unit_loader,
+        );
+        run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
     let mut max_block_finalized = 0;

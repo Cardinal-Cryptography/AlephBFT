@@ -3,6 +3,7 @@ use aleph_bft_mock::{
     Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Loader, PartialMultisignature,
     Saver, Signature, Spawner,
 };
+use clap::Parser;
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
@@ -19,7 +20,6 @@ use libp2p::{
 use log::{debug, info, warn};
 use parking_lot::Mutex;
 use std::{error::Error, sync::Arc, time::Duration};
-use clap::Parser;
 
 const ALEPH_PROTOCOL_NAME: &str = "aleph";
 
@@ -37,7 +37,7 @@ struct Args {
 
     /// Number of data to be finalized
     #[clap(long)]
-    n_finalized : usize,
+    n_finalized: usize,
 }
 
 #[tokio::main]
