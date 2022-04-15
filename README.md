@@ -95,6 +95,7 @@ where `4` in the above is the number of committee members, and can be replaced b
 Running this script will result in generating log files `node0.log, node1.log, ...` corresponding to subsequent nodes.
 The achieved transactions per second will be among the final log messages in these files.
 The script runs member instances in background, so it is important to wait until they finish before launching again.
+
 If you're not patient enough, you may always kill them manually, e.g. by running
 ```
 killall -p blockchain
