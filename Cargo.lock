@@ -122,6 +122,7 @@ dependencies = [
  "aleph-bft",
  "aleph-bft-mock",
  "async-trait",
+ "chrono",
  "clap",
  "env_logger",
  "futures",

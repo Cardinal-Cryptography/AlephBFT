@@ -3,6 +3,7 @@ use aleph_bft_mock::{
     Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Loader, PartialMultisignature,
     Saver, Signature, Spawner,
 };
+use chrono::Local;
 use clap::Parser;
 use codec::{Decode, Encode};
 use futures::{
@@ -19,7 +20,7 @@ use libp2p::{
 };
 use log::{debug, info, warn};
 use parking_lot::Mutex;
-use std::{error::Error, sync::Arc, time::Duration};
+use std::{error::Error, io::Write, sync::Arc, time::Duration};
 
 const ALEPH_PROTOCOL_NAME: &str = "aleph";
 
@@ -43,7 +44,16 @@ struct Args {
 #[tokio::main]
 async fn main() {
     env_logger::builder()
-        .filter_module("dummy_honest", log::LevelFilter::Info)
+        .format(|buf, record| {
+            writeln!(
+                buf,
+                "{} {}: {}",
+                record.level(),
+                Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                record.args()
+            )
+        })
+        .filter(None, log::LevelFilter::Debug)
         .init();
 
     let args = Args::parse();
