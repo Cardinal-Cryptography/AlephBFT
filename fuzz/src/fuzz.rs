@@ -1,56 +1,371 @@
-use crate::spawner::Spawner;
-use aleph_bft::{Index, NetworkData, NodeCount, NodeIndex, Recipient, SpawnHandle};
-use aleph_bft_mock::{Hasher64, Keychain as KeyBox, NetworkHook, PartialMultisignature, Signature};
-use codec::{Decode, Encode, IoReader};
-use futures::{
-    channel::{
-        mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-        oneshot::{self, Receiver},
-    },
-    StreamExt,
+use aleph_bft::{
+    run_session, Config, Network as NetworkT, NetworkData, NodeCount, NodeIndex, Recipient,
+    LocalIO, exponential_slowdown,
 };
+use aleph_bft_mock::{
+    Hasher64, Keychain as KeyBox, Network, NetworkHook, PartialMultisignature, Router, Signature, DataProvider, FinalizationHandler, Saver, Loader, Data,
+};
+use codec::{Decode, Encode, IoReader};
+use futures::channel::oneshot::Receiver;
+use futures::StreamExt;
 use log::{error, info};
 use std::io::{BufRead, BufReader, Read, Result as IOResult, Write};
 use tokio::runtime::{Builder, Runtime};
+use aleph_bft::{DelayConfig, SpawnHandle, TaskHandle};
+use futures::{
+    task::{Context, Poll},
+    Future,
+};
+use futures_timer::Delay;
+use parking_lot::Mutex;
+use std::{
+    pin::Pin,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
+use tokio::task::yield_now;
+use futures::channel::oneshot;
+
+#[derive(Clone)]
+pub struct MockSpawner {
+    handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl SpawnHandle for MockSpawner {
+    fn spawn(&self, _name: &str, task: impl Future<Output = ()> + Send + 'static) {
+        self.handles.lock().push(tokio::spawn(task))
+    }
+
+    fn spawn_essential(
+        &self,
+        _: &str,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> TaskHandle {
+        let (res_tx, res_rx) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            task.await;
+            res_tx.send(()).expect("We own the rx.");
+        });
+        self.handles.lock().push(task);
+        Box::pin(async move { res_rx.await.map_err(|_| ()) })
+    }
+}
+
+impl MockSpawner {
+    pub async fn wait(&self) {
+        for h in self.handles.lock().iter_mut() {
+            let _ = h.await;
+        }
+    }
+    pub fn new() -> Self {
+        MockSpawner {
+            handles: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl Default for MockSpawner {
+    fn default() -> Self {
+        MockSpawner::new()
+    }
+}
+
+
+
+
+
+
+
+
+
+
+#[derive(Clone)]
+pub struct Spawner {
+    spawner: Arc<MockSpawner>,
+    idle_mx: Arc<Mutex<()>>,
+    wake_flag: Arc<AtomicBool>,
+    delay: Duration,
+}
+
+struct SpawnFuture<T> {
+    task: Pin<Box<T>>,
+    wake_flag: Arc<AtomicBool>,
+}
+
+impl<T> SpawnFuture<T> {
+    fn new(task: T, wake_flag: Arc<AtomicBool>) -> Self {
+        SpawnFuture {
+            task: Box::pin(task),
+            wake_flag,
+        }
+    }
+}
+
+impl<T: Future<Output = ()> + Send + 'static> Future for SpawnFuture<T> {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.wake_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        Future::poll(self.task.as_mut(), cx)
+    }
+}
+
+impl SpawnHandle for Spawner {
+    fn spawn(&self, name: &'static str, task: impl Future<Output = ()> + Send + 'static) {
+        // NOTE this is magic - member creates too much background noise
+        if name == "member" {
+            self.spawner.spawn(name, task)
+        } else {
+            let wrapped = self.wrap_task(task);
+            self.spawner.spawn(name, wrapped)
+        }
+    }
+
+    fn spawn_essential(
+        &self,
+        name: &'static str,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> TaskHandle {
+        // NOTE this is magic - member creates too much background noise
+        if name == "member" {
+            self.spawner.spawn_essential(name, task)
+        } else {
+            let wrapped = self.wrap_task(task);
+            self.spawner.spawn_essential(name, wrapped)
+        }
+    }
+}
+
+impl Spawner {
+    pub async fn wait(&self) {
+        self.spawner.wait().await
+    }
+
+    pub fn new(delay_config: &DelayConfig) -> Self {
+        Spawner {
+            spawner: Arc::new(MockSpawner::new()),
+            idle_mx: Arc::new(Mutex::new(())),
+            wake_flag: Arc::new(AtomicBool::new(false)),
+            // NOTE this is a magic value used to allow fuzzing tests be able to process enough messages from the PlaybackNetwork
+            delay: 10 * delay_config.tick_interval,
+        }
+    }
+
+    pub async fn wait_idle(&self) {
+        let _ = self.idle_mx.lock();
+
+        self.wake_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        loop {
+            Delay::new(self.delay).await;
+            yield_now().await;
+            // try to verify if any other task was attempting to wake up
+            // it assumes that we are using a single-threaded runtime for scheduling our Futures
+            if self
+                .wake_flag
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
+            {
+                break;
+            }
+        }
+        self.wake_flag
+            .store(false, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn wrap_task(
+        &self,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> impl Future<Output = ()> + Send + 'static {
+        SpawnFuture::new(task, self.wake_flag.clone())
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+type UReceiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
+
+fn init_log() {
+    let _ = env_logger::builder()
+        .filter_level(log::LevelFilter::max())
+        .is_test(true)
+        .try_init();
+}
+
+pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount) -> Config {
+    let delay_config = DelayConfig {
+        tick_interval: Duration::from_millis(5),
+        requests_interval: Duration::from_millis(50),
+        unit_broadcast_delay: Arc::new(|t| exponential_slowdown(t, 100.0, 1, 3.0)),
+        //100, 100, 300, 900, 2700, ...
+        unit_creation_delay: Arc::new(|t| exponential_slowdown(t, 50.0, usize::MAX, 1.000)),
+        //50, 50, 50, 50, ...
+    };
+    Config {
+        node_ix,
+        session_id: 0,
+        n_members,
+        delay_config,
+        max_round: 5000,
+    }
+}
 
 // use aleph_bft_mock::{
 //     configure_network, gen_config, init_log, spawn_honest_member_with_config, NetworkHook,
 // };
 
-#[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Hash)]
-pub struct Data {}
+// this
 
-impl Data {
-    fn new() -> Self {
-        Data {}
-    }
+// let (close_member, exit) = oneshot::channel();
+//  tokio::spawn(async move {
+//      let keybox = KeyBox {
+//          count: n_members,
+//          index: my_id.into(),
+//      };
+//      let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
+//      let member = aleph_bft::Member::new(data_io, &keybox, config, Spawner {});
+//      member.run_session(network, exit).await
+//  });
+
+// changed to
+
+// let (close_member, exit) = oneshot::channel();
+//     tokio::spawn(async move {
+//         let keybox = KeyBox {
+//             count: n_members,
+//             index: my_id.into(),
+//         };
+//         let config = aleph_bft::default_config(n_members.into(), my_id.into(), 0);
+//         run_session(config, network, data_io, keybox, Spawner {}, exit).await
+//     });
+
+pub fn configure_network(
+    n_members: NodeCount,
+    reliability: f64,
+) -> (Router<FuzzNetworkData>, Vec<Network<FuzzNetworkData>>) {
+    Router::new(n_members, reliability)
 }
 
-pub struct DataIO {
-    tx: UnboundedSender<Vec<Data>>,
+
+
+
+
+// #[derive(Debug, Clone, PartialEq, Eq, Encode, Decode, Hash)]
+// pub struct Data {}
+
+// impl Data {
+//     fn new() -> Self {
+//         Data {}
+//     }
+// }
+
+// pub struct DataIO {
+//     tx: UnboundedSender<Vec<Data>>,
+// }
+
+// impl DataIOT<self::Data> for DataIO {
+//     type Error = ();
+
+//     fn get_data(&self) -> Data {
+//         Data::new()
+//     }
+
+//     fn send_ordered_batch(&mut self, data: Vec<Data>) -> Result<(), ()> {
+//         self.tx.unbounded_send(data).map_err(|e| {
+//             error!(target: "data-io", "Error when sending data from DataIO {:?}.", e);
+//         })
+//     }
+// }
+
+// impl DataIO {
+//     pub fn new() -> (Self, UnboundedReceiver<Vec<Data>>) {
+//         let (tx, rx) = unbounded();
+//         let data_io = DataIO { tx };
+//         (data_io, rx)
+//     }
+// }
+
+
+
+
+
+
+
+// pub fn spawn_honest_member(
+//     spawner: Spawner,
+//     node_index: NodeIndex,
+//     n_members: NodeCount,
+//     units: Arc<Mutex<Vec<u8>>>,
+//     network: impl 'static + NetworkT<NetworkData>,
+// ) -> (UnboundedReceiver<Data>, oneshot::Sender<()>, TaskHandle) {
+//     let data_provider = DataProvider::new();
+//     let (finalization_handler, finalization_rx) = FinalizationHandler::new();
+//     let config = gen_config(node_index, n_members);
+//     let (exit_tx, exit_rx) = oneshot::channel();
+//     let spawner_inner = spawner.clone();
+//     let unit_loader = Loader::new((*units.lock()).clone());
+//     let unit_saver = Saver::new(units);
+//     let local_io = LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
+//     let member_task = async move {
+//         let keybox = KeyBox::new(n_members, node_index);
+//         run_session(
+//             config,
+//             local_io,
+//             network,
+//             keybox,
+//             spawner_inner.clone(),
+//             exit_rx,
+//         )
+//         .await
+//     };
+//     let handle = spawner.spawn_essential("member", member_task);
+//     (finalization_rx, exit_tx, handle)
+// }
+
+
+
+pub fn spawn_honest_member_with_config(
+    spawner: impl SpawnHandle + Sync,
+    config: Config,
+    network: impl 'static + NetworkT<FuzzNetworkData>,
+    mk: KeyBox,
+) -> (oneshot::Sender<()>, UReceiver<Data>) {
+
+    let units = Arc::new(Mutex::new(vec![]));
+    let unit_loader = Loader::new((*units.lock()).clone());
+    let unit_saver = Saver::new(units);
+    let data_provider = DataProvider::new();
+    let (finalization_handler, finalization_rx) = FinalizationHandler::new();
+    let local_io = LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
+
+    let (exit_tx, exit_rx) = oneshot::channel();
+    let spawner_inner = spawner.clone();
+    let member_task = async move {
+        run_session(
+            config,
+            local_io,
+            network,
+            mk,
+            spawner_inner.clone(),
+            exit_rx,
+        )
+        .await
+    };
+    spawner.spawn("member", member_task);
+    (exit_tx, finalization_rx)
 }
 
-impl DataIOT<self::Data> for DataIO {
-    type Error = ();
-
-    fn get_data(&self) -> Data {
-        Data::new()
-    }
-
-    fn send_ordered_batch(&mut self, data: Vec<Data>) -> Result<(), ()> {
-        self.tx.unbounded_send(data).map_err(|e| {
-            error!(target: "data-io", "Error when sending data from DataIO {:?}.", e);
-        })
-    }
-}
-
-impl DataIO {
-    pub fn new() -> (Self, UnboundedReceiver<Vec<Data>>) {
-        let (tx, rx) = unbounded();
-        let data_io = DataIO { tx };
-        (data_io, rx)
-    }
-}
 
 pub type FuzzNetworkData = NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
 
@@ -70,10 +385,11 @@ impl<W: Write> SpyingNetworkHook<W> {
     }
 }
 
-impl<W: Write + Send> NetworkHook<Hasher64, Data, Signature, PartialMultisignature>
+#[async_trait::async_trait]
+impl<W: Write + Send> NetworkHook<FuzzNetworkData>
     for SpyingNetworkHook<W>
 {
-    fn update_state(&mut self, data: &mut FuzzNetworkData, _: NodeIndex, recipient: NodeIndex) {
+    async fn update_state(&mut self, data: &mut FuzzNetworkData, _: NodeIndex, recipient: NodeIndex) {
         if self.node == recipient {
             self.encoder.encode_into(data, &mut self.output).unwrap();
         }
@@ -147,7 +463,7 @@ impl<I, C> PlaybackNetwork<I, C> {
 
 #[async_trait::async_trait]
 impl<I: Iterator<Item = FuzzNetworkData> + Send, C: FnOnce() + Send>
-    aleph_bft::Network<Hasher64, Data, Signature, PartialMultisignature> for PlaybackNetwork<I, C>
+    NetworkT<FuzzNetworkData> for PlaybackNetwork<I, C>
 {
     fn send(&self, _: FuzzNetworkData, _: Recipient) {}
 
@@ -209,7 +525,7 @@ async fn execute_generate_fuzz<'a, W: Write + Send + 'static>(
     let spy = SpyingNetworkHook::new(peer_id, output);
     // spawn only byzantine-threshold of nodes and networks so all enabled nodes are required to finish each round
     let threshold = (n_members * 2) / 3 + 1;
-    let (mut router, networks) = configure_network(n_members, 1.0);
+    let (mut router, networks) = configure_network(n_members.into(), 1.0);
     router.add_hook(spy);
 
     let delay_config = gen_config(0.into(), n_members.into()).delay_config;
@@ -219,11 +535,10 @@ async fn execute_generate_fuzz<'a, W: Write + Send + 'static>(
     let mut batch_rxs = Vec::new();
     let mut exits = Vec::new();
     for network in networks.into_iter().take(threshold) {
-        let (data_io, batch_rx) = DataIO::new();
         let keybox = KeyBox::new(NodeCount(n_members), network.index());
         let config = gen_config(network.index(), n_members.into());
-        let exit_tx =
-            spawn_honest_member_with_config(spawner.clone(), config, network, data_io, keybox);
+        let (exit_tx, batch_rx) =
+            spawn_honest_member_with_config(spawner.clone(), config, network, keybox);
         exits.push(exit_tx);
         batch_rxs.push(batch_rx);
     }
@@ -256,10 +571,9 @@ async fn execute_fuzz(
 
     let spawner = Spawner::new(&config.delay_config);
     let node_index = NodeIndex(0);
-    let (data_io, mut batch_rx) = DataIO::new();
     let keybox = KeyBox::new(NodeCount(n_members), node_index);
-    let exit_tx =
-        spawn_honest_member_with_config(spawner.clone(), config, network, data_io, keybox);
+    let (exit_tx, mut batch_rx) =
+        spawn_honest_member_with_config(spawner.clone(), config, network, keybox);
 
     let (n_batches, batches_expected) = {
         if let Some(batches) = n_batches {

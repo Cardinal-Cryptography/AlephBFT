@@ -1,4 +1,4 @@
-use alephbft_fuzz::fuzz;
+use aleph_bft_fuzz::fuzz;
 use std::{
     io,
     io::{BufReader, BufWriter},

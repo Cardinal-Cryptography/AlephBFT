@@ -63,6 +63,7 @@ dependencies = [
  "aleph-bft",
  "aleph-bft-mock",
  "async-trait",
+ "env_logger",
  "futures",
  "futures-timer",
  "libfuzzer-sys",
