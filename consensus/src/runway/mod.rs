@@ -474,7 +474,7 @@ where
         let h = uu.as_signable().hash();
         trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), h);
         if let Err(err) = self.unit_saver.save(uu) {
-            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {:?}", self.index(), h, err);
+            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {}", self.index(), h, err);
         } else {
             trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), h);
         }

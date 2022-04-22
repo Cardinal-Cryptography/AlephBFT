@@ -1,17 +1,47 @@
 use crate::{units::UncheckedSignedUnit, Data, Hasher, Round, Signature};
 use codec::{Decode, Encode, Error as CodecError};
 use futures::channel::oneshot;
-use log::{error, warn};
+use log::{error, info, warn};
 use std::{
+    fmt,
     io::{Read, Write},
     marker::PhantomData,
 };
 
-#[derive(Debug)]
 /// Backup load error. Could be either caused by io error from Reader, or by decoding.
+#[derive(Debug)]
 pub enum LoaderError {
     IO(std::io::Error),
     Codec(CodecError),
+    MissingRounds(Round, usize),
+    DuplicateRounds(Round, usize),
+    MissingAndDuplicateRounds(usize),
+}
+
+impl fmt::Display for LoaderError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoaderError::IO(err) => {
+                write!(f, "Got IO error while reading from UnitLoader: {}", err)
+            }
+
+            LoaderError::Codec(err) => {
+                write!(f, "Got Codec error while docoding backup: {}", err)
+            }
+
+            LoaderError::MissingRounds(round, n_units) => {
+                write!(f, "Some units are missing. Loaded less units than the highest round + 1. Got round {:?} and {:?} units", round, n_units)
+            }
+
+            LoaderError::DuplicateRounds(round, n_units) => {
+                write!(f, "Some units are duplicate. Loaded more units than the highest round + 1. Got round {:?} and {:?} units", round, n_units)
+            }
+
+            LoaderError::MissingAndDuplicateRounds(n_units) => {
+                write!(f, "Loaded the same number of units as the highest round + 1 but some units are missing and some are duplicate. Got {:?} units", n_units)
+            }
+        }
+    }
 }
 
 impl From<std::io::Error> for LoaderError {
@@ -65,7 +95,7 @@ impl<R: Read, H: Hasher, D: Data, S: Signature> UnitLoader<R, H, D, S> {
         let mut buf = Vec::new();
         self.inner.read_to_end(&mut buf)?;
         let input = &mut &buf[..];
-        let mut result = vec![];
+        let mut result = Vec::new();
         while !input.is_empty() {
             result.push(<UncheckedSignedUnit<H, D, S>>::decode(input)?);
         }
@@ -76,22 +106,32 @@ impl<R: Read, H: Hasher, D: Data, S: Signature> UnitLoader<R, H, D, S> {
 fn load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
     unit_loader: UnitLoader<R, H, D, S>,
 ) -> Result<(Vec<UncheckedSignedUnit<H, D, S>>, Round), LoaderError> {
-    let (rounds, units): (Vec<_>, Vec<_>) = unit_loader
+    let (mut rounds, units): (Vec<_>, Vec<_>) = unit_loader
         .load()?
         .into_iter()
         .map(|u| (u.as_signable().coord().round(), u))
         .unzip();
-    let next_round = if let Some(round) = rounds.into_iter().max() {
-        round + 1
+    rounds.sort_unstable();
+    if let Some(&max) = rounds.last() {
+        if max as usize + 1 < rounds.len() {
+            return Err(LoaderError::DuplicateRounds(max, rounds.len()));
+        }
+        if max as usize + 1 > rounds.len() {
+            return Err(LoaderError::MissingRounds(max, rounds.len()));
+        }
+        if !rounds.iter().cloned().eq((0..).take(rounds.len())) {
+            Err(LoaderError::MissingAndDuplicateRounds(rounds.len()))
+        } else {
+            Ok((units, max + 1))
+        }
     } else {
-        0
-    };
-    Ok((units, next_round))
+        Ok((Vec::new(), 0))
+    }
 }
 
 fn on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
     if starting_round_tx.send(None).is_err() {
-        warn!(target: "AlephBFT-unit-backup", "Coulnd not send `None` starting round.");
+        warn!(target: "AlephBFT-unit-backup", "Could not send `None` starting round.");
     }
 }
 
@@ -104,16 +144,17 @@ pub async fn run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
     unit_loader: UnitLoader<R, H, D, S>,
     loaded_unit_tx: oneshot::Sender<Vec<UncheckedSignedUnit<H, D, S>>>,
     starting_round_tx: oneshot::Sender<Option<Round>>,
-    highest_response_rx: oneshot::Receiver<Round>,
+    next_round_collection_rx: oneshot::Receiver<Round>,
 ) {
-    let (units, next_round) = match load_backup(unit_loader) {
-        Ok((units, next_round)) => (units, next_round),
+    let (units, next_round_backup) = match load_backup(unit_loader) {
+        Ok((units, round)) => (units, round),
         Err(e) => {
-            error!(target: "AlephBFT-unit-backup", "unable to load unit backup: {:?}", e);
+            error!(target: "AlephBFT-unit-backup", "unable to load unit backup: {}", e);
             on_shutdown(starting_round_tx);
             return;
         }
     };
+    info!(target: "AlephBFT-unit-backup", "loaded units from backup. Loaded {:?} units", units.len());
 
     if let Err(e) = loaded_unit_tx.send(units) {
         error!(target: "AlephBFT-unit-backup", "could not send loaded units: {:?}", e);
@@ -121,23 +162,27 @@ pub async fn run_loading_mechanism<H: Hasher, D: Data, S: Signature, R: Read>(
         return;
     }
 
-    let highest_response = match highest_response_rx.await {
-        Ok(highest_response) => highest_response,
+    let next_round_collection = match next_round_collection_rx.await {
+        Ok(round) => round,
         Err(e) => {
-            error!(target: "AlephBFT-unit-backup", "unable to receive response from unit collections: {:?}", e);
+            error!(target: "AlephBFT-unit-backup", "unable to receive response from unit collections: {}", e);
             on_shutdown(starting_round_tx);
             return;
         }
     };
+    info!(target: "AlephBFT-unit-backup", "received next round from unit collection: {:?}", next_round_collection);
 
-    let starting_round = next_round;
-    if starting_round < highest_response {
-        error!(target: "AlephBFT-unit-backup", "backup and unit collection missmatch. Backup got: {:?}, collection got: {:?}", starting_round, highest_response);
+    if next_round_backup < next_round_collection {
+        error!(target: "AlephBFT-unit-backup", "backup lower than unit collection result. Backup got: {:?}, collection got: {:?}", next_round_backup, next_round_collection);
         on_shutdown(starting_round_tx);
         return;
     };
 
-    if let Err(e) = starting_round_tx.send(Some(starting_round)) {
+    if next_round_collection < next_round_backup {
+        warn!(target: "AlephBFT-unit-backup", "unit collection result lower than backup. Backup got: {:?}, collection got: {:?}", next_round_backup, next_round_collection);
+    }
+
+    if let Err(e) = starting_round_tx.send(Some(next_round_backup)) {
         error!(target: "AlephBFT-unit-backup", "could not send starting round: {:?}", e);
     }
 }
@@ -159,8 +204,7 @@ mod tests {
     type UncheckedSignedUnit = GenericUncheckedSignedUnit<Hasher64, Data, Signature>;
 
     async fn prepare_test(
-        units_n: u16,
-        is_corrupted: bool,
+        units: Vec<(u16, bool)>,
     ) -> (
         impl futures::Future,
         Receiver<Vec<UncheckedSignedUnit>>,
@@ -172,23 +216,25 @@ mod tests {
         let n_members = NodeCount(4);
         let session_id = 43;
 
-        let mut encoded_data = vec![];
-        let mut data = vec![];
+        let mut encoded_data = Vec::new();
+        let mut data = Vec::new();
 
         let mut creators = creator_set(n_members);
         let keychain = Keychain::new(n_members, node_id);
 
-        for round in 0..units_n {
-            let pre_units = create_units(creators.iter(), round);
+        for (round, (ammount, is_corrupted)) in units.into_iter().enumerate() {
+            let pre_units = create_units(creators.iter(), round as Round);
 
             let unit =
                 preunit_to_unchecked_signed_unit(pre_units[0].clone().0, session_id, &keychain)
                     .await;
-            if is_corrupted {
-                let backup = unit.clone().encode();
-                encoded_data.extend_from_slice(&backup[..backup.len() - 1]);
-            } else {
-                encoded_data.append(&mut unit.clone().encode());
+            for _ in 0..ammount {
+                if is_corrupted {
+                    let backup = unit.clone().encode();
+                    encoded_data.extend_from_slice(&backup[..backup.len() - 1]);
+                } else {
+                    encoded_data.append(&mut unit.clone().encode());
+                }
             }
             data.push(unit);
 
@@ -222,7 +268,7 @@ mod tests {
     #[tokio::test]
     async fn nothing_loaded_nothing_collected() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
-            prepare_test(0, false).await;
+            prepare_test(Vec::new()).await;
 
         let handle = tokio::spawn(async {
             task.await;
@@ -239,7 +285,7 @@ mod tests {
     #[tokio::test]
     async fn something_loaded_nothing_collected() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
-            prepare_test(5, false).await;
+            prepare_test((0..5).map(|_| (1, false)).collect()).await;
 
         let handle = tokio::spawn(async {
             task.await;
@@ -256,7 +302,7 @@ mod tests {
     #[tokio::test]
     async fn something_loaded_something_collected() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
-            prepare_test(5, false).await;
+            prepare_test((0..5).map(|_| (1, false)).collect()).await;
 
         let handle = tokio::spawn(async {
             task.await;
@@ -273,7 +319,7 @@ mod tests {
     #[tokio::test]
     async fn nothing_loaded_something_collected() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
-            prepare_test(0, false).await;
+            prepare_test(Vec::new()).await;
 
         let handle = tokio::spawn(async {
             task.await;
@@ -290,7 +336,7 @@ mod tests {
     #[tokio::test]
     async fn loaded_smaller_then_collected() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
-            prepare_test(3, false).await;
+            prepare_test((0..3).map(|_| (1, false)).collect()).await;
 
         let handle = tokio::spawn(async {
             task.await;
@@ -307,7 +353,7 @@ mod tests {
     #[tokio::test]
     async fn nothing_collected() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, data) =
-            prepare_test(3, false).await;
+            prepare_test((0..3).map(|_| (1, false)).collect()).await;
 
         let handle = tokio::spawn(async {
             task.await;
@@ -322,9 +368,67 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn corrupted_backup() {
+    async fn corrupted_backup_codec() {
+        let mut units = vec![(1, true)];
+        units.extend(&mut (0..4).map(|_| (1, false)));
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, _) =
-            prepare_test(5, true).await;
+            prepare_test(units).await;
+        let handle = tokio::spawn(async {
+            task.await;
+        });
+
+        highest_response_tx.send(0).unwrap();
+
+        handle.await.unwrap();
+
+        assert_eq!(starting_round_rx.await, Ok(None));
+        assert!(loaded_unit_rx.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn corrupted_backup_missing() {
+        let mut units = vec![(0, false)];
+        units.extend(&mut (0..4).map(|_| (1, false)));
+        let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, _) =
+            prepare_test(units).await;
+        let handle = tokio::spawn(async {
+            task.await;
+        });
+
+        highest_response_tx.send(0).unwrap();
+
+        handle.await.unwrap();
+
+        assert_eq!(starting_round_rx.await, Ok(None));
+        assert!(loaded_unit_rx.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn corrupted_backup_duplicate() {
+        let mut units = vec![(2, false)];
+        units.extend(&mut (0..4).map(|_| (1, false)));
+        let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, _) =
+            prepare_test(units).await;
+
+        let handle = tokio::spawn(async {
+            task.await;
+        });
+
+        highest_response_tx.send(0).unwrap();
+
+        handle.await.unwrap();
+
+        assert_eq!(starting_round_rx.await, Ok(None));
+        assert!(loaded_unit_rx.await.is_err());
+    }
+
+    #[tokio::test]
+    async fn corrupted_backup_missing_and_duplicate() {
+        let mut units = vec![(0, false)];
+        units.extend(&mut (0..3).map(|_| (1, false)));
+        units.push((2, false));
+        let (task, loaded_unit_rx, highest_response_tx, starting_round_rx, _) =
+            prepare_test(units).await;
 
         let handle = tokio::spawn(async {
             task.await;
