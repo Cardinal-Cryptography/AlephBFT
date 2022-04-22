@@ -2,8 +2,8 @@ extern crate aleph_bft_examples_blockchain;
 
 use aleph_bft::run_session;
 use aleph_bft_examples_blockchain::{
-    gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationHandler, Keychain,
-    Network, Spawner,
+    run_blockchain, ChainConfig, DataProvider, DataStore, FinalizationHandler, Keychain, Network,
+    Spawner,
 };
 use aleph_bft_mock::{Loader, Saver};
 use chrono::Local;
@@ -71,7 +71,7 @@ async fn main() {
     tokio::spawn(async move { manager.run(exit).await });
 
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
-    let chain_config = gen_chain_config(
+    let chain_config = ChainConfig::new(
         args.my_id.into(),
         args.n_members,
         data_size,

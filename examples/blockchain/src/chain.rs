@@ -51,21 +51,23 @@ pub struct ChainConfig {
     pub authorship_plan: BlockPlan,
 }
 
-pub fn gen_chain_config(
-    node_ix: NodeIndex,
-    n_members: usize,
-    data_size: usize,
-    blocktime: Duration,
-    init_delay: Duration,
-) -> ChainConfig {
-    //Round robin block authorship plan.
-    let authorship_plan = Arc::new(move |num: BlockNum| NodeIndex((num as usize) % n_members));
-    ChainConfig {
-        node_ix,
-        data_size,
-        blocktime,
-        init_delay,
-        authorship_plan,
+impl ChainConfig {
+    pub fn new(
+        node_ix: NodeIndex,
+        n_members: usize,
+        data_size: usize,
+        blocktime: Duration,
+        init_delay: Duration,
+    ) -> ChainConfig {
+        //Round robin block authorship plan.
+        let authorship_plan = Arc::new(move |num: BlockNum| NodeIndex((num as usize) % n_members));
+        ChainConfig {
+            node_ix,
+            data_size,
+            blocktime,
+            init_delay,
+            authorship_plan,
+        }
     }
 }
 
