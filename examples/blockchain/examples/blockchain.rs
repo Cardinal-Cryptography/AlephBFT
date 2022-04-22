@@ -96,11 +96,14 @@ async fn main() {
     tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
-        let units = Arc::new(Mutex::new(vec![]));
-        let unit_loader = Loader::new((*units.lock()).clone());
-        let unit_saver = Saver::new(units);
-        let local_io =
-            aleph_bft::LocalIO::new(data_provider, finalization_handler, unit_saver, unit_loader);
+        let backup_loader = Loader::new(vec![]);
+        let backup_saver = Saver::new(Arc::new(Mutex::new(vec![])));
+        let local_io = aleph_bft::LocalIO::new(
+            data_provider,
+            finalization_handler,
+            backup_saver,
+            backup_loader,
+        );
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
