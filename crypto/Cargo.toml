@@ -12,11 +12,11 @@ readme = "./README.md"
 description = "Utilities for node addressing and message signing in the aleph-bft package."
 
 [dependencies]
-async-trait = "0.1"
-bit-vec = "0.6"
-codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
-derive_more = "0.99"
-log = "0.4"
+async-trait = "0.1.53"
+bit-vec = "0.6.3"
+codec = { package = "parity-scale-codec", version = "3.1.2", default-features = false, features = ["derive"] }
+derive_more = "0.99.17"
+log = "0.4.16"
 
 [dev-dependencies]
-tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
+tokio = { version = "1.17.0", features = ["macros", "rt", "rt-multi-thread"] }

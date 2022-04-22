@@ -15,19 +15,19 @@ description = "AlephBFT is an asynchronous and Byzantine fault tolerant consensu
 [dependencies]
 aleph-bft-rmc = { path = "../rmc", version = "0.2" }
 aleph-bft-types = { path = "../types", version = "0.2" }
-async-trait = "0.1"
-codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
+async-trait = "0.1.53"
+codec = { package = "parity-scale-codec", version = "3.1.2", default-features = false, features = ["derive"] }
 derivative = "2.2.0"
-futures = "0.3"
-futures-timer = "3.0"
-log = "0.4"
-parking_lot = "0.12"
-rand = "0.8"
+futures = "0.3.21"
+futures-timer = "3.0.2"
+log = "0.4.16"
+parking_lot = "0.12.0"
+rand = "0.8.5"
 
 [dev-dependencies]
 aleph-bft-mock = { path = "../mock" }
-env_logger = "0.9"
-tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
+env_logger = "0.9.0"
+tokio = { version = "1.17.0", features = ["macros", "rt", "rt-multi-thread"] }
 
 [features]
 default = ["initial_unit_collection"]

@@ -12,10 +12,10 @@ description = "Mock implementations of traits required by the aleph-bft package.
 
 [dependencies]
 aleph-bft-types = { path = "../types", version = "0.2" }
-async-trait = "0.1"
-codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
-futures = "0.3"
-log = "0.4"
-parking_lot = "0.12"
-rand = "0.8"
-tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
+async-trait = "0.1.53"
+codec = { package = "parity-scale-codec", version = "3.1.2", default-features = false, features = ["derive"] }
+futures = "0.3.21"
+log = "0.4.16"
+parking_lot = "0.12.0"
+rand = "0.8.5"
+tokio = { version = "1.17.0", features = ["macros", "rt", "rt-multi-thread"] }

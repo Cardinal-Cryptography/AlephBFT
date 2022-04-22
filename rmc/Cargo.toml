@@ -14,13 +14,13 @@ description = "Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 
 [dependencies]
 aleph-bft-crypto = { path = "../crypto", version = "0.2" }
-async-trait = "0.1"
-codec = { package = "parity-scale-codec", version = "2", default-features = false, features = ["derive"] }
-futures = "0.3"
-futures-timer = "3.0"
-log = "0.4"
+async-trait = "0.1.53"
+codec = { package = "parity-scale-codec", version = "3.1.2", default-features = false, features = ["derive"] }
+futures = "0.3.21"
+futures-timer = "3.0.2"
+log = "0.4.16"
 
 [dev-dependencies]
 aleph-bft-mock = { path = "../mock" }
-rand = "0.8"
-tokio = { version = "1.6.1", features = ["macros", "rt", "rt-multi-thread"] }
+rand = "0.8.5"
+tokio = { version = "1.17.0", features = ["macros", "rt", "rt-multi-thread"] }
