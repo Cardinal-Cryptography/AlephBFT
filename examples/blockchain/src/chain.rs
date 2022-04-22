@@ -44,9 +44,9 @@ pub struct ChainConfig {
     // Number of random bytes to include in the block.
     pub data_size: usize,
     // Delay between blocks
-    pub blocktime_ms: BlockNum,
+    pub blocktime: Duration,
     // Delay before the first block should be created
-    pub init_delay_ms: BlockNum,
+    pub init_delay: Duration,
     // f(k) means who should author the kth block
     pub authorship_plan: BlockPlan,
 }
@@ -55,16 +55,16 @@ pub fn gen_chain_config(
     node_ix: NodeIndex,
     n_members: usize,
     data_size: usize,
-    blocktime_ms: BlockNum,
-    init_delay_ms: BlockNum,
+    blocktime: Duration,
+    init_delay: Duration,
 ) -> ChainConfig {
     //Round robin block authorship plan.
     let authorship_plan = Arc::new(move |num: BlockNum| NodeIndex((num as usize) % n_members));
     ChainConfig {
         node_ix,
         data_size,
-        blocktime_ms,
-        init_delay_ms,
+        blocktime,
+        init_delay,
         authorship_plan,
     }
 }
@@ -94,8 +94,8 @@ pub async fn run_blockchain(
             if curr_author == config.node_ix {
                 // We need to create the block, but at the right time
                 let curr_time = time::Instant::now();
-                let block_delay_ms = (block_num - 1) * config.blocktime_ms + config.init_delay_ms;
-                let block_creation_time = start_time + Duration::from_millis(block_delay_ms.into());
+                let block_delay = (block_num - 1) * config.blocktime + config.init_delay;
+                let block_creation_time = start_time + block_delay;
                 if curr_time >= block_creation_time {
                     let block = Block::new(block_num, config.data_size);
                     blocks_for_network

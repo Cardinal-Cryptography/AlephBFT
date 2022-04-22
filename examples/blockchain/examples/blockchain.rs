@@ -2,8 +2,8 @@ extern crate aleph_bft_examples_blockchain;
 
 use aleph_bft::run_session;
 use aleph_bft_examples_blockchain::{
-    gen_chain_config, run_blockchain, BlockNum, DataProvider, DataStore, FinalizationHandler,
-    Keychain, Network, Spawner,
+    gen_chain_config, run_blockchain, DataProvider, DataStore, FinalizationHandler, Keychain,
+    Network, Spawner,
 };
 use aleph_bft_mock::{Loader, Saver};
 use chrono::Local;
@@ -11,12 +11,12 @@ use clap::Parser;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, info};
 use parking_lot::Mutex;
-use std::{io::Write, sync::Arc, time};
+use std::{io::Write, sync::Arc, time, time::Duration};
 
 const TXS_PER_BLOCK: usize = 50000;
 const TX_SIZE: usize = 300;
-const BLOCK_TIME_MS: BlockNum = 1000;
-const INITIAL_DELAY_MS: BlockNum = 5000;
+const BLOCK_TIME: Duration = Duration::from_millis(1000);
+const INITIAL_DELAY: Duration = Duration::from_millis(5000);
 
 /// Blockchain example.
 #[derive(Parser, Debug)]
@@ -75,8 +75,8 @@ async fn main() {
         args.my_id.into(),
         args.n_members,
         data_size,
-        BLOCK_TIME_MS,
-        INITIAL_DELAY_MS,
+        BLOCK_TIME,
+        INITIAL_DELAY,
     );
     let (close_chain, exit) = oneshot::channel();
     tokio::spawn(async move {
@@ -118,7 +118,7 @@ async fn main() {
         }
     }
     let stop_time = time::Instant::now();
-    let tot_millis = (stop_time - start_time).as_millis() - INITIAL_DELAY_MS as u128;
+    let tot_millis = (stop_time - start_time).as_millis() - INITIAL_DELAY.as_millis();
     let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
     close_member.send(()).expect("should send");
