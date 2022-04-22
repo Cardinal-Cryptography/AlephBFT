@@ -18,7 +18,7 @@ use libp2p::{
     swarm::{NetworkBehaviourEventProcess, SwarmBuilder},
     NetworkBehaviour, PeerId, Swarm,
 };
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use parking_lot::Mutex;
 use std::{error::Error, io::Write, sync::Arc, time::Duration};
 
@@ -82,12 +82,13 @@ async fn main() {
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
-    let mut finalized = vec![];
-    while let Some(data) = finalized_rx.next().await {
-        finalized.push(data);
-        debug!(target: "dummy-honest", "Got new batch. Finalized = {:?}", finalized.len());
-        if finalized.len() >= args.n_finalized {
-            break;
+    for i in 0..args.n_finalized {
+        match finalized_rx.next().await {
+            Some(_) => debug!(target: "dummy-honest", "Got new batch. Finalized: {:?}", i+1),
+            None => {
+                error!(target: "dummy-honest", "Finalization stream finished too soon. Got {:?} batches, wanted {:?} batches", i+1, args.n_finalized);
+                panic!();
+            }
         }
     }
     close_member.send(()).expect("should send");

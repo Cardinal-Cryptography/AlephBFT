@@ -9,7 +9,7 @@ use aleph_bft_mock::{Loader, Saver};
 use chrono::Local;
 use clap::Parser;
 use futures::{channel::oneshot, StreamExt};
-use log::{debug, info};
+use log::{debug, error, info};
 use parking_lot::Mutex;
 use std::{io::Write, sync::Arc, time, time::Duration};
 
@@ -120,6 +120,11 @@ async fn main() {
             break;
         }
     }
+    if max_block_finalized < args.n_finalized as u32 {
+        error!(target: "Blockchain-main", "Finalization stream finished too soon. Highest finalized = {:?}, expected {:?}", max_block_finalized, args.n_finalized);
+        panic!();
+    }
+
     let stop_time = time::Instant::now();
     let tot_millis = (stop_time - start_time).as_millis() - INITIAL_DELAY.as_millis();
     let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
