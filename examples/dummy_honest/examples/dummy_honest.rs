@@ -87,7 +87,7 @@ async fn main() {
             Some(_) => debug!(target: "dummy-honest", "Got new batch. Finalized: {:?}", i+1),
             None => {
                 error!(target: "dummy-honest", "Finalization stream finished too soon. Got {:?} batches, wanted {:?} batches", i+1, args.n_finalized);
-                panic!();
+                panic!("Finalization stream finished too soon.");
             }
         }
     }

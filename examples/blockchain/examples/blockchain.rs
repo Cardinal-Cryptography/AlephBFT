@@ -122,11 +122,11 @@ async fn main() {
     }
     if max_block_finalized < args.n_finalized as u32 {
         error!(target: "Blockchain-main", "Finalization stream finished too soon. Highest finalized = {:?}, expected {:?}", max_block_finalized, args.n_finalized);
-        panic!();
+        panic!("Finalization stream finished too soon.");
     }
 
     let stop_time = time::Instant::now();
-    let tot_millis = (stop_time - start_time).as_millis() - INITIAL_DELAY.as_millis();
+    let tot_millis = (stop_time - start_time - INITIAL_DELAY).as_millis();
     let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
     close_member.send(()).expect("should send");
