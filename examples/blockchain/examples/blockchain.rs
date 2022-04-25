@@ -68,7 +68,7 @@ async fn main() {
     let data_store = DataStore::new(current_block.clone(), message_for_network);
 
     let (close_network, exit) = oneshot::channel();
-    tokio::spawn(async move { manager.run(exit).await });
+    let network_handle = tokio::spawn(async move { manager.run(exit).await });
 
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = ChainConfig::new(
@@ -79,7 +79,7 @@ async fn main() {
         INITIAL_DELAY,
     );
     let (close_chain, exit) = oneshot::channel();
-    tokio::spawn(async move {
+    let chain_handle = tokio::spawn(async move {
         run_blockchain(
             chain_config,
             data_store,
@@ -93,7 +93,7 @@ async fn main() {
     });
 
     let (close_member, exit) = oneshot::channel();
-    tokio::spawn(async move {
+    let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
         let backup_loader = Loader::new(vec![]);
@@ -130,6 +130,9 @@ async fn main() {
     let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
     close_member.send(()).expect("should send");
+    member_handle.await.unwrap();
     close_chain.send(()).expect("should send");
+    chain_handle.await.unwrap();
     close_network.send(()).expect("should send");
+    network_handle.await.unwrap();
 }

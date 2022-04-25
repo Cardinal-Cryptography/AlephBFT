@@ -61,7 +61,7 @@ async fn main() {
     info!(target: "dummy-honest", "Getting network up.");
     let (network, mut manager) = Network::new().await.unwrap();
     let (close_network, exit) = oneshot::channel();
-    tokio::spawn(async move { manager.run(exit).await });
+    let network_handle = tokio::spawn(async move { manager.run(exit).await });
 
     let data_provider = DataProvider::new();
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
@@ -76,7 +76,7 @@ async fn main() {
     );
 
     let (close_member, exit) = oneshot::channel();
-    tokio::spawn(async move {
+    let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
@@ -92,7 +92,9 @@ async fn main() {
         }
     }
     close_member.send(()).expect("should send");
+    member_handle.await.unwrap();
     close_network.send(()).expect("should send");
+    network_handle.await.unwrap();
 }
 
 #[derive(NetworkBehaviour)]
