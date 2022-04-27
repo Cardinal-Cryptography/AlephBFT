@@ -885,7 +885,7 @@ mod tests {
             own_node
                 .on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
                 .await,
-            None,
+            Some(AlerterResponse::RmcMessage(message)),
         );
     }
 
