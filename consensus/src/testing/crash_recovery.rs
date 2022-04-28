@@ -1,8 +1,10 @@
 use crate::{
     testing::{init_log, spawn_honest_member, Network, ReconnectSender},
+    units::UncheckedSignedUnit,
     NodeCount, NodeIndex, SpawnHandle, TaskHandle,
 };
-use aleph_bft_mock::{Data, Router, Spawner};
+use aleph_bft_mock::{Data, Hasher64, Router, Signature, Spawner};
+use codec::Decode;
 use futures::{
     channel::{mpsc, oneshot},
     StreamExt,
@@ -182,15 +184,80 @@ async fn crashed_nodes_recover(
     }
 
     for (ix, (_, saved_units_before)) in killed {
+        let buf = &mut &saved_units_before[..];
+        let mut counter = 0;
+        while !buf.is_empty() {
+            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf)
+                .expect("should be correct");
+            let su = u.as_signable();
+            let coord = su.coord();
+            assert_eq!(coord.creator(), ix);
+            assert_eq!(coord.round(), counter);
+            counter += 1;
+        }
         let NodeData { saved_units, .. } = node_data.get(&ix).expect("should contain killed node");
-        assert!(saved_units.lock().len() > saved_units_before.len());
-        let subset = saved_units.lock()[..saved_units_before.len()].to_vec();
-        assert_eq!(saved_units_before, subset);
+
+        let buf = &mut &saved_units.lock()[..];
+        while !buf.is_empty() {
+            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf)
+                .expect("should be correct");
+            let su = u.as_signable();
+            let coord = su.coord();
+            assert_eq!(coord.creator(), ix);
+            assert_eq!(coord.round(), counter,);
+            counter += 1;
+        }
     }
 
     for (_, data) in node_data.drain() {
         let _ = data.exit_tx.send(());
         let _ = data.handle.await;
+    }
+}
+
+#[tokio::test]
+async fn saves_created_units() {
+    init_log();
+    let n_batches = 2;
+    let n_members = NodeCount(4);
+    let spawner = Spawner::new();
+    let (net_hub, networks) = Router::new(n_members, 1.0);
+    spawner.spawn("network-hub", net_hub);
+
+    let mut node_data = connect_nodes(&spawner, n_members, networks);
+
+    for data in node_data.values_mut() {
+        for _ in 0..n_batches * n_members.0 {
+            data.receive().await;
+        }
+    }
+
+    let mut killed = HashMap::new();
+
+    for (i, data) in node_data.drain() {
+        let NodeData {
+            exit_tx,
+            handle,
+            saved_units,
+            ..
+        } = data;
+        let _ = exit_tx.send(());
+        let _ = handle.await;
+        killed.insert(i, saved_units.lock().clone());
+    }
+
+    for (ix, saved_units) in killed {
+        let buf = &mut &saved_units[..];
+        let mut counter = 0;
+        while !buf.is_empty() {
+            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf)
+                .expect("should be correct");
+            let su = u.as_signable();
+            let coord = su.coord();
+            assert_eq!(coord.creator(), ix);
+            assert_eq!(coord.round(), counter);
+            counter += 1;
+        }
     }
 }
 
@@ -205,6 +272,6 @@ async fn small_node_crash_recovery_three_killed() {
 }
 
 #[tokio::test]
-async fn medium_node_crash_recovery_ten_killed() {
-    crashed_nodes_recover(31.into(), 10.into(), 2, 500, 1.0).await;
+async fn medium_node_crash_recovery_nine_killed() {
+    crashed_nodes_recover(28.into(), 9.into(), 2, 500, 1.0).await;
 }

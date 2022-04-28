@@ -670,7 +670,6 @@ where
                 message = units_from_backup => match message {
                     Ok(units) => {
                         for u in units {
-                            self.save_unit(u.clone());
                             self.on_unit_received(u, false);
                         }
                     },
@@ -871,6 +870,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let backup_loading_handle = backup::run_loading_mechanism(
         runway_io.unit_loader,
+        index,
+        config.session_id,
         loaded_units_tx,
         starting_round_sender,
         unit_collection_result,
