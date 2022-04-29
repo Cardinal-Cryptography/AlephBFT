@@ -559,7 +559,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -568,12 +568,12 @@ mod tests {
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members).await;
         let alert = Alert::new(own_index, fork_proof, vec![]);
-        let signed_alert = Signed::sign(alert.clone(), own_node.keychain)
+        let signed_alert = Signed::sign(alert.clone(), this.keychain)
             .await
             .into_unchecked();
         let alert_hash = Signable::hash(&alert);
         assert_eq!(
-            own_node.on_own_alert(alert).await,
+            this.on_own_alert(alert).await,
             (
                 AlertMessage::ForkAlert(signed_alert),
                 Recipient::Everyone,
@@ -589,7 +589,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -599,11 +599,9 @@ mod tests {
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members).await;
         let alert = Alert::new(own_index, fork_proof.clone(), vec![]);
         let alert_hash = Signable::hash(&alert);
-        let signed_alert = Signed::sign(alert, own_node.keychain)
-            .await
-            .into_unchecked();
+        let signed_alert = Signed::sign(alert, this.keychain).await.into_unchecked();
         assert_eq!(
-            own_node.on_network_alert(signed_alert).await,
+            this.on_network_alert(signed_alert).await,
             Some((Some(ForkingNotification::Forker(fork_proof)), alert_hash)),
         );
     }
@@ -617,7 +615,7 @@ mod tests {
         let own_keychain = Keychain::new(n_members, own_index);
         let alerter_keychain = Keychain::new(n_members, alerter_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut own_node: Alerter<Hasher64, Data, _> = Alerter::new(
+        let mut this: Alerter<Hasher64, Data, _> = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -632,7 +630,7 @@ mod tests {
             .into_unchecked();
         let message =
             AlertMessage::RmcMessage(alerter_index, RmcMessage::SignedHash(signed_alert_hash));
-        let response = own_node.on_message(message).await;
+        let response = this.on_message(message).await;
         assert_eq!(
             response,
             Some(AlerterResponse::AlertRequest(
@@ -651,7 +649,7 @@ mod tests {
         let own_keychain = Keychain::new(n_members, own_index);
         let alerter_keychain = Keychain::new(n_members, alerter_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -667,8 +665,7 @@ mod tests {
             .await
             .into_unchecked();
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::ForkAlert(signed_wrong_alert))
+            this.on_message(AlertMessage::ForkAlert(signed_wrong_alert))
                 .await,
             None,
         );
@@ -681,7 +678,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -697,14 +694,12 @@ mod tests {
         let signed_alert = Signed::sign(alert.clone(), &own_keychain)
             .await
             .into_unchecked();
-        own_node
-            .on_message(AlertMessage::ForkAlert(signed_alert.clone()))
+        this.on_message(AlertMessage::ForkAlert(signed_alert.clone()))
             .await;
         for i in 1..n_members.0 {
             let node_id = NodeIndex(i);
             assert_eq!(
-                own_node
-                    .on_message(AlertMessage::AlertRequest(node_id, alert_hash))
+                this.on_message(AlertMessage::AlertRequest(node_id, alert_hash))
                     .await,
                 Some(AlerterResponse::ForkAlert(
                     signed_alert.clone(),
@@ -724,7 +719,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &keychains[own_index.0],
             AlertConfig {
                 n_members,
@@ -747,8 +742,7 @@ mod tests {
             .expect("the signature is correct")
             .into_partially_multisigned(&keychains[double_committer.0]);
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::ForkAlert(signed_empty_alert))
+            this.on_message(AlertMessage::ForkAlert(signed_empty_alert))
                 .await,
             Some(AlerterResponse::ForkResponse(
                 Some(ForkingNotification::Forker(fork_proof.clone())),
@@ -757,8 +751,7 @@ mod tests {
         );
         let message = RmcMessage::MultisignedHash(multisigned_empty_alert_hash.into_unchecked());
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
+            this.on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
                 .await,
             Some(AlerterResponse::RmcMessage(message)),
         );
@@ -796,14 +789,12 @@ mod tests {
         }
         let message = RmcMessage::MultisignedHash(multisigned_nonempty_alert_hash.into_unchecked());
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::ForkAlert(signed_nonempty_alert))
+            this.on_message(AlertMessage::ForkAlert(signed_nonempty_alert))
                 .await,
             None,
         );
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
+            this.on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
                 .await,
             Some(AlerterResponse::RmcMessage(message)),
         );
@@ -819,7 +810,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &keychains[own_index.0],
             AlertConfig {
                 n_members,
@@ -834,8 +825,7 @@ mod tests {
             .await
             .into_unchecked();
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::ForkAlert(signed_empty_alert))
+            this.on_message(AlertMessage::ForkAlert(signed_empty_alert))
                 .await,
             Some(AlerterResponse::ForkResponse(
                 Some(ForkingNotification::Forker(fork_proof.clone())),
@@ -876,14 +866,12 @@ mod tests {
         }
         let message = RmcMessage::MultisignedHash(multisigned_nonempty_alert_hash.into_unchecked());
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::ForkAlert(signed_nonempty_alert))
+            this.on_message(AlertMessage::ForkAlert(signed_nonempty_alert))
                 .await,
             None,
         );
         assert_eq!(
-            own_node
-                .on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
+            this.on_message(AlertMessage::RmcMessage(other_honest_node, message.clone()))
                 .await,
             Some(AlerterResponse::RmcMessage(message)),
         );
@@ -896,7 +884,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let own_node = Alerter::new(
+        let this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -904,7 +892,7 @@ mod tests {
             },
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members).await;
-        assert_eq!(own_node.who_is_forking(&fork_proof), Some(forker_index));
+        assert_eq!(this.who_is_forking(&fork_proof), Some(forker_index));
     }
 
     #[tokio::test]
@@ -914,7 +902,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let own_node = Alerter::new(
+        let this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -922,7 +910,7 @@ mod tests {
             },
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members).await;
-        assert_eq!(own_node.who_is_forking(&fork_proof), None);
+        assert_eq!(this.who_is_forking(&fork_proof), None);
     }
 
     #[tokio::test]
@@ -931,7 +919,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let own_node = Alerter::new(
+        let this = Alerter::new(
             &keychains[0],
             AlertConfig {
                 n_members,
@@ -945,7 +933,7 @@ mod tests {
             let signed_unit_1 = Signed::sign(unit_1, &keychains[5]).await.into_unchecked();
             (signed_unit_0, signed_unit_1)
         };
-        assert_eq!(own_node.who_is_forking(&fork_proof), None);
+        assert_eq!(this.who_is_forking(&fork_proof), None);
     }
 
     #[tokio::test]
@@ -955,7 +943,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let own_node = Alerter::new(
+        let this = Alerter::new(
             &own_keychain,
             AlertConfig {
                 n_members,
@@ -973,7 +961,7 @@ mod tests {
                 .into_unchecked();
             (signed_unit_0, signed_unit_1)
         };
-        assert_eq!(own_node.who_is_forking(&fork_proof), None);
+        assert_eq!(this.who_is_forking(&fork_proof), None);
     }
 
     #[tokio::test]
@@ -998,7 +986,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let mut own_node = Alerter::new(
+        let mut this = Alerter::new(
             &keychains[own_index.0],
             AlertConfig {
                 n_members,
@@ -1024,7 +1012,7 @@ mod tests {
             .await
             .into_unchecked();
         if make_known {
-            own_node.on_network_alert(signed_alert).await;
+            this.on_network_alert(signed_alert).await;
         }
         let signed_alert_hash = Signed::sign_with_index(alert_hash, &keychains[own_index.0])
             .await
@@ -1055,6 +1043,6 @@ mod tests {
         } else {
             None
         };
-        assert_eq!(own_node.alert_confirmed(multisigned_alert_hash), expected);
+        assert_eq!(this.alert_confirmed(multisigned_alert_hash), expected);
     }
 }
