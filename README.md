@@ -143,7 +143,6 @@ cargo fuzz run --features="libfuzz" fuzz_target
 You will need to generate some `seed` data first in order to run it.
 
 ```sh
-cd fuzz
 # create some random input containing network data from a locally executed test
 mkdir afl_in
 cargo build --bin gen_fuzz
