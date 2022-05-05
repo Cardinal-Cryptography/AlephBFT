@@ -120,21 +120,15 @@ fn load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
     index: NodeIndex,
     session_id: SessionId,
 ) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
-    let (rounds, units): (Vec<_>, Vec<_>) = unit_loader
-        .load()?
-        .into_iter()
-        .map(|u| (u.as_signable().coord().round(), u))
-        .unzip();
+    let units = unit_loader.load()?;
 
-    for (round, expected_round) in rounds.iter().zip(0..) {
-        if *round != expected_round {
-            return Err(LoaderError::RoundMissmatch(expected_round, *round));
-        }
-    }
-
-    for u in units.iter() {
+    for (u, expected_round) in units.iter().zip(0..) {
         let su = u.as_signable();
         let coord = su.coord();
+
+        if coord.round() != expected_round {
+            return Err(LoaderError::RoundMissmatch(expected_round, coord.round()));
+        }
         if coord.creator() != index {
             return Err(LoaderError::WrongCreator(
                 coord.round(),
