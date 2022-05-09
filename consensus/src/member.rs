@@ -26,6 +26,7 @@ use std::{
     io::{Read, Write},
     marker::PhantomData,
     time,
+    time::Duration,
 };
 
 /// A message concerning units, either about new units or some requests for them.
@@ -64,7 +65,7 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
     }
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 enum Task<H: Hasher, D: Data, S: Signature> {
     // Request the unit with the given (creator, round) coordinates.
     CoordRequest(UnitCoord),
@@ -76,7 +77,7 @@ enum Task<H: Hasher, D: Data, S: Signature> {
     RequestNewest(u64),
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 struct ScheduledTask<H: Hasher, D: Data, S: Signature> {
     task: Task<H, D, S>,
     scheduled_time: time::Instant,
@@ -349,9 +350,15 @@ where
         }
     }
 
+    fn status_report(&self) {
+        info!(target: "status", "Task queue: {:?}.", self.task_queue);
+    }
+
     async fn run(mut self, mut exit: oneshot::Receiver<()>) {
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
+        let status_ticker_delay = Duration::from_secs(1);
+        let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
         loop {
             futures::select! {
@@ -393,6 +400,11 @@ where
                 _ = &mut ticker => {
                     self.trigger_tasks();
                     ticker = Delay::new(ticker_delay).fuse();
+                },
+
+                _ = &mut status_ticker => {
+                    self.status_report();
+                    status_ticker = Delay::new(status_ticker_delay).fuse();
                 },
 
                 _ = &mut exit => {

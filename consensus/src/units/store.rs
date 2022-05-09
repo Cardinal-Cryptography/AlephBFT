@@ -1,4 +1,5 @@
 use super::*;
+use itertools::Itertools;
 use log::{trace, warn};
 
 /// A component for temporarily storing units before they are declared "legit" and sent
@@ -15,6 +16,14 @@ pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
     max_round: Round,
 }
 
+pub(crate) struct UnitStoreStatus {
+    pub forkers: NodeSubset,
+    pub legit_buffer_size: usize,
+    pub size: usize,
+    pub height: Option<Round>,
+    pub top_row: Vec<(NodeIndex, Round)>,
+}
+
 impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
     pub(crate) fn new(n_nodes: NodeCount, max_round: Round) -> Self {
         UnitStore {
@@ -25,6 +34,23 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             is_forker: NodeSubset::with_size(n_nodes),
             legit_buffer: Vec::new(),
             max_round,
+        }
+    }
+
+    pub fn status_report(&self) -> UnitStoreStatus {
+        UnitStoreStatus {
+            forkers: self.is_forker.clone(),
+            legit_buffer_size: self.legit_buffer.len(),
+            size: self.by_coord.len(),
+            height: self.by_coord.keys().clone().map(|k| k.round).max(),
+            top_row: self
+                .by_coord
+                .keys()
+                .map(|c| (c.creator, c.round))
+                .into_group_map()
+                .into_iter()
+                .map(|(k, v)| (k, v.into_iter().max().unwrap_or(0)))
+                .collect(),
         }
     }
 
