@@ -357,7 +357,7 @@ where
     async fn run(mut self, mut exit: oneshot::Receiver<()>) {
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
-        let status_ticker_delay = Duration::from_secs(1);
+        let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
         loop {
