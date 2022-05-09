@@ -662,7 +662,7 @@ where
         let units_from_backup = units_from_backup.fuse();
         pin_mut!(units_from_backup);
 
-        let status_ticker_delay = Duration::from_secs(1);
+        let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
         info!(target: "AlephBFT-runway", "{:?} Runway started.", index);
