@@ -6,7 +6,8 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
-use log::{error, warn};
+use futures_timer::Delay;
+use log::{error, info, warn};
 use std::{
     cmp::max,
     collections::{hash_map::DefaultHasher, HashSet},
@@ -238,11 +239,18 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
         }
     }
 
+    fn status_report(&self) {
+        info!(target: "status", "Initial unit collection status: {:?}", self.collection.status());
+    }
+
     /// Run the initial unit collection until it sends the initial round.
     pub async fn run(mut self) {
         use Status::*;
         let mut catch_up_delay = futures_timer::Delay::new(Duration::from_secs(5)).fuse();
         let mut delay_passed = false;
+
+        let status_ticker_delay = Duration::from_secs(1);
+        let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
         loop {
             futures::select! {
@@ -273,6 +281,10 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
                         self.finish(round);
                         return;
                     },
+                },
+                _ = &mut status_ticker => {
+                    self.status_report();
+                    status_ticker = Delay::new(status_ticker_delay).fuse();
                 },
             }
         }

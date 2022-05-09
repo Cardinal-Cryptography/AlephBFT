@@ -15,12 +15,14 @@ use futures::{
     future::FusedFuture,
     pin_mut, Future, FutureExt, StreamExt,
 };
+use futures_timer::Delay;
 use log::{debug, error, info, trace, warn};
 use std::{
     collections::HashSet,
     convert::TryFrom,
     io::{Read, Write},
     marker::PhantomData,
+    time::Duration,
 };
 
 mod backup;
@@ -629,6 +631,28 @@ where
         self.send_consensus_notification(NotificationIn::NewUnits(units_to_move))
     }
 
+    fn status_report(&self) {
+        let store_status = self.store.status_report();
+        info!(target: "status", "Beginning runway status report.");
+        info!(target: "status", "DAG size: {:?}", store_status.size);
+        if let Some(r) = store_status.height {
+            info!(target: "status", "DAG height: {:?}", r);
+        }
+        info!(target: "status", "DAG top row: {:?}", store_status.top_row);
+        info!(target: "status", "DAG legit buffer size: {:?}", store_status.legit_buffer_size);
+        let forkers = store_status.forkers.elements().collect::<Vec<_>>();
+        if !forkers.is_empty() {
+            info!(target: "status", "Forkers: {:?}", forkers);
+        }
+        if !self.missing_coords.is_empty() {
+            info!(target: "status", "Missing coords: {:?}", &self.missing_coords);
+        }
+        if !self.missing_parents.is_empty() {
+            info!(target: "status", "Missing parents: {:?}", &self.missing_parents);
+        }
+        info!(target: "status", "Finished runway status report.");
+    }
+
     async fn run(
         mut self,
         units_from_backup: oneshot::Receiver<Vec<UncheckedSignedUnit<H, D, MK::Signature>>>,
@@ -637,6 +661,9 @@ where
         let index = self.index();
         let units_from_backup = units_from_backup.fuse();
         pin_mut!(units_from_backup);
+
+        let status_ticker_delay = Duration::from_secs(1);
+        let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
         info!(target: "AlephBFT-runway", "{:?} Runway started.", index);
         loop {
@@ -685,6 +712,11 @@ where
                         error!(target: "AlephBFT-runway", "{:?} Ordered batch stream closed.", index);
                         break;
                     }
+                },
+
+                _ = &mut status_ticker => {
+                    self.status_report();
+                    status_ticker = Delay::new(status_ticker_delay).fuse();
                 },
 
                 _ = &mut exit => {
