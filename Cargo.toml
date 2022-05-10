@@ -12,6 +12,7 @@ members = [
     # Examples
     "examples/dummy_honest",
     "examples/blockchain",
+    "examples/network",
 
     # Fuzzing
     "fuzz"

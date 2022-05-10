@@ -112,6 +112,7 @@ name = "aleph-bft-examples-blockchain"
 version = "0.0.0"
 dependencies = [
  "aleph-bft",
+ "aleph-bft-examples-network",
  "aleph-bft-mock",
  "async-trait",
  "chrono",
@@ -133,16 +134,26 @@ name = "aleph-bft-examples-dummy-honest"
 version = "0.0.0"
 dependencies = [
  "aleph-bft",
+ "aleph-bft-examples-network",
  "aleph-bft-mock",
- "async-trait",
  "chrono",
  "clap 3.1.12",
  "env_logger",
  "futures",
- "libp2p",
+ "log",
+ "parking_lot 0.12.0",
+ "tokio",
+]
+
+[[package]]
+name = "aleph-bft-examples-network"
+version = "0.0.0"
+dependencies = [
+ "aleph-bft",
+ "aleph-bft-mock",
+ "async-trait",
  "log",
  "parity-scale-codec",
- "parking_lot 0.12.0",
  "tokio",
 ]
 
@@ -2971,13 +2982,16 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tokio"
-version = "1.17.0"
+version = "1.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2af73ac49756f3f7c01172e34a23e5d0216f6c32333757c2c61feb2bbff5a5ee"
+checksum = "4903bf0427cf68dddd5aa6a93220756f8be0c34fcfa9f5e6191e103e15a31395"
 dependencies = [
+ "bytes 1.1.0",
  "libc",
+ "memchr",
  "mio",
  "num_cpus",
+ "once_cell",
  "pin-project-lite 0.2.8",
  "socket2 0.4.4",
  "tokio-macros",
