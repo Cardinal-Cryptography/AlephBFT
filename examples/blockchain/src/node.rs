@@ -6,10 +6,7 @@ use aleph_bft_examples_blockchain::{
 };
 use chrono::Local;
 use clap::Parser;
-use futures::channel::{
-    mpsc::unbounded,
-    oneshot,
-};
+use futures::channel::{mpsc::unbounded, oneshot};
 use std::{collections::HashMap, io::Write, str::FromStr};
 
 /// Blockchain example.

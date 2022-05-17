@@ -1,9 +1,10 @@
 use crate::{blockchain::Transaction, consensus::ConsensusData, io::NetworkConsensusIO};
-use futures::channel::mpsc::UnboundedReceiver;
 use aleph_bft::Recipient;
 use codec::{Decode, Encode};
-use futures::{FutureExt, StreamExt};
-use futures::channel::oneshot;
+use futures::{
+    channel::{mpsc::UnboundedReceiver, oneshot},
+    FutureExt, StreamExt,
+};
 use futures_timer::Delay;
 use log::error;
 use std::{
@@ -221,9 +222,12 @@ impl ClientNetwork {
     }
 
     fn command(&self, command: String) {
-        let mut command = command.split_whitespace().map(|s| s.to_string()).collect::<Vec<String>>();
+        let mut command = command
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect::<Vec<String>>();
         let mut n_times = 1;
-        if command.len() == 0 {
+        if command.is_empty() {
             println!("Command empty.");
             return;
         }
@@ -235,23 +239,33 @@ impl ClientNetwork {
             println!("Missing recipient.");
             return;
         }
-        let (command, args, recipient) = (command[0].clone(), command[1..command.len()-1].to_vec(), command[command.len()-1].clone());
+        let (command, args, recipient) = (
+            command[0].clone(),
+            command[1..command.len() - 1].to_vec(),
+            command[command.len() - 1].clone(),
+        );
         let recipient = recipient.parse::<usize>().unwrap_or(0);
-        let args: Vec<u32> = args.into_iter().map(|s| s.parse::<u32>().unwrap_or(0)).collect();
+        let args: Vec<u32> = args
+            .into_iter()
+            .map(|s| s.parse::<u32>().unwrap_or(0))
+            .collect();
         let message = match (command.as_str(), args.len()) {
             ("CRASH", 0) => Message::Crash,
             ("PRINT", 2) => Message::Transaction(Transaction::Print(args[0], args[1])),
             ("BURN", 2) => Message::Transaction(Transaction::Burn(args[0], args[1])),
-            ("TRANSFER", 3) => Message::Transaction(Transaction::Transfer(args[0], args[1], args[2])),
+            ("TRANSFER", 3) => {
+                Message::Transaction(Transaction::Transfer(args[0], args[1], args[2]))
+            }
             _ => {
                 println!("Command not recognized:");
                 println!("{} {:?}", command.as_str(), args);
                 return;
-            },
+            }
         };
         for _ in 0..n_times {
             println!("Trying to send {:?} to {}", message, recipient);
-            self.try_send_to_node(message.clone(), recipient).unwrap_or(());
+            self.try_send_to_node(message.clone(), recipient)
+                .unwrap_or(());
         }
     }
 
