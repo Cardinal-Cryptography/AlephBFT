@@ -10,6 +10,10 @@ publish = false
 name = "node"
 path = "src/node.rs"
 
+[[bin]]
+name = "client"
+path = "src/client.rs"
+
 [dependencies]
 aleph-bft = { path = "../../consensus", version = "*" }
 aleph-bft-mock = { path = "../../mock", version = "*" }

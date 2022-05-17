@@ -2,11 +2,14 @@ use aleph_bft_examples_blockchain::{
     blockchain::Blockchain,
     consensus::run as run_consensus,
     io::consensus_network_io,
-    network::{Address, Network},
+    network::{Address, NodeNetwork},
 };
 use chrono::Local;
 use clap::Parser;
-use futures::channel::mpsc::unbounded;
+use futures::channel::{
+    mpsc::unbounded,
+    oneshot,
+};
 use std::{collections::HashMap, io::Write, str::FromStr};
 
 /// Blockchain example.
@@ -26,7 +29,7 @@ struct Args {
     #[clap(long, value_delimiter = ',')]
     bootnodes_ip_addr: Vec<String>,
 
-    #[clap(default_value = "50", long)]
+    #[clap(default_value = "1000", long)]
     n_blocks: u32,
 
     #[clap(default_value = "5", long)]
@@ -61,34 +64,42 @@ async fn main() {
         .zip(args.bootnodes_ip_addr)
         .map(|(id, addr)| (id, Address::from_str(&addr).unwrap()))
         .collect();
-    let (tx_transactions, rx_transactions) = unbounded();
-    let mut blockchain = Blockchain::new(
-        args.n_clients,
-        args.n_blocks,
-        args.n_tr_per_block,
-        rx_transactions,
-    );
-    let (network_io, consensus_io) = consensus_network_io();
-    let mut network = Network::new(
-        args.id as usize,
-        args.ip_addr,
-        args.n_nodes as usize,
-        bootnodes,
-        consensus_io,
-    )
-    .await;
 
-    tokio::spawn(async move {
-        run_consensus(
+    loop {
+        let (tx_crash, rx_crash) = oneshot::channel();
+        let (tx_transactions, rx_transactions) = unbounded();
+        let (network_io, consensus_io) = consensus_network_io();
+        let mut blockchain = Blockchain::new(
+            args.n_clients,
+            args.n_blocks,
+            args.n_tr_per_block,
+            rx_transactions,
+        );
+        let mut network = NodeNetwork::new(
             args.id as usize,
+            args.ip_addr.clone(),
             args.n_nodes as usize,
-            network_io,
-            tx_transactions,
+            bootnodes.clone(),
+            consensus_io,
+            tx_crash,
         )
-        .await
-    });
-    tokio::spawn(async move { network.run().await });
-    let blockchain_handle = tokio::spawn(async move { blockchain.run().await });
+        .await;
 
-    blockchain_handle.await.unwrap();
+        tokio::spawn(async move {
+            run_consensus(
+                args.id as usize,
+                args.n_nodes as usize,
+                network_io,
+                tx_transactions,
+            )
+            .await
+        });
+        tokio::spawn(async move { network.run().await });
+        let mut blockchain_handle = tokio::spawn(async move { blockchain.run().await });
+
+        tokio::select! {
+            _ = &mut blockchain_handle => break,
+            _ = rx_crash => continue,
+        }
+    }
 }

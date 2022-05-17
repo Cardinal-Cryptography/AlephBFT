@@ -1,7 +1,9 @@
 use crate::{blockchain::Transaction, consensus::ConsensusData, io::NetworkConsensusIO};
+use futures::channel::mpsc::UnboundedReceiver;
 use aleph_bft::Recipient;
 use codec::{Decode, Encode};
 use futures::{FutureExt, StreamExt};
+use futures::channel::oneshot;
 use futures_timer::Delay;
 use log::error;
 use std::{
@@ -55,23 +57,26 @@ pub enum Message {
     DNSResponse(Vec<Option<Address>>),
     Transaction(Transaction),
     Consensus(Box<ConsensusData>),
+    Crash,
 }
 
-pub struct Network {
+pub struct NodeNetwork {
     id: usize,
     address: Address,
     addresses: Vec<Option<Address>>,
     listener: TcpListener,
     consensus_io: NetworkConsensusIO,
+    crash: Option<oneshot::Sender<()>>,
 }
 
-impl Network {
+impl NodeNetwork {
     pub async fn new(
         id: usize,
         ip_addr: String,
         n_nodes: usize,
         bootnodes: HashMap<u32, Address>,
         consensus_io: NetworkConsensusIO,
+        crash: oneshot::Sender<()>,
     ) -> Self {
         let mut addresses = vec![None; n_nodes];
         for (id, addr) in bootnodes {
@@ -85,6 +90,7 @@ impl Network {
             addresses,
             listener,
             consensus_io,
+            crash: Some(crash),
         }
     }
 
@@ -124,8 +130,6 @@ impl Network {
     }
 
     pub async fn run(&mut self) {
-        let ticker_delay = std::time::Duration::from_millis(3000);
-        let mut ticker = Delay::new(ticker_delay).fuse();
         let dns_ticker_delay = std::time::Duration::from_millis(1000);
         let mut dns_ticker = Delay::new(dns_ticker_delay).fuse();
 
@@ -140,14 +144,17 @@ impl Network {
                 event = self.listener.accept() => match event {
                     Ok((mut socket, _addr)) => match socket.read_to_end(&mut buffer).await {
                         Ok(_) => match Message::decode(&mut &buffer[..]) {
-                            Ok(Message::Transaction(tr)) => { self.consensus_io.tx_transactions.unbounded_send(tr).unwrap();},
-                            Ok(Message::Consensus(data)) => { self.consensus_io.tx_data.unbounded_send(*data).unwrap();},
+                            Ok(Message::Transaction(tr)) => self.consensus_io.tx_transactions.unbounded_send(tr).unwrap(),
+                            Ok(Message::Consensus(data)) => self.consensus_io.tx_data.unbounded_send(*data).unwrap(),
                             Ok(Message::DNSNodeRequest(id, address)) => self.dns_node_request(id as usize, address),
                             Ok(Message::DNSClientRequest(address)) => self.dns_request(address),
                             Ok(Message::DNSResponse(addresses)) => for (id, addr) in addresses.iter().enumerate() {
                                 if let Some(addr) = addr {
                                     self.addresses[id as usize] = Some(addr.clone());
                                 };
+                            },
+                            Ok(Message::Crash) => if let Some(ch) = self.crash.take() {
+                                ch.send(()).unwrap();
                             },
                             Err(_) => (),
                         },
@@ -160,14 +167,125 @@ impl Network {
                     },
                 },
 
-                _ = &mut ticker => {
-                    self.send(Message::Transaction(Transaction::Print(0,10)), Recipient::Everyone);
-                    self.send(Message::Transaction(Transaction::Burn(0,20)), Recipient::Everyone);
-                    ticker = Delay::new(ticker_delay).fuse();
-                },
-
                 _ = &mut dns_ticker => {
                     self.send(Message::DNSNodeRequest(self.id as u32, self.address.clone()), Recipient::Everyone);
+                    if self.addresses.iter().any(|a| a.is_none()) {
+                        dns_ticker = Delay::new(dns_ticker_delay).fuse();
+                    }
+                },
+            }
+        }
+    }
+}
+
+pub struct ClientNetwork {
+    address: Address,
+    addresses: Vec<Option<Address>>,
+    listener: TcpListener,
+    rx_command: UnboundedReceiver<String>,
+}
+
+impl ClientNetwork {
+    pub async fn new(
+        ip_addr: String,
+        n_nodes: usize,
+        bootnodes: HashMap<u32, Address>,
+        rx_command: UnboundedReceiver<String>,
+    ) -> Self {
+        let mut addresses = vec![None; n_nodes];
+        for (id, addr) in bootnodes {
+            addresses[id as usize] = Some(addr);
+        }
+        let (listener, address) = Address::new_bind(ip_addr).await;
+        Self {
+            address,
+            addresses,
+            listener,
+            rx_command,
+        }
+    }
+
+    fn try_send_to_node(&self, message: Message, recipient: usize) -> io::Result<()> {
+        if recipient == 43 {
+            for recipient in 0..self.addresses.len() {
+                self.try_send_to_node(message.clone(), recipient)?;
+            }
+        } else {
+            assert!(recipient < self.addresses.len());
+            if let Some(addr) = &self.addresses[recipient] {
+                addr.connect()?.write_all(&message.encode())?;
+                println!("Message {:?} sent to {:?}.", message, addr);
+            }
+        }
+        Ok(())
+    }
+
+    fn command(&self, command: String) {
+        let mut command = command.split_whitespace().map(|s| s.to_string()).collect::<Vec<String>>();
+        let mut n_times = 1;
+        if command.len() == 0 {
+            println!("Command empty.");
+            return;
+        }
+        if let Ok(n) = command[0].parse::<u32>() {
+            n_times = n;
+            command = command[1..].to_vec();
+        };
+        if command.len() < 2 {
+            println!("Missing recipient.");
+            return;
+        }
+        let (command, args, recipient) = (command[0].clone(), command[1..command.len()-1].to_vec(), command[command.len()-1].clone());
+        let recipient = recipient.parse::<usize>().unwrap_or(0);
+        let args: Vec<u32> = args.into_iter().map(|s| s.parse::<u32>().unwrap_or(0)).collect();
+        let message = match (command.as_str(), args.len()) {
+            ("CRASH", 0) => Message::Crash,
+            ("PRINT", 2) => Message::Transaction(Transaction::Print(args[0], args[1])),
+            ("BURN", 2) => Message::Transaction(Transaction::Burn(args[0], args[1])),
+            ("TRANSFER", 3) => Message::Transaction(Transaction::Transfer(args[0], args[1], args[2])),
+            _ => {
+                println!("Command not recognized:");
+                println!("{} {:?}", command.as_str(), args);
+                return;
+            },
+        };
+        for _ in 0..n_times {
+            println!("Trying to send {:?} to {}", message, recipient);
+            self.try_send_to_node(message.clone(), recipient).unwrap_or(());
+        }
+    }
+
+    pub async fn run(&mut self) {
+        let dns_ticker_delay = std::time::Duration::from_millis(1000);
+        let mut dns_ticker = Delay::new(dns_ticker_delay).fuse();
+
+        loop {
+            let mut buffer = Vec::new();
+            tokio::select! {
+                event = self.listener.accept() => match event {
+                    Ok((mut socket, _addr)) => match socket.read_to_end(&mut buffer).await {
+                        Ok(_) => match Message::decode(&mut &buffer[..]) {
+                            Ok(Message::DNSResponse(addresses)) => for (id, addr) in addresses.iter().enumerate() {
+                                if let Some(addr) = addr {
+                                    self.addresses[id as usize] = Some(addr.clone());
+                                };
+                            },
+                            Ok(_) => (),
+                            Err(_) => (),
+                        },
+                        Err(_) => {
+                            error!("Could not decode incoming data");
+                        }
+                    },
+                    Err(e) => {
+                        error!("Couldn't accept connection: {:?}", e);
+                    },
+                },
+
+                command = self.rx_command.next() => self.command(command.unwrap()),
+
+                _ = &mut dns_ticker => {
+                    self.try_send_to_node(Message::DNSClientRequest(self.address.clone()), 0).unwrap_or(());
                     if self.addresses.iter().any(|a| a.is_none()) {
                         dns_ticker = Delay::new(dns_ticker_delay).fuse();
                     }
