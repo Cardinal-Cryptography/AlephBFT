@@ -70,35 +70,71 @@ More details are available [in the book][reference-link-implementation-details].
 
 ### Examples
 
-Currently we provide two basic examples of running AlephBFT. The first one: `dummy-honest` implements a committee member that is not
-cryptographically secure and serves only as a working example of what traits need to be implemented and how to implement them.
-For example, you may run the following command
+Currently we provide two basic examples of running AlephBFT. The first one: `ordering` implements a committee member that
+generates its own stream of data, and cooperates with other nodes to reach a common linear ordering.
+Run the following command
 ```
-cargo run --example dummy_honest -- --my-id 0 --n-members 1 --n-finalized 10 2> node.log
+cd examples/ordering
+./run.sh
 ```
-and then investigate its output stored in the `node.log` file.
-If you want to set `--n-members` to a higher number, then you should run multiple instances
-of the script with different `--my-id` parameters simultaneously.
+to launch five nodes listening on ports 43000-43004, and investigate the output written to `nodeX.log` files.
 For further details, see
 ```
-cargo run --example dummy_honest -- --help
+cargo run -- --help
 ```
 
-The second example: `blockchain` is meant for benchmarking AlephBFT in the blockchain setting.
-It implements a simple round-robin blockchain assuming honest participation.
-The easiest way to run it is to use the provided script as follows (assuming we start in the root directory)
+The second example: `blockchain` implements a simple blockchain built upon our consensus protocol.
+The blockchain state is represented by a vector of integers, each denoting the account balance
+of a specific client.
 
-```
-./examples/blockchain/run_blockchain.sh 4
-```
-where `4` in the above is the number of committee members, and can be replaced by any reasonable number.
-Running this script will result in generating log files `node0.log, node1.log, ...` corresponding to subsequent nodes.
-The achieved transactions per second will be among the final log messages in these files.
-The script runs member instances in background, so it is important to wait until they finish before launching again.
+Clients and nodes are numbered, separately, with consecutive integers. This toy blockchain is not cryptographically
+secure, and the numbers also serve as mock signatures.
 
-If you're not patient enough, you may always kill them manually, e.g. by running
+Run
 ```
-killall -p blockchain
+cd examples/blockchain
+./run_nodes.sh
+```
+to start five nodes in background, and investigate the output written to `nodeX.log` files.
+Remember to stop the nodes before running this script again, e.g.
+```
+killall -p node
+```
+
+Nodes use a simple discovery protocol, so as long as you specify at least one bootnode with fixed IP address,
+the other nodes will be able to broadcast their location.
+When providing the port number, you may set it to zero, and then a free port will be given by the operating system,
+but note that bootnodes must have properly specified ports.
+
+A new block is generated upon reaching a certain number of finalized transactions - list of those transactions, their status,
+and state of the blockchain will be logged upon block creation.
+Since transactions are required to proceed, you may run
+```
+./run_dummy_client.sh
+```
+and the script will send a no-op transaction every 200 ms, thus creating a new block every second.
+
+We also provide an interactive client
+```
+./run_client.sh
+```
+which can be run concurrently with the dummy client, and allows you to manually send one of
+four types of messages: `print`, `burn`, `transfer`, and `crash`.
+For example:
+    `print 0 100 3` - add 100 to the account of client 0, send the request to node 3,
+    `burn 2 50 broadcast` - subtract 50 from the accout of client 2, but send the request to every node, so it will be processed multiple times,
+    `3 transfer 1 2 50 4` - transfer 50 from client 1 to client 2, send 3 such requests to node 4,
+    `crash 1` - crash and restart node 1,
+    `crash broadcast` - crash and restart all nodes.
+
+A transaction can be rejected (but still included in a block) if there are insufficient funds on the client's account.
+This fact will be denoted in the logs.
+Also, since crashing and restarting the nodes happens inside the node binary, you'll be able to test complex scenarios of scheduled crashes
+and have a single log file per node.
+
+For further details, see
+```
+cargo run [node|client|dummy_client] -- --help
 ```
 
 ### Dependencies
