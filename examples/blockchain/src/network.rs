@@ -6,7 +6,7 @@ use futures::{
     FutureExt, StreamExt,
 };
 use futures_timer::Delay;
-use log::error;
+use log::{error, info};
 use std::{
     collections::HashMap,
     io::Write,
@@ -46,6 +46,7 @@ impl Address {
         let ip_addr = listener.local_addr().unwrap().to_string();
         (listener, Self::from_str(&ip_addr).unwrap())
     }
+
     pub fn connect(&self) -> io::Result<TcpStream> {
         TcpStream::connect(SocketAddr::from((self.octets, self.port)))
     }
@@ -65,6 +66,7 @@ pub struct NodeNetwork {
     id: usize,
     address: Address,
     addresses: Vec<Option<Address>>,
+    bootnodes: HashMap<u32, Address>,
     listener: TcpListener,
     consensus_io: NetworkConsensusIO,
     crash: Option<oneshot::Sender<()>>,
@@ -80,8 +82,8 @@ impl NodeNetwork {
         crash: oneshot::Sender<()>,
     ) -> Self {
         let mut addresses = vec![None; n_nodes];
-        for (id, addr) in bootnodes {
-            addresses[id as usize] = Some(addr);
+        for (id, addr) in &bootnodes {
+            addresses[*id as usize] = Some(addr.clone());
         }
         let (listener, address) = Address::new_bind(ip_addr).await;
         addresses[id] = Some(address.clone());
@@ -89,19 +91,33 @@ impl NodeNetwork {
             id,
             address,
             addresses,
+            bootnodes,
             listener,
             consensus_io,
             crash: Some(crash),
         }
     }
 
-    fn send(&self, message: Message, recipient: Recipient) {
+    fn reset_dns(&mut self, n: usize) {
+        if !self.bootnodes.contains_key(&(n as u32)) {
+            error!("Reseting address of node {}", n);
+            self.addresses[n] = None;
+        }
+    }
+
+    fn send(&mut self, message: Message, recipient: Recipient) {
         match recipient {
-            Recipient::Node(n) => self.try_send_to_peer(message, n.into()).unwrap_or(()),
+            Recipient::Node(n) => match self.try_send_to_peer(message, n.into()) {
+                Ok(_) => (),
+                Err(_) => self.reset_dns(n.into()),
+            },
             Recipient::Everyone => {
                 for n in 0..self.addresses.len() {
                     if n != self.id {
-                        self.try_send_to_peer(message.clone(), n).unwrap_or(());
+                        match self.try_send_to_peer(message.clone(), n) {
+                            Ok(_) => (),
+                            Err(_) => self.reset_dns(n),
+                        }
                     };
                 }
             }
@@ -145,8 +161,8 @@ impl NodeNetwork {
                 event = self.listener.accept() => match event {
                     Ok((mut socket, _addr)) => match socket.read_to_end(&mut buffer).await {
                         Ok(_) => match Message::decode(&mut &buffer[..]) {
-                            Ok(Message::Transaction(tr)) => self.consensus_io.tx_transactions.unbounded_send(tr).unwrap(),
-                            Ok(Message::Consensus(data)) => self.consensus_io.tx_data.unbounded_send(*data).unwrap(),
+                            Ok(Message::Transaction(tr)) => self.consensus_io.tx_transactions.unbounded_send(tr).unwrap_or(()),
+                            Ok(Message::Consensus(data)) => self.consensus_io.tx_data.unbounded_send(*data).unwrap_or(()),
                             Ok(Message::DNSNodeRequest(id, address)) => self.dns_node_request(id as usize, address),
                             Ok(Message::DNSClientRequest(address)) => self.dns_request(address),
                             Ok(Message::DNSResponse(addresses)) => for (id, addr) in addresses.iter().enumerate() {
@@ -155,7 +171,7 @@ impl NodeNetwork {
                                 };
                             },
                             Ok(Message::Crash) => if let Some(ch) = self.crash.take() {
-                                ch.send(()).unwrap();
+                                ch.send(()).unwrap_or(());
                             },
                             Err(_) => (),
                         },
@@ -169,10 +185,11 @@ impl NodeNetwork {
                 },
 
                 _ = &mut dns_ticker => {
-                    self.send(Message::DNSNodeRequest(self.id as u32, self.address.clone()), Recipient::Everyone);
                     if self.addresses.iter().any(|a| a.is_none()) {
-                        dns_ticker = Delay::new(dns_ticker_delay).fuse();
+                        self.send(Message::DNSNodeRequest(self.id as u32, self.address.clone()), Recipient::Everyone);
+                        info!("Requesting IP addresses");
                     }
+                    dns_ticker = Delay::new(dns_ticker_delay).fuse();
                 },
             }
         }
@@ -182,6 +199,7 @@ impl NodeNetwork {
 pub struct ClientNetwork {
     address: Address,
     addresses: Vec<Option<Address>>,
+    bootnodes: HashMap<u32, Address>,
     listener: TcpListener,
     rx_command: UnboundedReceiver<String>,
 }
@@ -194,34 +212,49 @@ impl ClientNetwork {
         rx_command: UnboundedReceiver<String>,
     ) -> Self {
         let mut addresses = vec![None; n_nodes];
-        for (id, addr) in bootnodes {
-            addresses[id as usize] = Some(addr);
+        for (id, addr) in &bootnodes {
+            addresses[*id as usize] = Some(addr.clone());
         }
         let (listener, address) = Address::new_bind(ip_addr).await;
         Self {
             address,
             addresses,
+            bootnodes,
             listener,
             rx_command,
         }
     }
 
-    fn try_send_to_node(&self, message: Message, recipient: usize) -> io::Result<()> {
-        if recipient == 43 {
+    fn reset_dns(&mut self, n: usize) {
+        if !self.bootnodes.contains_key(&(n as u32)) {
+            error!("Reseting address of node {}", n);
+            self.addresses[n] = None;
+        }
+    }
+
+    fn send(&mut self, message: Message, recipient: usize) {
+        if recipient >= self.addresses.len() {
             for recipient in 0..self.addresses.len() {
-                self.try_send_to_node(message.clone(), recipient)?;
+                self.send(message.clone(), recipient);
             }
         } else {
-            assert!(recipient < self.addresses.len());
-            if let Some(addr) = &self.addresses[recipient] {
-                addr.connect()?.write_all(&message.encode())?;
-                println!("Message {:?} sent to {:?}.", message, addr);
+            match self.try_send_to_node(message, recipient) {
+                Ok(_) => (),
+                Err(_) => self.reset_dns(recipient),
             }
+        }
+    }
+
+    fn try_send_to_node(&self, message: Message, recipient: usize) -> io::Result<()> {
+        assert!(recipient < self.addresses.len());
+        if let Some(addr) = &self.addresses[recipient] {
+            addr.connect()?.write_all(&message.encode())?;
+            println!("Message {:?} sent to {:?}.", message, addr);
         }
         Ok(())
     }
 
-    fn command(&self, command: String) {
+    fn command(&mut self, command: String) {
         let mut command = command
             .split_whitespace()
             .map(|s| s.to_string())
@@ -244,16 +277,21 @@ impl ClientNetwork {
             command[1..command.len() - 1].to_vec(),
             command[command.len() - 1].clone(),
         );
-        let recipient = recipient.parse::<usize>().unwrap_or(0);
+        let recipient_id: usize;
+        if recipient == *"broadcast".to_string() {
+            recipient_id = self.addresses.len();
+        } else {
+            recipient_id = recipient.parse::<usize>().unwrap_or(0);
+        }
         let args: Vec<u32> = args
             .into_iter()
             .map(|s| s.parse::<u32>().unwrap_or(0))
             .collect();
         let message = match (command.as_str(), args.len()) {
-            ("CRASH", 0) => Message::Crash,
-            ("PRINT", 2) => Message::Transaction(Transaction::Print(args[0], args[1])),
-            ("BURN", 2) => Message::Transaction(Transaction::Burn(args[0], args[1])),
-            ("TRANSFER", 3) => {
+            ("crash", 0) => Message::Crash,
+            ("print", 2) => Message::Transaction(Transaction::Print(args[0], args[1])),
+            ("burn", 2) => Message::Transaction(Transaction::Burn(args[0], args[1])),
+            ("transfer", 3) => {
                 Message::Transaction(Transaction::Transfer(args[0], args[1], args[2]))
             }
             _ => {
@@ -263,9 +301,8 @@ impl ClientNetwork {
             }
         };
         for _ in 0..n_times {
-            println!("Trying to send {:?} to {}", message, recipient);
-            self.try_send_to_node(message.clone(), recipient)
-                .unwrap_or(());
+            println!("Trying to send {:?} to {}", message, recipient_id);
+            self.send(message.clone(), recipient_id);
         }
     }
 
@@ -299,10 +336,10 @@ impl ClientNetwork {
                 command = self.rx_command.next() => self.command(command.unwrap()),
 
                 _ = &mut dns_ticker => {
-                    self.try_send_to_node(Message::DNSClientRequest(self.address.clone()), 0).unwrap_or(());
                     if self.addresses.iter().any(|a| a.is_none()) {
-                        dns_ticker = Delay::new(dns_ticker_delay).fuse();
+                        self.send(Message::DNSClientRequest(self.address.clone()), 5);
                     }
+                    dns_ticker = Delay::new(dns_ticker_delay).fuse();
                 },
             }
         }

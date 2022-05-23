@@ -7,7 +7,9 @@ use aleph_bft_examples_blockchain::{
 use chrono::Local;
 use clap::Parser;
 use futures::channel::{mpsc::unbounded, oneshot};
-use std::{collections::HashMap, io::Write, str::FromStr};
+use log::info;
+use parking_lot::Mutex;
+use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc};
 
 /// Blockchain example.
 #[derive(Parser, Debug)]
@@ -62,6 +64,8 @@ async fn main() {
         .map(|(id, addr)| (id, Address::from_str(&addr).unwrap()))
         .collect();
 
+    let mut backup = vec![];
+
     loop {
         let (tx_crash, rx_crash) = oneshot::channel();
         let (tx_transactions, rx_transactions) = unbounded();
@@ -82,21 +86,40 @@ async fn main() {
         )
         .await;
 
+        let loader_vec = backup.clone();
+        let saver_vec = Arc::new(Mutex::new(vec![]));
+        let c_saver_vec = Arc::clone(&saver_vec);
+        let (close_member, exit) = oneshot::channel();
+
         tokio::spawn(async move {
             run_consensus(
                 args.id as usize,
                 args.n_nodes as usize,
                 network_io,
                 tx_transactions,
+                loader_vec,
+                c_saver_vec,
+                exit,
             )
             .await
         });
-        tokio::spawn(async move { network.run().await });
+        let network_handle = tokio::spawn(async move { network.run().await });
         let mut blockchain_handle = tokio::spawn(async move { blockchain.run().await });
 
         tokio::select! {
-            _ = &mut blockchain_handle => break,
-            _ = rx_crash => continue,
+            _ = &mut blockchain_handle => {
+                info!("Blockchain finished.");
+                break;
+            },
+            _ = rx_crash => {
+                close_member.send(()).unwrap();
+                network_handle.abort();
+                blockchain_handle.abort();
+                info!("Restarting the node in 5 seconds.");
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                backup = saver_vec.lock().to_vec();
+                continue;
+            },
         }
     }
 }

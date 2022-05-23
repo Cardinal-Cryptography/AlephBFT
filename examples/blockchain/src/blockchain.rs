@@ -57,6 +57,7 @@ impl Blockchain {
             rx_transactions,
         }
     }
+
     fn add_transaction(&mut self, transaction: Transaction) -> bool {
         self.transactions_buffer.push(transaction);
         if self.transactions_buffer.len() == self.n_tr_per_block as usize {
@@ -64,6 +65,7 @@ impl Blockchain {
         }
         self.blocks.len() == self.n_blocks as usize
     }
+
     fn create_block(&mut self) {
         let mut transactions: Vec<ProcessedTransaction> = vec![];
         for tr in self.transactions_buffer.clone().iter() {
@@ -80,6 +82,7 @@ impl Blockchain {
         self.blocks.push(block);
         self.transactions_buffer = vec![];
     }
+
     fn process_transaction(&mut self, transaction: &Transaction) -> ProcessedTransaction {
         match transaction {
             Transaction::Print(id, n) => {
@@ -105,12 +108,12 @@ impl Blockchain {
             }
         }
     }
+
     pub async fn run(&mut self) {
-        loop {
-            let transaction = self.rx_transactions.next().await.unwrap();
+        while let Some(transaction) = self.rx_transactions.next().await {
             if self.add_transaction(transaction) {
                 break;
-            };
+            }
         }
     }
 }

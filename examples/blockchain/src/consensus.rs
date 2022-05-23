@@ -51,6 +51,7 @@ impl NetworkT<ConsensusData> for ConsensusNetwork {
     fn send(&self, data: ConsensusData, recipient: Recipient) {
         self.tx_data.unbounded_send((data, recipient)).unwrap();
     }
+
     async fn next_event(&mut self) -> Option<ConsensusData> {
         self.rx_data.next().await
     }
@@ -61,6 +62,9 @@ pub async fn run(
     n_members: usize,
     network_io: ConsensusNetworkIO,
     blockchain_io: UnboundedSender<Transaction>,
+    loader_vec: Vec<u8>,
+    saver_vec: Arc<Mutex<Vec<u8>>>,
+    exit: oneshot::Receiver<()>,
 ) {
     let network = ConsensusNetwork {
         rx_data: network_io.rx_data,
@@ -72,15 +76,14 @@ pub async fn run(
     let finalization_handler = FinalizationHandler {
         tx_transactions: blockchain_io,
     };
-    let backup_loader = Loader::new(vec![]);
-    let backup_saver = Saver::new(Arc::new(Mutex::new(vec![])));
+    let backup_loader = Loader::new(loader_vec);
+    let backup_saver = Saver::new(saver_vec);
     let local_io = aleph_bft::LocalIO::new(
         data_provider,
         finalization_handler,
         backup_saver,
         backup_loader,
     );
-    let (_close_member, exit) = oneshot::channel();
     let keychain = Keychain::new(n_members.into(), id.into());
     let config = aleph_bft::default_config(n_members.into(), id.into(), 0);
     run_session(config, local_io, network, keychain, Spawner {}, exit).await

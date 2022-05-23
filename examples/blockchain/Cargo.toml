@@ -6,14 +6,6 @@ authors = ["Cardinal Cryptography"]
 license = "Apache-2.0"
 publish = false
 
-[[bin]]
-name = "node"
-path = "src/node.rs"
-
-[[bin]]
-name = "client"
-path = "src/client.rs"
-
 [dependencies]
 aleph-bft = { path = "../../consensus", version = "*" }
 aleph-bft-mock = { path = "../../mock", version = "*" }
