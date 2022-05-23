@@ -6,14 +6,15 @@ authors = ["Cardinal Cryptography"]
 license = "Apache-2.0"
 publish = false
 
-[dev-dependencies]
+[dependencies]
 aleph-bft = { path = "../../consensus", version = "*" }
 aleph-bft-mock = { path = "../../mock", version = "*" }
-aleph-bft-examples-network = { path = "../network", version = "*" }
+async-trait = "0.1"
 chrono = "0.4"
 clap = { version = "3.1.8", features = ["derive"] }
+codec = { package = "parity-scale-codec", version = "3.0", default-features = false, features = ["derive"] }
 env_logger = "0.9"
 futures = "0.3"
 log = "0.4"
 parking_lot = "0.12"
-tokio = { version = "1.18", features = ["macros", "rt", "rt-multi-thread", "io-util"] }
+tokio = { version = "1.18", features = ["macros", "rt", "rt-multi-thread", "io-util", "net"] }

@@ -1,5 +1,4 @@
 use aleph_bft::run_session;
-use aleph_bft_examples_network::Network;
 use aleph_bft_mock::{DataProvider, FinalizationHandler, Keychain, Loader, Saver, Spawner};
 use chrono::Local;
 use clap::Parser;
@@ -7,6 +6,9 @@ use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
 use parking_lot::Mutex;
 use std::{io::Write, sync::Arc};
+
+mod network;
+use network::Network;
 
 /// Dummy honest node example.
 #[derive(Parser, Debug)]
@@ -42,7 +44,7 @@ async fn main() {
 
     let args = Args::parse();
 
-    info!(target: "dummy-honest", "Getting network up.");
+    info!("Getting network up.");
     let network = Network::new(args.my_id, &args.ports).await.unwrap();
     let n_members = args.ports.len();
     let data_provider = DataProvider::new();
@@ -65,9 +67,13 @@ async fn main() {
 
     for i in 0..args.n_finalized {
         match finalized_rx.next().await {
-            Some(_) => debug!(target: "dummy-honest", "Got new batch. Finalized: {:?}", i+1),
+            Some(_) => debug!("Got new batch. Finalized: {:?}", i + 1),
             None => {
-                error!(target: "dummy-honest", "Finalization stream finished too soon. Got {:?} batches, wanted {:?} batches", i+1, args.n_finalized);
+                error!(
+                    "Finalization stream finished too soon. Got {:?} batches, wanted {:?} batches",
+                    i + 1,
+                    args.n_finalized
+                );
                 panic!("Finalization stream finished too soon.");
             }
         }

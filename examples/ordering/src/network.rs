@@ -31,7 +31,8 @@ impl Network {
             listener,
         })
     }
-    fn send2(&self, data: NetworkData, recipient: &Recipient) -> io::Result<()> {
+
+    fn send(&self, data: NetworkData, recipient: &Recipient) -> io::Result<()> {
         match recipient {
             Recipient::Everyone => {
                 for r in 0..self.addresses.len() {
@@ -42,6 +43,7 @@ impl Network {
         }
         Ok(())
     }
+
     fn send_to_peer(&self, data: NetworkData, recipient: usize) -> io::Result<()> {
         assert!(recipient < self.addresses.len());
         if recipient != self.my_id {
@@ -55,11 +57,12 @@ impl Network {
 #[async_trait::async_trait]
 impl aleph_bft::Network<NetworkData> for Network {
     fn send(&self, data: NetworkData, recipient: Recipient) {
-        match self.send2(data, &recipient) {
+        match self.send(data, &recipient) {
             Ok(_) => (),
             Err(_) => error!("Sending failed, recipient: {:?}", recipient),
         };
     }
+
     async fn next_event(&mut self) -> Option<NetworkData> {
         let mut buffer = Vec::new();
         match self.listener.accept().await {
