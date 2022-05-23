@@ -121,11 +121,11 @@ We also provide an interactive client
 which can be run concurrently with the dummy client, and allows you to manually send one of
 four types of messages: `print`, `burn`, `transfer`, and `crash`.
 For example:
-    `print 0 100 3` - add 100 to the account of client 0, send the request to node 3,
-    `burn 2 50 broadcast` - subtract 50 from the accout of client 2, but send the request to every node, so it will be processed multiple times,
-    `3 transfer 1 2 50 4` - transfer 50 from client 1 to client 2, send 3 such requests to node 4,
-    `crash 1` - crash and restart node 1,
-    `crash broadcast` - crash and restart all nodes.
+- `print 0 100 3` - add 100 to the account of client 0, send the request to node 3,
+- `burn 2 50 broadcast` - subtract 50 from the accout of client 2, but send the request to every node, so it will be processed multiple times,
+- `3 transfer 1 2 50 4` - transfer 50 from client 1 to client 2, send 3 such requests to node 4,
+- `crash 1` - crash and restart node 1,
+- `crash broadcast` - crash and restart all nodes.
 
 A transaction can be rejected (but still included in a block) if there are insufficient funds on the client's account.
 This fact will be denoted in the logs.
