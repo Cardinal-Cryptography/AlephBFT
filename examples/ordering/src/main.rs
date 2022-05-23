@@ -10,21 +10,21 @@ use std::{io::Write, sync::Arc};
 mod network;
 use network::Network;
 
-/// Dummy honest node example.
+/// Example node producing linear order.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// Our index
+    /// Index of the node
     #[clap(long)]
-    my_id: usize,
+    id: usize,
 
     /// Ports
     #[clap(long, value_delimiter = ',')]
     ports: Vec<usize>,
 
-    /// Number of data to be finalized
+    /// Number of items to be ordered
     #[clap(long)]
-    n_finalized: usize,
+    n_items: usize,
 }
 
 #[tokio::main]
@@ -45,7 +45,7 @@ async fn main() {
     let args = Args::parse();
 
     info!("Getting network up.");
-    let network = Network::new(args.my_id, &args.ports).await.unwrap();
+    let network = Network::new(args.id, &args.ports).await.unwrap();
     let n_members = args.ports.len();
     let data_provider = DataProvider::new();
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
@@ -60,19 +60,19 @@ async fn main() {
 
     let (close_member, exit) = oneshot::channel();
     let member_handle = tokio::spawn(async move {
-        let keychain = Keychain::new(n_members.into(), args.my_id.into());
-        let config = aleph_bft::default_config(n_members.into(), args.my_id.into(), 0);
+        let keychain = Keychain::new(n_members.into(), args.id.into());
+        let config = aleph_bft::default_config(n_members.into(), args.id.into(), 0);
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
-    for i in 0..args.n_finalized {
+    for i in 0..args.n_items {
         match finalized_rx.next().await {
             Some(_) => debug!("Got new batch. Finalized: {:?}", i + 1),
             None => {
                 error!(
                     "Finalization stream finished too soon. Got {:?} batches, wanted {:?} batches",
                     i + 1,
-                    args.n_finalized
+                    args.n_items
                 );
                 panic!("Finalization stream finished too soon.");
             }

@@ -7,19 +7,23 @@ use std::{
     str::FromStr,
 };
 
-/// Blockchain example.
+/// Example blockchain - interactive client.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
+    /// IP address of the client
     #[clap(default_value = "127.0.0.1:0", long)]
     ip_addr: String,
 
+    /// Number of nodes
     #[clap(default_value = "5", long)]
     n_nodes: u32,
 
+    /// Bootnodes indices
     #[clap(long, value_delimiter = ',')]
     bootnodes_id: Vec<u32>,
 
+    /// Bootnodes addresses
     #[clap(long, value_delimiter = ',')]
     bootnodes_ip_addr: Vec<String>,
 }

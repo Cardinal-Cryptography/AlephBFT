@@ -11,32 +11,39 @@ use log::info;
 use parking_lot::Mutex;
 use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc};
 
-/// Blockchain example.
+/// Example blockchain - node.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// Our index
+    /// Index of the node
     #[clap(long)]
     id: u32,
 
+    /// IP address of the node
     #[clap(default_value = "127.0.0.1:0", long)]
     ip_addr: String,
 
+    /// Bootnodes indices
     #[clap(long, value_delimiter = ',')]
     bootnodes_id: Vec<u32>,
 
+    /// Bootnodes addresses
     #[clap(long, value_delimiter = ',')]
     bootnodes_ip_addr: Vec<String>,
 
-    #[clap(default_value = "1000", long)]
+    /// Blockchain target length
+    #[clap(default_value = "100", long)]
     n_blocks: u32,
 
+    /// Number of transactions per block
     #[clap(default_value = "5", long)]
     n_tr_per_block: u32,
 
+    /// Number of nodes
     #[clap(default_value = "5", long)]
     n_nodes: u32,
 
+    /// Number of clients
     #[clap(default_value = "5", long)]
     n_clients: u32,
 }
