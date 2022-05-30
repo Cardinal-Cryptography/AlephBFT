@@ -23,8 +23,7 @@ impl Network {
         for port in ports {
             addresses.push(format!("127.0.0.1:{}", port).parse::<SocketAddr>()?);
         }
-        let listener =
-            TcpListener::bind(format!("127.0.0.1:{}", ports.get(my_id).unwrap())).await?;
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", ports[my_id])).await?;
         Ok(Network {
             my_id,
             addresses,
@@ -39,7 +38,7 @@ impl Network {
                     self.send_to_peer(data.clone(), r)?;
                 }
             }
-            Recipient::Node(r) => self.send_to_peer(data, (*r).0)?,
+            Recipient::Node(r) => self.send_to_peer(data, r.0)?,
         }
         Ok(())
     }
@@ -57,10 +56,9 @@ impl Network {
 #[async_trait::async_trait]
 impl aleph_bft::Network<NetworkData> for Network {
     fn send(&self, data: NetworkData, recipient: Recipient) {
-        match self.send(data, &recipient) {
-            Ok(_) => (),
-            Err(_) => error!("Sending failed, recipient: {:?}", recipient),
-        };
+        if self.send(data, &recipient).is_err() {
+            error!("Sending failed, recipient: {:?}", recipient);
+        }
     }
 
     async fn next_event(&mut self) -> Option<NetworkData> {
