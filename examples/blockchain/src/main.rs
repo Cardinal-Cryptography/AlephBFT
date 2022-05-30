@@ -81,7 +81,7 @@ async fn main() {
         message_from_network,
     ) = NetworkManager::new(args.my_id, args.ip_addr, args.n_members, bootnodes)
         .await
-        .expect("Libp2p network set-up should succeed.");
+        .expect("Network set-up should succeed.");
     let (data_provider, current_block) = DataProvider::new();
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
     let data_store = DataStore::new(current_block.clone(), message_for_network);
