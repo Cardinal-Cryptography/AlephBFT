@@ -1,17 +1,20 @@
-extern crate aleph_bft_examples_blockchain;
+mod chain;
+mod data;
+mod network;
 
 use aleph_bft::run_session;
-use aleph_bft_examples_blockchain::{
-    run_blockchain, ChainConfig, DataProvider, DataStore, FinalizationHandler, Keychain, Network,
-    Spawner,
-};
-use aleph_bft_mock::{Loader, Saver};
+use aleph_bft_mock::{FinalizationHandler, Keychain, Spawner};
+use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use chrono::Local;
 use clap::Parser;
+use data::{Data, DataProvider, DataStore};
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
-use parking_lot::Mutex;
-use std::{io::Write, sync::Arc, time, time::Duration};
+use network::{Address, NetworkData, NetworkManager};
+use std::{
+    collections::HashMap, fs, fs::File, io, io::Write, path::Path, str::FromStr, time,
+    time::Duration,
+};
 
 const TXS_PER_BLOCK: usize = 50000;
 const TX_SIZE: usize = 300;
@@ -25,6 +28,18 @@ struct Args {
     /// Our index
     #[clap(long)]
     my_id: usize,
+
+    /// IP address of the node
+    #[clap(default_value = "127.0.0.1:0", long)]
+    ip_addr: String,
+
+    /// Bootnodes indices
+    #[clap(long, value_delimiter = ',')]
+    bootnodes_id: Vec<u32>,
+
+    /// Bootnodes addresses
+    #[clap(long, value_delimiter = ',')]
+    bootnodes_ip_addr: Vec<String>,
 
     /// Size of the committee
     #[clap(long)]
@@ -53,14 +68,20 @@ async fn main() {
     let args = Args::parse();
     let start_time = time::Instant::now();
     info!(target: "Blockchain-main", "Getting network up.");
+    let bootnodes: HashMap<u32, Address> = args
+        .bootnodes_id
+        .into_iter()
+        .zip(args.bootnodes_ip_addr)
+        .map(|(id, addr)| (id, Address::from_str(&addr).unwrap()))
+        .collect();
     let (
-        network,
         mut manager,
+        network,
         block_from_data_io_tx,
         block_from_network_rx,
         message_for_network,
         message_from_network,
-    ) = Network::new(args.my_id.into())
+    ) = NetworkManager::new(args.my_id, args.ip_addr, args.n_members, bootnodes)
         .await
         .expect("Libp2p network set-up should succeed.");
     let (data_provider, current_block) = DataProvider::new();
@@ -92,18 +113,37 @@ async fn main() {
         .await
     });
 
+    fn rotate_saved_unit_files(node_id: usize) -> Result<(File, File), io::Error> {
+        let stash_path = Path::new("./backup");
+        let extension = ".units";
+        let session_path = stash_path.join(format!("{}", node_id));
+        fs::create_dir_all(&session_path)?;
+        let index = fs::read_dir(&session_path)
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .filter_map(|x| x.file_name().into_string().ok())
+            .filter_map(|s| u64::from_str(s.strip_suffix(extension)?).ok())
+            .max();
+        let load_path = match index {
+            Some(index) => session_path.join(format!("{}{}", index, extension)),
+            None => "/dev/null".into(),
+        };
+        let load_file = File::open(load_path)?;
+        let save_file = File::create(session_path.join(format!(
+            "{}{}",
+            index.map_or(0, |i| i + 1),
+            extension
+        )))?;
+        Ok((save_file, load_file))
+    }
+
+    let (saver, loader) =
+        rotate_saved_unit_files(args.my_id).expect("Error setting up unit saving");
     let (close_member, exit) = oneshot::channel();
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
-        let backup_loader = Loader::new(vec![]);
-        let backup_saver = Saver::new(Arc::new(Mutex::new(vec![])));
-        let local_io = aleph_bft::LocalIO::new(
-            data_provider,
-            finalization_handler,
-            backup_saver,
-            backup_loader,
-        );
+        let local_io = aleph_bft::LocalIO::new(data_provider, finalization_handler, saver, loader);
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
