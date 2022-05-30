@@ -1,5 +1,5 @@
 [package]
-name = "aleph-bft-examples-dummy-honest"
+name = "aleph-bft-examples-ordering"
 version = "0.0.0"
 edition = "2021"
 authors = ["Cardinal Cryptography"]
