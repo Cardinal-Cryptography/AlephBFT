@@ -10,7 +10,7 @@ use futures::{
     FutureExt, StreamExt,
 };
 use futures_timer::Delay;
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
 use std::{
     collections::HashMap,
     error::Error,
@@ -206,7 +206,7 @@ impl NetworkManager {
     }
 
     fn try_send(&self, message: Message, address: &Address) -> std::io::Result<()> {
-        info!("Trying to send message {:?} to {:?}", message, address);
+        debug!("Trying to send message {:?} to {:?}", message, address);
         address.connect()?.write_all(&message.encode())
     }
 
@@ -231,7 +231,7 @@ impl NetworkManager {
                         match socket.read_to_end(&mut buffer).await {
                             Ok(_) => {
                                 let message = Message::decode(&mut &buffer[..]);
-                                info!("Received message: {:?}", message);
+                                debug!("Received message: {:?}", message);
                                 match message {
                                     Ok(Message::Consensus(data)) => self.consensus_tx.unbounded_send(data).expect("Network must listen"),
                                     Ok(Message::Block(block)) => {
@@ -265,14 +265,14 @@ impl NetworkManager {
                 _ = &mut dns_ticker => {
                     if self.addresses.iter().any(|a| a.is_none()) {
                         self.send(Message::DNSRequest(self.id as u32, self.address.clone()), Recipient::Everyone);
-                        info!("Requesting IP addresses");
+                        debug!("Requesting IP addresses");
                     }
                     dns_ticker = Delay::new(dns_ticker_delay).fuse();
                 },
 
                 _ = &mut dns_hello_ticker => {
                     self.send(Message::DNSHello(self.id as u32, self.address.clone()), Recipient::Everyone);
-                    info!("Sending Hello!");
+                    debug!("Sending Hello!");
                     dns_hello_ticker = Delay::new(dns_hello_ticker_delay).fuse();
                 },
 

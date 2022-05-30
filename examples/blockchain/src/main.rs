@@ -3,7 +3,7 @@ mod data;
 mod network;
 
 use aleph_bft::run_session;
-use aleph_bft_mock::{FinalizationHandler, Keychain, Spawner};
+use aleph_bft_mock::{FinalizationHandler, Keychain, Loader, Saver, Spawner};
 use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use chrono::Local;
 use clap::Parser;
@@ -11,10 +11,8 @@ use data::{Data, DataProvider, DataStore};
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
 use network::{Address, NetworkData, NetworkManager};
-use std::{
-    collections::HashMap, fs, fs::File, io, io::Write, path::Path, str::FromStr, time,
-    time::Duration,
-};
+use parking_lot::Mutex;
+use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc, time, time::Duration};
 
 const TXS_PER_BLOCK: usize = 50000;
 const TX_SIZE: usize = 300;
@@ -113,37 +111,18 @@ async fn main() {
         .await
     });
 
-    fn rotate_saved_unit_files(node_id: usize) -> Result<(File, File), io::Error> {
-        let stash_path = Path::new("./backup");
-        let extension = ".units";
-        let session_path = stash_path.join(format!("{}", node_id));
-        fs::create_dir_all(&session_path)?;
-        let index = fs::read_dir(&session_path)
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .filter_map(|x| x.file_name().into_string().ok())
-            .filter_map(|s| u64::from_str(s.strip_suffix(extension)?).ok())
-            .max();
-        let load_path = match index {
-            Some(index) => session_path.join(format!("{}{}", index, extension)),
-            None => "/dev/null".into(),
-        };
-        let load_file = File::open(load_path)?;
-        let save_file = File::create(session_path.join(format!(
-            "{}{}",
-            index.map_or(0, |i| i + 1),
-            extension
-        )))?;
-        Ok((save_file, load_file))
-    }
-
-    let (saver, loader) =
-        rotate_saved_unit_files(args.my_id).expect("Error setting up unit saving");
     let (close_member, exit) = oneshot::channel();
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
-        let local_io = aleph_bft::LocalIO::new(data_provider, finalization_handler, saver, loader);
+        let backup_loader = Loader::new(vec![]);
+        let backup_saver = Saver::new(Arc::new(Mutex::new(vec![])));
+        let local_io = aleph_bft::LocalIO::new(
+            data_provider,
+            finalization_handler,
+            backup_saver,
+            backup_loader,
+        );
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
