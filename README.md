@@ -72,6 +72,7 @@ More details are available [in the book][reference-link-implementation-details].
 
 Currently we provide two basic examples of running AlephBFT. The first one: `ordering` implements a committee member that is not
 cryptographically secure and serves only as a working example of what traits need to be implemented and how to implement them.
+
 For example, you may run the following command
 ```
 cd ./examples/ordering
@@ -80,6 +81,10 @@ cd ./examples/ordering
 where `5` in the above is the number of committee members, and can be replaced by any reasonable number.
 Running this script will result in generating log files `node0.log, node1.log, ...` corresponding to subsequent nodes.
 The script will try to start nodes at predefined IP addresses, `127.0.0.1:43XXX`, where `XXX` denotes the node id, and a node will panic if the address is not available.
+
+This example creates a directory called `aleph-bft-examples-ordering-backup` required by the crash recovery mechanism, and the logs from subsequent runs are appended to existing log files.
+Therefore, you may simulate node crashes by interrupting the `run.sh` script, and then launching it again.
+To start a new "session", you must manually remove the backup directory and all the log files.
 
 The second example: `blockchain` is meant for benchmarking AlephBFT in the blockchain setting.
 It implements a simple round-robin blockchain assuming honest participation.
