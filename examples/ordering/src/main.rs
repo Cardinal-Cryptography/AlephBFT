@@ -1,11 +1,10 @@
 use aleph_bft::run_session;
-use aleph_bft_mock::{DataProvider, FinalizationHandler, Keychain, Loader, Saver, Spawner};
+use aleph_bft_mock::{DataProvider, FinalizationHandler, Keychain, Spawner};
 use chrono::Local;
 use clap::Parser;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
-use parking_lot::Mutex;
-use std::{io::Write, sync::Arc};
+use std::{fs, fs::File, io, io::Write, path::Path};
 
 mod network;
 use network::Network;
@@ -25,6 +24,23 @@ struct Args {
     /// Number of items to be ordered
     #[clap(long)]
     n_items: usize,
+}
+
+fn create_backup(node_id: usize) -> Result<(File, io::Cursor<Vec<u8>>), io::Error> {
+    let stash_path = Path::new("./aleph-bft-examples-ordering-backup");
+    fs::create_dir_all(&stash_path)?;
+    let file_path = stash_path.join(format!("{}.units", node_id));
+    let _ = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .append(true)
+        .open(file_path.clone());
+    let loader = io::Cursor::new(fs::read(file_path.clone())?);
+    let saver = fs::OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(file_path)?;
+    Ok((saver, loader))
 }
 
 #[tokio::main]
@@ -49,8 +65,8 @@ async fn main() {
     let n_members = args.ports.len();
     let data_provider = DataProvider::new();
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
-    let backup_loader = Loader::new(vec![]);
-    let backup_saver = Saver::new(Arc::new(Mutex::new(vec![])));
+    let (backup_saver, backup_loader) =
+        create_backup(args.id).expect("Error setting up unit saving");
     let local_io = aleph_bft::LocalIO::new(
         data_provider,
         finalization_handler,
@@ -78,6 +94,10 @@ async fn main() {
             }
         }
     }
+    info!("Finalized required number of items.");
+    info!("Waiting 10 seconds for other nodes...");
+    tokio::time::sleep(core::time::Duration::from_secs(10)).await;
+    info!("Shutdown.");
     close_member.send(()).expect("should send");
     member_handle.await.unwrap();
 }
