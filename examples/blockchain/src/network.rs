@@ -268,17 +268,13 @@ impl NetworkManager {
                     dns_hello_ticker = Delay::new(dns_hello_ticker_delay).fuse();
                 },
 
-                maybe_msg = self.consensus_rx.next() => {
-                    if let Some((consensus_msg, recipient)) = maybe_msg {
-                        self.send(Message::Consensus(consensus_msg), recipient);
-                    }
+                Some((consensus_msg, recipient)) = self.consensus_rx.next() => {
+                    self.send(Message::Consensus(consensus_msg), recipient);
                 }
 
-                maybe_block = self.block_rx.next() => {
-                    if let Some(block) = maybe_block {
-                        debug!(target: "Blockchain-network", "Sending block message num {:?}.", block.num);
-                        self.send(Message::Block(block), Recipient::Everyone);
-                    }
+                Some(block) = self.block_rx.next() => {
+                    debug!(target: "Blockchain-network", "Sending block message num {:?}.", block.num);
+                    self.send(Message::Block(block), Recipient::Everyone);
                 }
 
                _ = &mut exit  => break,
