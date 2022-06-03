@@ -7,9 +7,8 @@ use futures::{
         mpsc::{self, UnboundedReceiver, UnboundedSender},
         oneshot,
     },
-    FutureExt, StreamExt,
+    StreamExt,
 };
-use futures_timer::Delay;
 use log::{debug, error, warn};
 use std::{
     collections::HashMap,
@@ -215,11 +214,8 @@ impl NetworkManager {
     }
 
     pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
-        let dns_ticker_delay = std::time::Duration::from_millis(1000);
-        let mut dns_ticker = Delay::new(dns_ticker_delay).fuse();
-        let dns_hello_ticker_delay = std::time::Duration::from_millis(5000);
-        let mut dns_hello_ticker = Delay::new(dns_hello_ticker_delay).fuse();
-
+        let mut dns_interval = tokio::time::interval(std::time::Duration::from_millis(1000));
+        let mut dns_hello_interval = tokio::time::interval(std::time::Duration::from_millis(5000));
         loop {
             let mut buffer = Vec::new();
             tokio::select! {
@@ -254,18 +250,16 @@ impl NetworkManager {
                     },
                 },
 
-                _ = &mut dns_ticker => {
+                _ = dns_interval.tick() => {
                     if self.addresses.len() < self.n_nodes {
                         self.send(Message::DNSRequest(self.id, self.address.clone()), Recipient::Everyone);
                         debug!("Requesting IP addresses");
                     }
-                    dns_ticker = Delay::new(dns_ticker_delay).fuse();
                 },
 
-                _ = &mut dns_hello_ticker => {
+                _ = dns_hello_interval.tick() => {
                     self.send(Message::DNSHello(self.id as u32, self.address.clone()), Recipient::Everyone);
                     debug!("Sending Hello!");
-                    dns_hello_ticker = Delay::new(dns_hello_ticker_delay).fuse();
                 },
 
                 Some((consensus_msg, recipient)) = self.consensus_rx.next() => {
