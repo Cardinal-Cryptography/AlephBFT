@@ -31,22 +31,13 @@ impl Network {
         })
     }
 
-    fn send(&self, data: NetworkData, recipient: &Recipient) -> io::Result<()> {
-        match recipient {
-            Recipient::Everyone => {
-                for r in 0..self.addresses.len() {
-                    if r != self.my_id {
-                        self.send_to_peer(data.clone(), r)?;
-                    }
-                }
-            }
-            Recipient::Node(r) => self.send_to_peer(data, r.0)?,
+    fn send_to_peer(&self, data: NetworkData, recipient: usize) {
+        if self.try_send_to_peer(data, recipient).is_err() {
+            error!("Sending failed, recipient: {:?}", recipient);
         }
-        Ok(())
     }
 
-    fn send_to_peer(&self, data: NetworkData, recipient: usize) -> io::Result<()> {
-        assert!(recipient < self.addresses.len());
+    fn try_send_to_peer(&self, data: NetworkData, recipient: usize) -> io::Result<()> {
         let mut stream = std::net::TcpStream::connect(self.addresses.get(recipient).unwrap())?;
         stream.write_all(&data.encode())?;
         Ok(())
@@ -56,8 +47,21 @@ impl Network {
 #[async_trait::async_trait]
 impl aleph_bft::Network<NetworkData> for Network {
     fn send(&self, data: NetworkData, recipient: Recipient) {
-        if self.send(data, &recipient).is_err() {
-            error!("Sending failed, recipient: {:?}", recipient);
+        match recipient {
+            Recipient::Everyone => {
+                for r in 0..self.addresses.len() {
+                    if r != self.my_id {
+                        self.send_to_peer(data.clone(), r);
+                    }
+                }
+            }
+            Recipient::Node(r) => {
+                if r.0 < self.addresses.len() {
+                    self.send_to_peer(data, r.0);
+                } else {
+                    error!("Recipient unknown: {}", r.0);
+                }
+            }
         }
     }
 
