@@ -633,24 +633,23 @@ where
 
     fn status_report(&self) {
         let store_status = self.store.status_report();
-        info!(target: "status", "Beginning runway status report.");
-        info!(target: "status", "DAG size: {:?}", store_status.size);
+        info!(target: "AlephBFT-runway", "Beginning runway status report.");
+        info!(target: "AlephBFT-runway", "DAG size: {:?}", store_status.size);
         if let Some(r) = store_status.height {
-            info!(target: "status", "DAG height: {:?}", r);
+            info!(target: "AlephBFT-runway", "DAG height: {:?}", r);
         }
-        info!(target: "status", "DAG top row: {:?}", store_status.top_row);
-        info!(target: "status", "DAG legit buffer size: {:?}", store_status.legit_buffer_size);
+        info!(target: "AlephBFT-runway", "DAG top row: {:?}", store_status.top_row);
         let forkers = store_status.forkers.elements().collect::<Vec<_>>();
         if !forkers.is_empty() {
-            info!(target: "status", "Forkers: {:?}", forkers);
+            info!(target: "AlephBFT-runway", "Forkers: {:?}", forkers);
         }
         if !self.missing_coords.is_empty() {
-            info!(target: "status", "Missing coords: {:?}", &self.missing_coords);
+            info!(target: "AlephBFT-runway", "Missing coords: {:?}", &self.missing_coords);
         }
         if !self.missing_parents.is_empty() {
-            info!(target: "status", "Missing parents: {:?}", &self.missing_parents);
+            info!(target: "AlephBFT-runway", "Missing parents: {:?}", &self.missing_parents);
         }
-        info!(target: "status", "Finished runway status report.");
+        info!(target: "AlephBFT-runway", "Finished runway status report.");
     }
 
     async fn run(

@@ -18,7 +18,6 @@ pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
 
 pub(crate) struct UnitStoreStatus {
     pub forkers: NodeSubset,
-    pub legit_buffer_size: usize,
     pub size: usize,
     pub height: Option<Round>,
     pub top_row: Vec<(NodeIndex, Round)>,
@@ -40,7 +39,6 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
     pub fn status_report(&self) -> UnitStoreStatus {
         UnitStoreStatus {
             forkers: self.is_forker.clone(),
-            legit_buffer_size: self.legit_buffer.len(),
             size: self.by_coord.len(),
             height: self.by_coord.keys().clone().map(|k| k.round).max(),
             top_row: self
