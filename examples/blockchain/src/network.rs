@@ -192,10 +192,10 @@ impl NetworkManager {
     fn send(&mut self, message: Message, recipient: Recipient) {
         let addr = self.recipient_to_addresses(recipient);
         for (n, addr) in addr.into_iter() {
-            match self.try_send(message.clone(), &addr) {
-                Ok(_) => (),
-                Err(_) => self.reset_dns(n),
-            };
+            if self.try_send(message.clone(), &addr).is_err() {
+                error!("Failed to send message {:?} to {:?}", message, addr);
+                self.reset_dns(n);
+            }
         }
     }
 
