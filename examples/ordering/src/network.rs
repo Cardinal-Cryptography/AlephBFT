@@ -35,7 +35,9 @@ impl Network {
         match recipient {
             Recipient::Everyone => {
                 for r in 0..self.addresses.len() {
-                    self.send_to_peer(data.clone(), r)?;
+                    if r != self.my_id {
+                        self.send_to_peer(data.clone(), r)?;
+                    }
                 }
             }
             Recipient::Node(r) => self.send_to_peer(data, r.0)?,
@@ -45,10 +47,8 @@ impl Network {
 
     fn send_to_peer(&self, data: NetworkData, recipient: usize) -> io::Result<()> {
         assert!(recipient < self.addresses.len());
-        if recipient != self.my_id {
-            let mut stream = std::net::TcpStream::connect(self.addresses.get(recipient).unwrap())?;
-            stream.write_all(&data.encode())?;
-        }
+        let mut stream = std::net::TcpStream::connect(self.addresses.get(recipient).unwrap())?;
+        stream.write_all(&data.encode())?;
         Ok(())
     }
 }
