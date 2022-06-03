@@ -237,10 +237,11 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
         {
             warn!(target: "AlephBFT-runway", "unable to send resolved request:  {}", e);
         }
+        info!(target: "AlephBFT-runway", "Finished initial unit collection with status: {:?}", self.collection.status());
     }
 
     fn status_report(&self) {
-        info!(target: "status", "Initial unit collection status: {:?}", self.collection.status());
+        info!(target: "AlephBFT-runway", "Initial unit collection status: {:?}", self.collection.status());
     }
 
     /// Run the initial unit collection until it sends the initial round.
@@ -259,6 +260,7 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
                         Some(response) => response,
                         None => {
                             warn!(target: "AlephBFT-runway", "Response channel closed.");
+                            info!(target: "AlephBFT-runway", "Finished initial unit collection with status: {:?}", self.collection.status());
                             return;
                         }
                     };
@@ -276,8 +278,12 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
                     }
                 },
                 _ = catch_up_delay => match self.collection.status() {
-                    Pending => delay_passed = true,
-                    Ready(round) | Finished(round)  =>{
+                    Pending => {
+                        delay_passed = true;
+                        info!(target: "AlephBFT-runway", "Catch up delay passed.");
+                        self.status_report();
+                    },
+                    Ready(round) | Finished(round)  => {
                         self.finish(round);
                         return;
                     },

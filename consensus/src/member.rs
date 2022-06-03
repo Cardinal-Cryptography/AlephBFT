@@ -351,7 +351,35 @@ where
     }
 
     fn status_report(&self) {
-        info!(target: "status", "Task queue: {:?}.", self.task_queue);
+        let mut count: (usize, usize, usize, usize) = (0, 0, 0, 0);
+        for task in self.task_queue.iter().map(|st| &st.task) {
+            match task {
+                Task::CoordRequest(_) => count.0 += 1,
+                Task::ParentsRequest(..) => count.1 += 1,
+                Task::UnitMulticast(_) => count.2 += 1,
+                Task::RequestNewest(_) => count.3 += 1,
+            }
+        }
+        let pending_tasks: Vec<_> = self
+            .task_queue
+            .iter()
+            .filter(|st| match st.task {
+                Task::UnitMulticast(_) => false,
+                _ => st.counter >= 1,
+            })
+            .collect();
+        info!(target: "AlephBFT-member", "Beginning member status report.");
+        info!(target: "AlephBFT-member", "not_resolved_coords.len(): {}", self.not_resolved_coords.len());
+        info!(target: "AlephBFT-member", "not_resolved_parents.len(): {}", self.not_resolved_parents.len());
+        info!(target: "AlephBFT-member", "Task queue content:");
+        info!(target: "AlephBFT-member", "  CoordRequest: {}.", count.0);
+        info!(target: "AlephBFT-member", "  ParentsRequest: {}.", count.1);
+        info!(target: "AlephBFT-member", "  UnitMulticast: {}.", count.2);
+        info!(target: "AlephBFT-member", "  RequestNewest: {}.", count.3);
+        if !pending_tasks.is_empty() {
+            info!(target: "AlephBFT-member", "Pending tasks: {:?}.", pending_tasks);
+        }
+        info!(target: "AlephBFT-member", "Finished member status report.");
     }
 
     async fn run(mut self, mut exit: oneshot::Receiver<()>) {
