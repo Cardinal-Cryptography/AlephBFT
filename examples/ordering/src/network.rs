@@ -19,11 +19,11 @@ pub struct Network {
 impl Network {
     pub async fn new(my_id: usize, ports: &[usize]) -> Result<Self, Box<dyn std::error::Error>> {
         assert!(my_id < ports.len());
-        let mut addresses = vec![];
-        for port in ports {
-            addresses.push(format!("127.0.0.1:{}", port).parse::<SocketAddr>()?);
-        }
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", ports[my_id])).await?;
+        let addresses = ports
+            .iter()
+            .map(|p| format!("127.0.0.1:{}", p).parse::<SocketAddr>())
+            .collect::<Result<Vec<_>, _>>()?;
+        let listener = TcpListener::bind(addresses[my_id]).await?;
         Ok(Network {
             my_id,
             addresses,
