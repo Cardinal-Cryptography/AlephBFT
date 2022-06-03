@@ -72,7 +72,7 @@ impl Address {
 enum Message {
     DNSHello(u32, Address),
     DNSRequest(u32, Address),
-    DNSResponse(Vec<Option<Address>>),
+    DNSResponse(Vec<(u32, Address)>),
     Consensus(NetworkData),
     Block(Block),
 }
@@ -95,10 +95,11 @@ impl aleph_bft::Network<NetworkData> for Network {
 }
 
 pub struct NetworkManager {
-    id: usize,
+    id: u32,
     address: Address,
-    addresses: Vec<Option<Address>>,
+    addresses: HashMap<u32, Address>,
     bootnodes: HashMap<u32, Address>,
+    n_nodes: usize,
     listener: TcpListener,
     consensus_tx: UnboundedSender<NetworkData>,
     consensus_rx: UnboundedReceiver<(NetworkData, Recipient)>,
@@ -108,7 +109,7 @@ pub struct NetworkManager {
 
 impl NetworkManager {
     pub async fn new(
-        id: usize,
+        id: u32,
         ip_addr: String,
         n_nodes: usize,
         bootnodes: HashMap<u32, Address>,
@@ -123,12 +124,9 @@ impl NetworkManager {
         ),
         Box<dyn Error>,
     > {
-        let mut addresses = vec![None; n_nodes];
-        for (id, addr) in &bootnodes {
-            addresses[*id as usize] = Some(addr.clone());
-        }
+        let mut addresses = bootnodes.clone();
         let (listener, address) = Address::new_bind(ip_addr).await;
-        addresses[id] = Some(address.clone());
+        addresses.insert(id, address.clone());
 
         let (msg_to_manager_tx, msg_to_manager_rx) = mpsc::unbounded();
         let (msg_for_store, msg_from_manager) = mpsc::unbounded();
@@ -146,6 +144,7 @@ impl NetworkManager {
             address,
             addresses,
             bootnodes,
+            n_nodes,
             listener,
             consensus_tx: msg_for_store,
             consensus_rx: msg_to_manager_rx,
@@ -163,35 +162,31 @@ impl NetworkManager {
         ))
     }
 
-    fn recipient_to_addresses(&self, recipient: Recipient) -> HashMap<usize, Address> {
-        let mut addr: HashMap<usize, Address> = HashMap::new();
+    fn recipient_to_addresses(&self, recipient: Recipient) -> HashMap<u32, Address> {
+        let mut addr: HashMap<u32, Address> = HashMap::new();
         match recipient {
             Recipient::Node(n) => {
-                let n: usize = n.into();
-                assert!(n < self.addresses.len());
-                if n != self.id {
-                    if let Some(a) = &self.addresses[n] {
-                        addr.insert(n, a.clone());
-                    }
+                let n = n.0 as u32;
+                if let Some(a) = self.addresses.get(&n) {
+                    addr.insert(n, a.clone());
                 }
             }
             Recipient::Everyone => {
-                for n in 0..self.addresses.len() {
-                    if n != self.id {
-                        if let Some(a) = &self.addresses[n] {
-                            addr.insert(n, a.clone());
-                        }
-                    };
-                }
+                addr = self
+                    .addresses
+                    .clone()
+                    .into_iter()
+                    .filter(|(n, _)| n != &self.id)
+                    .collect();
             }
         }
         addr
     }
 
-    fn reset_dns(&mut self, n: usize) {
-        if !self.bootnodes.contains_key(&(n as u32)) {
+    fn reset_dns(&mut self, n: u32) {
+        if !self.bootnodes.contains_key(&n) {
             error!("Reseting address of node {}", n);
-            self.addresses[n] = None;
+            self.addresses.remove(&n);
         }
     }
 
@@ -210,10 +205,13 @@ impl NetworkManager {
         address.connect()?.write_all(&message.encode())
     }
 
-    fn dns_response(&mut self, id: usize, address: Address) {
-        self.addresses[id] = Some(address.clone());
-        self.try_send(Message::DNSResponse(self.addresses.clone()), &address)
-            .unwrap_or(());
+    fn dns_response(&mut self, id: u32, address: Address) {
+        self.addresses.insert(id, address.clone());
+        self.try_send(
+            Message::DNSResponse(self.addresses.clone().into_iter().collect()),
+            &address,
+        )
+        .unwrap_or(());
     }
 
     pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
@@ -240,15 +238,9 @@ impl NetworkManager {
                                             .unbounded_send(block)
                                             .expect("Blockchain process must listen");
                                     },
-                                    Ok(Message::DNSHello(id, address)) => {
-                                        self.addresses[id as usize] = Some(address);
-                                    },
-                                    Ok(Message::DNSRequest(id, address)) => self.dns_response(id as usize, address),
-                                    Ok(Message::DNSResponse(addresses)) => for (id, addr) in addresses.iter().enumerate() {
-                                        if let Some(addr) = addr {
-                                            self.addresses[id as usize] = Some(addr.clone());
-                                        };
-                                    },
+                                    Ok(Message::DNSHello(id, address)) => { self.addresses.insert(id, address); },
+                                    Ok(Message::DNSRequest(id, address)) => self.dns_response(id, address),
+                                    Ok(Message::DNSResponse(addresses)) => self.addresses.extend(addresses.into_iter()),
                                     Err(_) => (),
                                 };
                             },
@@ -263,8 +255,8 @@ impl NetworkManager {
                 },
 
                 _ = &mut dns_ticker => {
-                    if self.addresses.iter().any(|a| a.is_none()) {
-                        self.send(Message::DNSRequest(self.id as u32, self.address.clone()), Recipient::Everyone);
+                    if self.addresses.len() < self.n_nodes {
+                        self.send(Message::DNSRequest(self.id, self.address.clone()), Recipient::Everyone);
                         debug!("Requesting IP addresses");
                     }
                     dns_ticker = Delay::new(dns_ticker_delay).fuse();

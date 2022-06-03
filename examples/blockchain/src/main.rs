@@ -79,7 +79,7 @@ async fn main() {
         block_from_network_rx,
         message_for_network,
         message_from_network,
-    ) = NetworkManager::new(args.my_id, args.ip_addr, args.n_members, bootnodes)
+    ) = NetworkManager::new(args.my_id as u32, args.ip_addr, args.n_members, bootnodes)
         .await
         .expect("Network set-up should succeed.");
     let (data_provider, current_block) = DataProvider::new();
