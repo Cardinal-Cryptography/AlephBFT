@@ -38,7 +38,7 @@ impl Network {
     }
 
     fn try_send_to_peer(&self, data: NetworkData, recipient: usize) -> io::Result<()> {
-        let mut stream = std::net::TcpStream::connect(self.addresses.get(recipient).unwrap())?;
+        let mut stream = std::net::TcpStream::connect(self.addresses[recipient])?;
         stream.write_all(&data.encode())?;
         Ok(())
     }
