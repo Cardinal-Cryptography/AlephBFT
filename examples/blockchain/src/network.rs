@@ -161,44 +161,36 @@ impl NetworkManager {
         ))
     }
 
-    fn recipient_to_addresses(&self, recipient: Recipient) -> HashMap<NodeIndex, Address> {
-        let mut addr: HashMap<NodeIndex, Address> = HashMap::new();
-        match recipient {
-            Recipient::Node(n) => {
-                if let Some(a) = self.addresses.get(&n) {
-                    addr.insert(n, a.clone());
-                }
-            }
-            Recipient::Everyone => {
-                addr = self
-                    .addresses
-                    .clone()
-                    .into_iter()
-                    .filter(|(n, _)| n != &self.id)
-                    .collect();
-            }
-        }
-        addr
-    }
-
-    fn reset_dns(&mut self, n: NodeIndex) {
-        if !self.bootnodes.contains(&n) {
+    fn reset_dns(&mut self, n: &NodeIndex) {
+        if !self.bootnodes.contains(n) {
             error!("Reseting address of node {}", n.0);
-            self.addresses.remove(&n);
+            self.addresses.remove(n);
         }
     }
 
     fn send(&mut self, message: Message, recipient: Recipient) {
-        let addr = self.recipient_to_addresses(recipient);
-        for (n, addr) in addr.into_iter() {
-            if self.try_send(message.clone(), &addr).is_err() {
-                error!("Failed to send message {:?} to {:?}", message, addr);
-                self.reset_dns(n);
+        match recipient {
+            Recipient::Node(n) => {
+                if let Some(addr) = self.addresses.get(&n) {
+                    if let Err(e) = self.try_send(&message, addr) {
+                        error!("Failed to send message {:?} to {:?}: {}", message, addr, e);
+                        self.reset_dns(&n);
+                    }
+                }
+            }
+            Recipient::Everyone => {
+                let my_id = self.id;
+                for (n, addr) in self.addresses.clone().iter().filter(|(n, _)| n != &&my_id) {
+                    if let Err(e) = self.try_send(&message, addr) {
+                        error!("Failed to send message {:?} to {:?}: {}", message, addr, e);
+                        self.reset_dns(n);
+                    }
+                }
             }
         }
     }
 
-    fn try_send(&self, message: Message, address: &Address) -> std::io::Result<()> {
+    fn try_send(&self, message: &Message, address: &Address) -> std::io::Result<()> {
         debug!("Trying to send message {:?} to {:?}", message, address);
         address.connect()?.write_all(&message.encode())
     }
@@ -206,7 +198,7 @@ impl NetworkManager {
     fn dns_response(&mut self, id: NodeIndex, address: Address) {
         self.addresses.insert(id, address.clone());
         self.try_send(
-            Message::DNSResponse(self.addresses.clone().into_iter().collect()),
+            &Message::DNSResponse(self.addresses.clone().into_iter().collect()),
             &address,
         )
         .unwrap_or(());
