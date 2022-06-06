@@ -175,16 +175,16 @@ impl NetworkManager {
                 if let Some(addr) = self.addresses.get(&n) {
                     if let Err(e) = self.try_send(&message, addr) {
                         error!("Failed to send message {:?} to {:?}: {}", message, addr, e);
-                        to_reset.push(n);
+                        to_reset.push(n)
                     }
                 }
             }
             Recipient::Everyone => {
                 let my_id = self.id;
-                for (n, addr) in self.addresses.clone().iter().filter(|(n, _)| n != &&my_id) {
+                for (n, addr) in self.addresses.iter().filter(|(n, _)| n != &&my_id) {
                     if let Err(e) = self.try_send(&message, addr) {
                         error!("Failed to send message {:?} to {:?}: {}", message, addr, e);
-                        to_reset.push(*n);
+                        to_reset.push(*n)
                     }
                 }
             }
