@@ -2,7 +2,7 @@ mod chain;
 mod data;
 mod network;
 
-use aleph_bft::run_session;
+use aleph_bft::{run_session, NodeIndex};
 use aleph_bft_mock::{FinalizationHandler, Keychain, Loader, Saver, Spawner};
 use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use chrono::Local;
@@ -33,7 +33,7 @@ struct Args {
 
     /// Bootnodes indices
     #[clap(long, value_delimiter = ',')]
-    bootnodes_id: Vec<u32>,
+    bootnodes_id: Vec<usize>,
 
     /// Bootnodes addresses
     #[clap(long, value_delimiter = ',')]
@@ -66,11 +66,11 @@ async fn main() {
     let args = Args::parse();
     let start_time = time::Instant::now();
     info!(target: "Blockchain-main", "Getting network up.");
-    let bootnodes: HashMap<u32, Address> = args
+    let bootnodes: HashMap<NodeIndex, Address> = args
         .bootnodes_id
         .into_iter()
         .zip(args.bootnodes_ip_addr)
-        .map(|(id, addr)| (id, Address::from_str(&addr).unwrap()))
+        .map(|(id, addr)| (id.into(), Address::from_str(&addr).unwrap()))
         .collect();
     let (
         mut manager,
@@ -79,7 +79,7 @@ async fn main() {
         block_from_network_rx,
         message_for_network,
         message_from_network,
-    ) = NetworkManager::new(args.my_id as u32, args.ip_addr, args.n_members, bootnodes)
+    ) = NetworkManager::new(args.my_id.into(), args.ip_addr, args.n_members, bootnodes)
         .await
         .expect("Network set-up should succeed.");
     let (data_provider, current_block) = DataProvider::new();

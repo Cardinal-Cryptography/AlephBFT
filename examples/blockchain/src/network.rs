@@ -1,5 +1,5 @@
 use crate::{Block, Data};
-use aleph_bft::Recipient;
+use aleph_bft::{NodeIndex, Recipient};
 use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use futures::{
@@ -69,9 +69,9 @@ impl Address {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Decode, Encode, Debug)]
 enum Message {
-    DNSHello(u32, Address),
-    DNSRequest(u32, Address),
-    DNSResponse(Vec<(u32, Address)>),
+    DNSHello(NodeIndex, Address),
+    DNSRequest(NodeIndex, Address),
+    DNSResponse(Vec<(NodeIndex, Address)>),
     Consensus(NetworkData),
     Block(Block),
 }
@@ -94,10 +94,10 @@ impl aleph_bft::Network<NetworkData> for Network {
 }
 
 pub struct NetworkManager {
-    id: u32,
+    id: NodeIndex,
     address: Address,
-    addresses: HashMap<u32, Address>,
-    bootnodes: HashSet<u32>,
+    addresses: HashMap<NodeIndex, Address>,
+    bootnodes: HashSet<NodeIndex>,
     n_nodes: usize,
     listener: TcpListener,
     consensus_tx: UnboundedSender<NetworkData>,
@@ -108,10 +108,10 @@ pub struct NetworkManager {
 
 impl NetworkManager {
     pub async fn new(
-        id: u32,
+        id: NodeIndex,
         ip_addr: String,
         n_nodes: usize,
-        bootnodes: HashMap<u32, Address>,
+        bootnodes: HashMap<NodeIndex, Address>,
     ) -> Result<
         (
             Self,
@@ -161,11 +161,10 @@ impl NetworkManager {
         ))
     }
 
-    fn recipient_to_addresses(&self, recipient: Recipient) -> HashMap<u32, Address> {
-        let mut addr: HashMap<u32, Address> = HashMap::new();
+    fn recipient_to_addresses(&self, recipient: Recipient) -> HashMap<NodeIndex, Address> {
+        let mut addr: HashMap<NodeIndex, Address> = HashMap::new();
         match recipient {
             Recipient::Node(n) => {
-                let n = n.0 as u32;
                 if let Some(a) = self.addresses.get(&n) {
                     addr.insert(n, a.clone());
                 }
@@ -182,9 +181,9 @@ impl NetworkManager {
         addr
     }
 
-    fn reset_dns(&mut self, n: u32) {
+    fn reset_dns(&mut self, n: NodeIndex) {
         if !self.bootnodes.contains(&n) {
-            error!("Reseting address of node {}", n);
+            error!("Reseting address of node {}", n.0);
             self.addresses.remove(&n);
         }
     }
@@ -204,7 +203,7 @@ impl NetworkManager {
         address.connect()?.write_all(&message.encode())
     }
 
-    fn dns_response(&mut self, id: u32, address: Address) {
+    fn dns_response(&mut self, id: NodeIndex, address: Address) {
         self.addresses.insert(id, address.clone());
         self.try_send(
             Message::DNSResponse(self.addresses.clone().into_iter().collect()),
@@ -258,7 +257,7 @@ impl NetworkManager {
                 },
 
                 _ = dns_hello_interval.tick() => {
-                    self.send(Message::DNSHello(self.id as u32, self.address.clone()), Recipient::Everyone);
+                    self.send(Message::DNSHello(self.id, self.address.clone()), Recipient::Everyone);
                     debug!("Sending Hello!");
                 },
 
