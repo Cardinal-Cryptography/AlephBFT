@@ -11,7 +11,7 @@ use futures::{
 };
 use log::{debug, error, warn};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     error::Error,
     io::Write,
     net::{SocketAddr, SocketAddrV4, TcpStream},
@@ -97,7 +97,7 @@ pub struct NetworkManager {
     id: u32,
     address: Address,
     addresses: HashMap<u32, Address>,
-    bootnodes: HashMap<u32, Address>,
+    bootnodes: HashSet<u32>,
     n_nodes: usize,
     listener: TcpListener,
     consensus_tx: UnboundedSender<NetworkData>,
@@ -142,7 +142,7 @@ impl NetworkManager {
             id,
             address,
             addresses,
-            bootnodes,
+            bootnodes: bootnodes.into_keys().collect(),
             n_nodes,
             listener,
             consensus_tx: msg_for_store,
@@ -183,7 +183,7 @@ impl NetworkManager {
     }
 
     fn reset_dns(&mut self, n: u32) {
-        if !self.bootnodes.contains_key(&n) {
+        if !self.bootnodes.contains(&n) {
             error!("Reseting address of node {}", n);
             self.addresses.remove(&n);
         }
