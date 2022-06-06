@@ -169,12 +169,13 @@ impl NetworkManager {
     }
 
     fn send(&mut self, message: Message, recipient: Recipient) {
+        let mut to_reset = vec![];
         match recipient {
             Recipient::Node(n) => {
                 if let Some(addr) = self.addresses.get(&n) {
                     if let Err(e) = self.try_send(&message, addr) {
                         error!("Failed to send message {:?} to {:?}: {}", message, addr, e);
-                        self.reset_dns(&n);
+                        to_reset.push(n);
                     }
                 }
             }
@@ -183,10 +184,13 @@ impl NetworkManager {
                 for (n, addr) in self.addresses.clone().iter().filter(|(n, _)| n != &&my_id) {
                     if let Err(e) = self.try_send(&message, addr) {
                         error!("Failed to send message {:?} to {:?}: {}", message, addr, e);
-                        self.reset_dns(n);
+                        to_reset.push(*n);
                     }
                 }
             }
+        }
+        for n in to_reset {
+            self.reset_dns(&n);
         }
     }
 
