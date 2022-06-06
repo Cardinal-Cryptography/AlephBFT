@@ -21,7 +21,7 @@ for i in $(seq 0 $(expr $n_members - 2)); do
 done
 
 for i in $(seq 0 $(expr $n_members - 1)); do
-    cargo run --release -- --id "$i" --ports "$ports" --n-items 250 2> "node$i.log" &
+    cargo run --release -- --id "$i" --ports "$ports" --n-items 250 2>> "node$i.log" &
 done
 
 echo "Running ordering example... (Ctrl+C to exit)"
