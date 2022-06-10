@@ -1,13 +1,15 @@
-use aleph_bft::run_session;
-use aleph_bft_mock::{DataProvider, FinalizationHandler, Keychain, Spawner};
+mod dataio;
+mod network;
+
+use aleph_bft::{run_session, NodeIndex};
+use aleph_bft_mock::{Keychain, Spawner};
 use chrono::Local;
 use clap::Parser;
+use dataio::{Data, DataProvider, FinalizationHandler};
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
-use std::{fs, fs::File, io, io::Write, path::Path};
-
-mod network;
 use network::Network;
+use std::{collections::HashMap, fs, fs::File, io, io::Write, path::Path};
 
 /// Example node producing linear order.
 #[derive(Parser, Debug)]
@@ -23,7 +25,19 @@ struct Args {
 
     /// Number of items to be ordered
     #[clap(long)]
-    n_items: usize,
+    n_ordered: u32,
+
+    /// Number of items to be created
+    #[clap(long)]
+    n_created: u32,
+
+    /// Number of the first created item
+    #[clap(long)]
+    n_starting: u32,
+
+    /// Should the node crash after finalizing its items
+    #[clap(long)]
+    crash: bool,
 }
 
 fn create_backup(node_id: usize) -> Result<(File, io::Cursor<Vec<u8>>), io::Error> {
@@ -63,7 +77,7 @@ async fn main() {
     info!("Getting network up.");
     let network = Network::new(args.id, &args.ports).await.unwrap();
     let n_members = args.ports.len();
-    let data_provider = DataProvider::new();
+    let data_provider = DataProvider::new(args.id.into(), args.n_starting, args.n_created);
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
     let (backup_saver, backup_loader) =
         create_backup(args.id).expect("Error setting up unit saving");
@@ -81,23 +95,53 @@ async fn main() {
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
-    for i in 0..args.n_items {
+    let mut count_finalized: HashMap<NodeIndex, u32> =
+        (0..args.ports.len()).map(|c| (c.into(), 0)).collect();
+    let show_finalized = |cf: &HashMap<NodeIndex, u32>| -> Vec<u32> {
+        let mut v = cf
+            .iter()
+            .map(|(id, n)| (id.0, n))
+            .collect::<Vec<(usize, &u32)>>();
+        v.sort();
+        v.iter().map(|(_, n)| **n).collect()
+    };
+    loop {
         match finalized_rx.next().await {
-            Some(_) => debug!("Got new batch. Finalized: {:?}", i + 1),
+            Some((id, Some(number))) => {
+                *count_finalized.get_mut(&id).unwrap() += 1;
+                debug!(
+                    "Finalized new item: node {:?}, number {:?}; total: {:?}",
+                    id.0,
+                    number,
+                    show_finalized(&count_finalized)
+                );
+            }
+            Some((_, None)) => (),
             None => {
                 error!(
-                    "Finalization stream finished too soon. Got {:?} batches, wanted {:?} batches",
-                    i + 1,
-                    args.n_items
+                    "Finalization stream finished too soon. Got {:?} items, wanted {:?} items",
+                    show_finalized(&count_finalized),
+                    args.n_ordered
                 );
                 panic!("Finalization stream finished too soon.");
             }
         }
+        if args.crash && count_finalized.get(&args.id.into()).unwrap() == &args.n_created {
+            info!(
+                "Forced crash - items finalized so far: {:?}.",
+                show_finalized(&count_finalized)
+            );
+            break;
+        }
+        if count_finalized.values().all(|c| c >= &(args.n_ordered)) {
+            info!("Finalized required number of items.");
+            info!("Waiting 10 seconds for other nodes...");
+            tokio::time::sleep(core::time::Duration::from_secs(10)).await;
+            info!("Shutdown.");
+            break;
+        }
     }
-    info!("Finalized required number of items.");
-    info!("Waiting 10 seconds for other nodes...");
-    tokio::time::sleep(core::time::Duration::from_secs(10)).await;
-    info!("Shutdown.");
+
     close_member.send(()).expect("should send");
     member_handle.await.unwrap();
 }

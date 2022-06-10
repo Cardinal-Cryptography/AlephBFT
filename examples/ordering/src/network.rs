@@ -1,5 +1,6 @@
+use crate::Data;
 use aleph_bft::Recipient;
-use aleph_bft_mock::{Data, Hasher64, PartialMultisignature, Signature};
+use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use log::error;
 use std::{io::Write, net::SocketAddr};

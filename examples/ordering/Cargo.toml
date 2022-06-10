@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 aleph-bft = { path = "../../consensus", version = "*" }
 aleph-bft-mock = { path = "../../mock", version = "*" }
+aleph-bft-types = { path = "../../types", version = "*" }
 async-trait = "0.1"
 chrono = "0.4"
 clap = { version = "3.1.8", features = ["derive"] }

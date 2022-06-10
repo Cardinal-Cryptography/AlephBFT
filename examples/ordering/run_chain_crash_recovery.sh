@@ -1,7 +1,7 @@
 #!/bin/bash
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: run.sh n_members"
+    echo "Usage: run.sh n_nodes"
     exit 1
 fi
 
@@ -11,17 +11,17 @@ cargo build --release
 
 clear
 
-n_members="$1"
+n_nodes="$1"
 ports="43000"
 port=43000
 
-for i in $(seq 0 $(expr $n_members - 2)); do
+for i in $(seq 0 $(expr $n_nodes - 2)); do
     port=$((port+1))
     ports+=",$port"
 done
 
-for i in $(seq 0 $(expr $n_members - 1)); do
-    cargo run --release -- --id "$i" --ports "$ports" --n-items 250 2>> "node$i.log" &
+for i in $(seq 0 $(expr $n_nodes - 1)); do
+    cargo run --release -- --id "$i" --ports "$ports" --n-ordered 50 --n-created 50 --n-starting 0 2>> "node${i}.log" &
 done
 
 echo "Running ordering example... (Ctrl+C to exit)"
