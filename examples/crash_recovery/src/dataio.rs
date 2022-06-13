@@ -3,7 +3,7 @@ use aleph_bft_types::{
 };
 use async_trait::async_trait;
 use futures::channel::mpsc::unbounded;
-use log::error;
+use log::{error, info};
 
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
 type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;
@@ -31,9 +31,11 @@ impl DataProvider {
 impl DataProviderT<Data> for DataProvider {
     async fn get_data(&mut self) -> Data {
         if self.n_data == 0 {
+            info!("Providing empty data");
             (self.id, None)
         } else {
             let data = (self.id, Some(self.counter));
+            info!("Providing data: {}", self.counter);
             self.counter += 1;
             self.n_data -= 1;
             data

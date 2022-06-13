@@ -10,7 +10,7 @@ members = [
     "mock",
 
     # Examples
-    "examples/ordering",
+    "examples/crash_recovery",
     "examples/blockchain",
 
     # Fuzzing

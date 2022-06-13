@@ -16,32 +16,32 @@ use std::{collections::HashMap, fs, fs::File, io, io::Write, path::Path};
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Index of the node
-    #[clap(long)]
+    #[clap(long, value_parser)]
     id: usize,
 
     /// Ports
-    #[clap(long, value_delimiter = ',')]
+    #[clap(long, value_parser, value_delimiter = ',')]
     ports: Vec<usize>,
 
     /// Number of items to be ordered
-    #[clap(long)]
+    #[clap(long, value_parser)]
     n_ordered: u32,
 
     /// Number of items to be created
-    #[clap(long)]
+    #[clap(long, value_parser)]
     n_created: u32,
 
     /// Number of the first created item
-    #[clap(long)]
+    #[clap(long, value_parser)]
     n_starting: u32,
 
     /// Should the node crash after finalizing its items
-    #[clap(long)]
+    #[clap(long, value_parser)]
     crash: bool,
 }
 
 fn create_backup(node_id: usize) -> Result<(File, io::Cursor<Vec<u8>>), io::Error> {
-    let stash_path = Path::new("./aleph-bft-examples-ordering-backup");
+    let stash_path = Path::new("./aleph-bft-examples-crash-recovery-backup");
     fs::create_dir_all(&stash_path)?;
     let file_path = stash_path.join(format!("{}.units", node_id));
     let _ = fs::OpenOptions::new()
@@ -126,7 +126,10 @@ async fn main() {
                 panic!("Finalization stream finished too soon.");
             }
         }
-        if args.crash && count_finalized.get(&args.id.into()).unwrap() == &args.n_created {
+        if args.crash
+            && count_finalized.get(&args.id.into()).unwrap()
+                == &(args.n_created + args.n_starting - 1)
+        {
             info!(
                 "Forced crash - items finalized so far: {:?}.",
                 show_finalized(&count_finalized)

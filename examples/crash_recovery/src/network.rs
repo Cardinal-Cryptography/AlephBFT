@@ -7,6 +7,7 @@ use std::{io::Write, net::SocketAddr};
 use tokio::{
     io::{self, AsyncReadExt},
     net::TcpListener,
+    time::{sleep, Duration},
 };
 
 pub type NetworkData = aleph_bft::NetworkData<Hasher64, Data, Signature, PartialMultisignature>;
@@ -24,7 +25,20 @@ impl Network {
             .iter()
             .map(|p| format!("127.0.0.1:{}", p).parse::<SocketAddr>())
             .collect::<Result<Vec<_>, _>>()?;
-        let listener = TcpListener::bind(addresses[my_id]).await?;
+        let listener;
+        loop {
+            match TcpListener::bind(addresses[my_id]).await {
+                Ok(l) => {
+                    listener = l;
+                    break;
+                }
+                Err(e) => {
+                    error!("{}", e);
+                    error!("Waiting 10 seconds before the next attempt...");
+                    sleep(Duration::from_secs(10)).await;
+                }
+            };
+        }
         Ok(Network {
             my_id,
             addresses,

@@ -1,5 +1,5 @@
 [package]
-name = "aleph-bft-examples-ordering"
+name = "aleph-bft-examples-crash-recovery"
 version = "0.0.0"
 edition = "2021"
 authors = ["Cardinal Cryptography"]
@@ -12,7 +12,7 @@ aleph-bft-mock = { path = "../../mock", version = "*" }
 aleph-bft-types = { path = "../../types", version = "*" }
 async-trait = "0.1"
 chrono = "0.4"
-clap = { version = "3.1.8", features = ["derive"] }
+clap = { version = "3.2.1", features = ["derive"] }
 codec = { package = "parity-scale-codec", version = "3.0", default-features = false, features = ["derive"] }
 env_logger = "0.9"
 futures = "0.3"
