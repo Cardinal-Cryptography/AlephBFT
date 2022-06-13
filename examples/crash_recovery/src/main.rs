@@ -45,8 +45,7 @@ fn create_backup(node_id: usize) -> Result<(File, io::Cursor<Vec<u8>>), io::Erro
     fs::create_dir_all(&stash_path)?;
     let file_path = stash_path.join(format!("{}.units", node_id));
     let _ = fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
+        .create(true)
         .append(true)
         .open(file_path.clone());
     let loader = io::Cursor::new(fs::read(file_path.clone())?);
