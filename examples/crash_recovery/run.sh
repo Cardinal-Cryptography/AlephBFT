@@ -21,7 +21,7 @@ if [[ -z $n_working_nodes || -z $n_nodes_to_crash || -z $restart_delay || -z $n_
 fi
 
 n_ordered=$(( (n_crashes+1)*n_ordered_per_crash ))
-port=4343
+port=10000
 ports="$port"
 for i in $(seq 0 $(expr $n_working_nodes + $n_nodes_to_crash - 2)); do
     port=$((port+1))
