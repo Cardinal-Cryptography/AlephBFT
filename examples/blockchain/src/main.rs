@@ -1,4 +1,10 @@
-use std::{collections::HashMap, io::Write, str::FromStr, sync::Arc, time::{Duration, Instant}};
+use std::{
+    collections::HashMap,
+    io::Write,
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use clap::Parser;
 use futures::{channel::oneshot, StreamExt};
@@ -6,9 +12,9 @@ use log::{debug, error, info};
 use parking_lot::Mutex;
 use time::{macros::format_description, OffsetDateTime};
 
-use aleph_bft::{NodeIndex, run_session};
+use aleph_bft::{run_session, NodeIndex};
 use aleph_bft_mock::{FinalizationHandler, Keychain, Loader, Saver, Spawner};
-use chain::{Block, BlockNum, ChainConfig, run_blockchain};
+use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use data::{Data, DataProvider, DataStore};
 use network::{Address, NetworkData, NetworkManager};
 
@@ -112,7 +118,7 @@ async fn main() {
             message_from_network,
             exit,
         )
-            .await
+        .await
     });
 
     let (close_member, exit) = oneshot::channel();
