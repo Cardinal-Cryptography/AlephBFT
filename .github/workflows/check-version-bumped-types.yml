@@ -6,6 +6,11 @@ on:
       - main
     paths:
       - 'types/src/**'
+      - '.github/workflows/check-version-bumped-types.yml'
+
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: true
 
 jobs:
   check-version-bumped-types:
