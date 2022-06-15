@@ -67,7 +67,7 @@ async fn main() {
                 "{} {}: {}",
                 record.level(),
                 OffsetDateTime::now_local()
-                    .unwrap_or(OffsetDateTime::now_utc())
+                    .unwrap_or_else(|_| OffsetDateTime::now_utc())
                     .format(&time_format)
                     .unwrap(),
                 record.args()
