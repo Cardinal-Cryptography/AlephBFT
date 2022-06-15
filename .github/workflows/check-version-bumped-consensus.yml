@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'consensus/src/**'
-      - '.github/workflows/check-version-bumped-consensus.yml'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}

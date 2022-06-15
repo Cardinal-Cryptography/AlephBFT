@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'mock/src/**'
-      - '.github/workflows/check-version-bumped-mock.yml'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}

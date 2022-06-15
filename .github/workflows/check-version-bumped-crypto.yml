@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'crypto/src/**'
-      - '.github/workflows/check-version-bumped-crypto.yml'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}

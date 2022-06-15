@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - 'rmc/src/**'
-      - '.github/workflows/check-version-bumped-rmc.yml'
 
 concurrency:
   group: ${{ github.ref }}-${{ github.workflow }}
