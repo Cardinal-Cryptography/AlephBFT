@@ -1,4 +1,4 @@
-name: Run `cargo-audit`
+name: cargo-audit
 
 on:
   pull_request:
