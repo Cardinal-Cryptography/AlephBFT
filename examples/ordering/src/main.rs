@@ -3,13 +3,13 @@ mod network;
 
 use aleph_bft::{run_session, NodeIndex};
 use aleph_bft_mock::{Keychain, Spawner};
-use chrono::Local;
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
 use network::Network;
 use std::{collections::HashMap, fs, fs::File, io, io::Write, path::Path};
+use time::{macros::format_description, OffsetDateTime};
 
 /// Example node producing linear order.
 #[derive(Parser, Debug)]
@@ -54,13 +54,18 @@ fn create_backup(node_id: NodeIndex) -> Result<(File, io::Cursor<Vec<u8>>), io::
 
 #[tokio::main]
 async fn main() {
+    let time_format =
+        format_description!("[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]");
     env_logger::builder()
-        .format(|buf, record| {
+        .format(move |buf, record| {
             writeln!(
                 buf,
                 "{} {}: {}",
                 record.level(),
-                Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+                OffsetDateTime::now_local()
+                    .unwrap_or_else(|_| OffsetDateTime::now_utc())
+                    .format(&time_format)
+                    .unwrap(),
                 record.args()
             )
         })
