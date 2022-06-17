@@ -41,7 +41,7 @@ struct Args {
 }
 
 fn create_backup(node_id: usize) -> Result<(File, io::Cursor<Vec<u8>>), io::Error> {
-    let stash_path = Path::new("./aleph-bft-examples-crash-recovery-backup");
+    let stash_path = Path::new("./aleph-bft-examples-ordering-backup");
     fs::create_dir_all(&stash_path)?;
     let file_path = stash_path.join(format!("{}.units", node_id));
     let _ = fs::OpenOptions::new()
