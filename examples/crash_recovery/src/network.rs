@@ -47,8 +47,8 @@ impl Network {
     }
 
     fn send_to_peer(&self, data: NetworkData, recipient: usize) {
-        if self.try_send_to_peer(data, recipient).is_err() {
-            error!("Sending failed, recipient: {:?}", recipient);
+        if let Err(e) = self.try_send_to_peer(data, recipient) {
+            error!("Sending failed, recipient: {:?}, error: {:?}", recipient, e);
         }
     }
 
