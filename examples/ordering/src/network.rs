@@ -1,5 +1,5 @@
 use crate::Data;
-use aleph_bft::Recipient;
+use aleph_bft::{NodeIndex, Recipient};
 use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use log::error;
@@ -19,7 +19,11 @@ pub struct Network {
 }
 
 impl Network {
-    pub async fn new(my_id: usize, ports: &[usize]) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(
+        my_id: NodeIndex,
+        ports: &[usize],
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let my_id = my_id.0;
         assert!(my_id < ports.len());
         let addresses = ports
             .iter()

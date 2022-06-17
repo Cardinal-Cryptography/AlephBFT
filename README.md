@@ -72,25 +72,31 @@ More details are available [in the book][reference-link-implementation-details].
 
 We provide two basic examples of running AlephBFT, both of which are not cryptographically secure, and assume honest, but possibly malfunctioning, participants.
 
-The first one, `crash_recovery`, implements a simple node that produces data items, and then waits for them to be finalized. It can also perform a simulated crash after creating a specified number of items.
+The first one, `ordering`, implements a simple node that produces data items, and then waits for them to be finalized. It can also perform a simulated crash after creating a specified number of items.
 
 For example, you may run the following command:
 ```
-cd ./examples/crash_recovery
-./run.sh --n-working-nodes 7 --n-nodes-to-crash 3 --n-crashes 4 --n-ordered-per-crash 20 --restart-delay 5
+cd ./examples/ordering
+./run.sh
 ```
-that will launch 7 properly working nodes, and 3 nodes that will crash 4 times each.
-The delay before relaunching a crashed node will be set to 5 seconds.
-A faulty node will create 20 items before every crash, and another `20` in the end.
+that will launch 5 properly working nodes, and 5 nodes that will crash 3 times each.
+The delay before relaunching a crashed node will be set to 1 second.
+A faulty node will create 25 items before every crash, and another `25` in the end.
 Every node will therefore create `100` items in total, and then wait for other nodes before finishing its run.
+
+See:
+```
+./run.sh -h
+```
+for further details.
 
 Note that if the number of properly working nodes is less or equal than two times the number of faulty nodes, they will be unable to advance the protocol on their own.
 
 The script will try to start nodes at predefined IP addresses, `127.0.0.1:100XX`, where `XX` denotes the node id. If the port is unavailable, the node will log an error and keep trying to aquire it, waiting 10 seconds between consecutive attempts.
 
 Running this script will result in generating log files `node0.log, node1.log, ...` corresponding to subsequent nodes.
-A directory called `aleph-bft-examples-crash-recovery-backup` will be created to store data required by the crash recovery mechanism, and the logs from subsequent runs will be appended to existing log files.
-Therefore, you'll need to manually remove the backup directory and all the log files before launching the `run.sh` script again.
+A directory called `aleph-bft-examples-ordering-backup` will be created to store data required by the crash recovery mechanism, and the logs from subsequent runs will be appended to existing log files.
+The cache and logs will be automatically cleared when launching the script again.
 
 The second example, `blockchain`, is meant for benchmarking AlephBFT in the blockchain setting.
 It implements a simple round-robin blockchain assuming honest participation.

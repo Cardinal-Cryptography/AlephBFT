@@ -25,14 +25,10 @@ struct Args {
 
     /// Number of items to be ordered
     #[clap(long, value_parser)]
-    n_ordered: u32,
-
-    /// Number of items to be created
-    #[clap(long, value_parser)]
-    n_created: u32,
+    n_data: u32,
 
     /// Number of the first created item
-    #[clap(long, value_parser)]
+    #[clap(default_value = "0", long, value_parser)]
     n_starting: u32,
 
     /// Should the node crash after finalizing its items
@@ -40,17 +36,17 @@ struct Args {
     crash: bool,
 }
 
-fn create_backup(node_id: usize) -> Result<(File, io::Cursor<Vec<u8>>), io::Error> {
+fn create_backup(node_id: NodeIndex) -> Result<(File, io::Cursor<Vec<u8>>), io::Error> {
     let stash_path = Path::new("./aleph-bft-examples-ordering-backup");
     fs::create_dir_all(&stash_path)?;
-    let file_path = stash_path.join(format!("{}.units", node_id));
-    let _ = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(file_path.clone());
-    let loader = io::Cursor::new(fs::read(file_path.clone())?);
+    let file_path = stash_path.join(format!("{}.units", node_id.0));
+    let loader = if file_path.exists() {
+        io::Cursor::new(fs::read(&file_path)?)
+    } else {
+        io::Cursor::new(Vec::new())
+    };
     let saver = fs::OpenOptions::new()
-        .write(true)
+        .create(true)
         .append(true)
         .open(file_path)?;
     Ok((saver, loader))
@@ -71,15 +67,23 @@ async fn main() {
         .filter(None, log::LevelFilter::Debug)
         .init();
 
-    let args = Args::parse();
+    let Args {
+        id,
+        ports,
+        n_data,
+        n_starting,
+        crash,
+    } = Args::parse();
+    let id: NodeIndex = id.into();
 
     info!("Getting network up.");
-    let network = Network::new(args.id, &args.ports).await.unwrap();
-    let n_members = args.ports.len();
-    let data_provider = DataProvider::new(args.id.into(), args.n_starting, args.n_created);
+    let network = Network::new(id, &ports)
+        .await
+        .expect("Could not create a Network instance.");
+    let n_members = ports.len().into();
+    let data_provider = DataProvider::new(id, n_starting, n_data - n_starting);
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
-    let (backup_saver, backup_loader) =
-        create_backup(args.id).expect("Error setting up unit saving");
+    let (backup_saver, backup_loader) = create_backup(id).expect("Error setting up unit saving");
     let local_io = aleph_bft::LocalIO::new(
         data_provider,
         finalization_handler,
@@ -89,13 +93,13 @@ async fn main() {
 
     let (close_member, exit) = oneshot::channel();
     let member_handle = tokio::spawn(async move {
-        let keychain = Keychain::new(n_members.into(), args.id.into());
-        let config = aleph_bft::default_config(n_members.into(), args.id.into(), 0);
+        let keychain = Keychain::new(n_members, id);
+        let config = aleph_bft::default_config(n_members, id, 0);
         run_session(config, local_io, network, keychain, Spawner {}, exit).await
     });
 
     let mut count_finalized: HashMap<NodeIndex, u32> =
-        (0..args.ports.len()).map(|c| (c.into(), 0)).collect();
+        (0..ports.len()).map(|c| (c.into(), 0)).collect();
     let show_finalized = |cf: &HashMap<NodeIndex, u32>| -> Vec<u32> {
         let mut v = cf
             .iter()
@@ -120,22 +124,17 @@ async fn main() {
                 error!(
                     "Finalization stream finished too soon. Got {:?} items, wanted {:?} items",
                     show_finalized(&count_finalized),
-                    args.n_ordered
+                    n_data
                 );
                 panic!("Finalization stream finished too soon.");
             }
         }
-        if args.crash
-            && count_finalized.get(&args.id.into()).unwrap()
-                == &(args.n_created + args.n_starting - 1)
-        {
-            info!(
+        if crash && count_finalized.get(&id).unwrap() >= &(n_data) {
+            panic!(
                 "Forced crash - items finalized so far: {:?}.",
                 show_finalized(&count_finalized)
             );
-            break;
-        }
-        if count_finalized.values().all(|c| c >= &(args.n_ordered)) {
+        } else if count_finalized.values().all(|c| c >= &(n_data)) {
             info!("Finalized required number of items.");
             info!("Waiting 10 seconds for other nodes...");
             tokio::time::sleep(core::time::Duration::from_secs(10)).await;
