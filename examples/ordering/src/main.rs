@@ -52,6 +52,15 @@ fn create_backup(node_id: NodeIndex) -> Result<(File, io::Cursor<Vec<u8>>), io::
     Ok((saver, loader))
 }
 
+fn finalized_counts(cf: &HashMap<NodeIndex, u32>) -> Vec<u32> {
+    let mut v = cf
+        .iter()
+        .map(|(id, n)| (id.0, n))
+        .collect::<Vec<(usize, &u32)>>();
+    v.sort();
+    v.iter().map(|(_, n)| **n).collect()
+}
+
 #[tokio::main]
 async fn main() {
     let time_format =
@@ -105,14 +114,7 @@ async fn main() {
 
     let mut count_finalized: HashMap<NodeIndex, u32> =
         (0..ports.len()).map(|c| (c.into(), 0)).collect();
-    let finalized_counts = |cf: &HashMap<NodeIndex, u32>| -> Vec<u32> {
-        let mut v = cf
-            .iter()
-            .map(|(id, n)| (id.0, n))
-            .collect::<Vec<(usize, &u32)>>();
-        v.sort();
-        v.iter().map(|(_, n)| **n).collect()
-    };
+
     loop {
         match finalized_rx.next().await {
             Some((id, Some(number))) => {
