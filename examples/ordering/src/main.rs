@@ -105,7 +105,7 @@ async fn main() {
 
     let mut count_finalized: HashMap<NodeIndex, u32> =
         (0..ports.len()).map(|c| (c.into(), 0)).collect();
-    let show_finalized = |cf: &HashMap<NodeIndex, u32>| -> Vec<u32> {
+    let finalized_counts = |cf: &HashMap<NodeIndex, u32>| -> Vec<u32> {
         let mut v = cf
             .iter()
             .map(|(id, n)| (id.0, n))
@@ -121,14 +121,14 @@ async fn main() {
                     "Finalized new item: node {:?}, number {:?}; total: {:?}",
                     id.0,
                     number,
-                    show_finalized(&count_finalized)
+                    finalized_counts(&count_finalized)
                 );
             }
             Some((_, None)) => (),
             None => {
                 error!(
                     "Finalization stream finished too soon. Got {:?} items, wanted {:?} items",
-                    show_finalized(&count_finalized),
+                    finalized_counts(&count_finalized),
                     n_data
                 );
                 panic!("Finalization stream finished too soon.");
@@ -137,7 +137,7 @@ async fn main() {
         if crash && count_finalized.get(&id).unwrap() >= &(n_data) {
             panic!(
                 "Forced crash - items finalized so far: {:?}.",
-                show_finalized(&count_finalized)
+                finalized_counts(&count_finalized)
             );
         } else if count_finalized.values().all(|c| c >= &(n_data)) {
             info!("Finalized required number of items.");
