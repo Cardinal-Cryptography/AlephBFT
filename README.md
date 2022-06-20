@@ -80,7 +80,7 @@ For example, you may run the following command:
 cd ./examples/ordering
 ./run.sh
 ```
-that will launch 5 properly working nodes, and 5 nodes that will crash 3 times each.
+that will launch 2 properly working nodes, and 2 nodes that will crash 3 times each.
 The delay before relaunching a crashed node will be set to 1 second.
 A faulty node will create 25 items before every crash, and another `25` in the end.
 Every node will therefore create `100` items in total, and then wait for other nodes before finishing its run.
