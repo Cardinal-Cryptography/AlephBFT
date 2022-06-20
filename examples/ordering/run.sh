@@ -60,12 +60,18 @@ done
 
 
 echo "WARNING
-The current implementation of the example may halt for a number of
-reasons. In such case, try reducing the number of nodes or shortening
-the restart delay. Always check logs to see if there are any unexpected
+Because of a naive network network implementation, the example might
+fail for certain ranges of parameters (large number of nodes).
+Also, current implementation of AlephBFT does not strictly guarantee
+all input data to be included in the output - a property that will
+be added in a future version. This issue occurs when the provider lags
+behind other nodes.
+Therefore, always check logs to see if there are any unexpected
 errors - e.g. connection timeout - or if some crashed nodes are lagging
 behind - messages \"Providing empty data\" are logged, but the total
 amount of finalized data does not increase for this particular node.
+In such case, try reducing the number of nodes or shortening
+the restart delay.
 
 PARAMETERS
 number of nodes: $N_NODES
