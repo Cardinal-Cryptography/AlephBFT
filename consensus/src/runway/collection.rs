@@ -241,7 +241,7 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
     }
 
     fn status_report(&self) {
-        info!(target: "AlephBFT-runway", "Initial unit collection status: {:?}", self.collection.status());
+        info!(target: "AlephBFT-runway", "Initial unit collection status report: {:?}", self.collection.status());
     }
 
     /// Run the initial unit collection until it sends the initial round.

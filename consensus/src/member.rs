@@ -22,7 +22,7 @@ use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashSet},
     convert::TryInto,
-    fmt::Debug,
+    fmt::{self, Debug},
     io::{Read, Write},
     marker::PhantomData,
     time,
@@ -133,6 +133,66 @@ impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Re
             unit_loader,
             _phantom: PhantomData,
         }
+    }
+}
+
+struct MemberStatus<'a, H, D, S>
+where
+    H: Hasher,
+    D: Data,
+    S: Signature,
+{
+    pub task_queue: &'a BinaryHeap<ScheduledTask<H, D, S>>,
+    pub not_resolved_parents: &'a HashSet<H::Hash>,
+    pub not_resolved_coords: &'a HashSet<UnitCoord>,
+}
+
+impl<'a, H, D, S> fmt::Display for MemberStatus<'a, H, D, S>
+where
+    H: Hasher,
+    D: Data,
+    S: Signature,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut count: (usize, usize, usize, usize) = (0, 0, 0, 0);
+        for task in self.task_queue.iter().map(|st| &st.task) {
+            match task {
+                Task::CoordRequest(_) => count.0 += 1,
+                Task::ParentsRequest(..) => count.1 += 1,
+                Task::UnitMulticast(_) => count.2 += 1,
+                Task::RequestNewest(_) => count.3 += 1,
+            }
+        }
+        let pending_tasks: Vec<_> = self
+            .task_queue
+            .iter()
+            .filter(|st| match st.task {
+                Task::UnitMulticast(_) => false,
+                _ => st.counter >= 1,
+            })
+            .collect();
+        write!(f, "Member status report: ")?;
+        write!(
+            f,
+            "not_resolved_coords.len() - {}",
+            self.not_resolved_coords.len()
+        )?;
+        write!(
+            f,
+            "; not_resolved_parents.len() - {}",
+            self.not_resolved_parents.len()
+        )?;
+        write!(f, "; task queue content: ")?;
+        write!(
+            f,
+            "CoordRequest - {}, ParentsRequest - {}, UnitMulticast - {}, RequestNewest - {}",
+            count.0, count.1, count.2, count.3
+        )?;
+        if !pending_tasks.is_empty() {
+            write!(f, "; pending tasks - {:?}", pending_tasks)?;
+        }
+        write!(f, ".")?;
+        Ok(())
     }
 }
 
@@ -351,35 +411,12 @@ where
     }
 
     fn status_report(&self) {
-        let mut count: (usize, usize, usize, usize) = (0, 0, 0, 0);
-        for task in self.task_queue.iter().map(|st| &st.task) {
-            match task {
-                Task::CoordRequest(_) => count.0 += 1,
-                Task::ParentsRequest(..) => count.1 += 1,
-                Task::UnitMulticast(_) => count.2 += 1,
-                Task::RequestNewest(_) => count.3 += 1,
-            }
-        }
-        let pending_tasks: Vec<_> = self
-            .task_queue
-            .iter()
-            .filter(|st| match st.task {
-                Task::UnitMulticast(_) => false,
-                _ => st.counter >= 1,
-            })
-            .collect();
-        info!(target: "AlephBFT-member", "Beginning member status report.");
-        info!(target: "AlephBFT-member", "not_resolved_coords.len(): {}", self.not_resolved_coords.len());
-        info!(target: "AlephBFT-member", "not_resolved_parents.len(): {}", self.not_resolved_parents.len());
-        info!(target: "AlephBFT-member", "Task queue content:");
-        info!(target: "AlephBFT-member", "  CoordRequest: {}.", count.0);
-        info!(target: "AlephBFT-member", "  ParentsRequest: {}.", count.1);
-        info!(target: "AlephBFT-member", "  UnitMulticast: {}.", count.2);
-        info!(target: "AlephBFT-member", "  RequestNewest: {}.", count.3);
-        if !pending_tasks.is_empty() {
-            info!(target: "AlephBFT-member", "Pending tasks: {:?}.", pending_tasks);
-        }
-        info!(target: "AlephBFT-member", "Finished member status report.");
+        let status = MemberStatus {
+            task_queue: &self.task_queue,
+            not_resolved_parents: &self.not_resolved_parents,
+            not_resolved_coords: &self.not_resolved_coords,
+        };
+        info!(target: "AlephBFT-member", "{}", status);
     }
 
     async fn run(mut self, mut exit: oneshot::Receiver<()>) {

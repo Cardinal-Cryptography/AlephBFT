@@ -4,11 +4,11 @@ use crate::{
     member::UnitMessage,
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
-        UnitStore, Validator,
+        UnitStore, UnitStoreStatus, Validator,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signature, Signed,
-    SpawnHandle, UncheckedSigned,
+    NodeIndex, NodeMap, NodeSubset, Receiver, Recipient, Round, Sender, SessionId, Signature,
+    Signed, SpawnHandle, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -20,6 +20,7 @@ use log::{debug, error, info, trace, warn};
 use std::{
     collections::HashSet,
     convert::TryFrom,
+    fmt,
     io::{Read, Write},
     marker::PhantomData,
     time::Duration,
@@ -141,6 +142,45 @@ where
     finalization_handler: FH,
     unit_saver: UnitSaver<US, H, D, MK::Signature>,
     exiting: bool,
+}
+
+struct RunwayStatus<'a, H: Hasher> {
+    pub forkers: &'a NodeSubset,
+    pub size: usize,
+    pub height: Option<Round>,
+    pub top_row: Vec<(usize, Round)>,
+    pub missing_coords: &'a HashSet<UnitCoord>,
+    pub missing_parents: &'a HashSet<H::Hash>,
+}
+
+impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Runway status report: ")?;
+        write!(f, "DAG size - {}", self.size)?;
+        if let Some(r) = self.height {
+            write!(f, "; DAG height - {}", r)?;
+        }
+        write!(f, "; DAG top row - {:?}", self.top_row)?;
+        if self.forkers.elements().next().is_some() {
+            let mut v_forkers: Vec<usize> = self.forkers.elements().map(|n| n.into()).collect();
+            v_forkers.sort();
+            write!(f, "; forkers - {:?}", v_forkers)?;
+        }
+        if !self.missing_coords.is_empty() {
+            let mut v_coords: Vec<(usize, Round)> = self
+                .missing_coords
+                .iter()
+                .map(|uc| (uc.creator().into(), uc.round()))
+                .collect();
+            v_coords.sort();
+            write!(f, "; missing coords - {:?}", v_coords)?;
+        }
+        if !self.missing_parents.is_empty() {
+            write!(f, "; missing parents - {:?}", self.missing_parents)?;
+        }
+        write!(f, ".")?;
+        Ok(())
+    }
 }
 
 struct RunwayConfig<
@@ -632,24 +672,21 @@ where
     }
 
     fn status_report(&self) {
-        let store_status = self.store.status_report();
-        info!(target: "AlephBFT-runway", "Beginning runway status report.");
-        info!(target: "AlephBFT-runway", "DAG size: {:?}", store_status.size);
-        if let Some(r) = store_status.height {
-            info!(target: "AlephBFT-runway", "DAG height: {:?}", r);
-        }
-        info!(target: "AlephBFT-runway", "DAG top row: {:?}", store_status.top_row);
-        let forkers = store_status.forkers.elements().collect::<Vec<_>>();
-        if !forkers.is_empty() {
-            info!(target: "AlephBFT-runway", "Forkers: {:?}", forkers);
-        }
-        if !self.missing_coords.is_empty() {
-            info!(target: "AlephBFT-runway", "Missing coords: {:?}", &self.missing_coords);
-        }
-        if !self.missing_parents.is_empty() {
-            info!(target: "AlephBFT-runway", "Missing parents: {:?}", &self.missing_parents);
-        }
-        info!(target: "AlephBFT-runway", "Finished runway status report.");
+        let UnitStoreStatus {
+            forkers,
+            size,
+            height,
+            top_row,
+        } = self.store.get_status();
+        let runway_status: RunwayStatus<H> = RunwayStatus {
+            forkers,
+            size,
+            height,
+            top_row,
+            missing_coords: &self.missing_coords,
+            missing_parents: &self.missing_parents,
+        };
+        info!(target: "AlephBFT-runway", "{}", runway_status);
     }
 
     async fn run(

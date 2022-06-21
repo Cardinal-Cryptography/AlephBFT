@@ -16,11 +16,11 @@ pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
     max_round: Round,
 }
 
-pub(crate) struct UnitStoreStatus {
-    pub forkers: NodeSubset,
+pub(crate) struct UnitStoreStatus<'a> {
+    pub forkers: &'a NodeSubset,
     pub size: usize,
     pub height: Option<Round>,
-    pub top_row: Vec<(NodeIndex, Round)>,
+    pub top_row: Vec<(usize, Round)>,
 }
 
 impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
@@ -36,19 +36,22 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         }
     }
 
-    pub fn status_report(&self) -> UnitStoreStatus {
+    pub fn get_status(&self) -> UnitStoreStatus {
+        let mut top_row: Vec<(usize, Round)> = self
+            .by_coord
+            .keys()
+            .map(|c| (c.creator, c.round))
+            .into_group_map()
+            .into_iter()
+            .map(|(k, v)| (k, v.into_iter().max().unwrap_or(0)))
+            .map(|(k, v)| (k.0, v))
+            .collect();
+        top_row.sort();
         UnitStoreStatus {
-            forkers: self.is_forker.clone(),
+            forkers: &self.is_forker,
             size: self.by_coord.len(),
-            height: self.by_coord.keys().clone().map(|k| k.round).max(),
-            top_row: self
-                .by_coord
-                .keys()
-                .map(|c| (c.creator, c.round))
-                .into_group_map()
-                .into_iter()
-                .map(|(k, v)| (k, v.into_iter().max().unwrap_or(0)))
-                .collect(),
+            height: self.by_coord.keys().map(|k| k.round).max(),
+            top_row,
         }
     }
 
