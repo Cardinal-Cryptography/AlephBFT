@@ -26,6 +26,7 @@ use std::{
     io::{Read, Write},
     marker::PhantomData,
     time,
+    time::Duration,
 };
 
 /// A message concerning units, either about new units or some requests for them.
@@ -272,55 +273,61 @@ where
         // preferred_recipient is Everyone if the message is supposed to be broadcast,
         // and Node(node_id) if the message should be send to one peer (node_id when
         // the task is done for the first time or a random peer otherwise)
-        let (message, preferred_recipient) = match task {
-            Task::CoordRequest(coord) => {
-                if !self.not_resolved_coords.contains(coord) {
-                    return None;
-                }
-                let message = UnitMessage::RequestCoord(self.index(), *coord);
-                let preferred_recipient = Recipient::Node(coord.creator());
-                (message, preferred_recipient)
+        if !self.still_valid(task, counter) {
+            None
+        } else {
+            Some((
+                self.message(task),
+                self.recipient(task, counter),
+                self.delay(task, counter),
+            ))
+        }
+    }
+
+    fn message(&self, task: &Task<H, D, S>) -> UnitMessage<H, D, S> {
+        match task {
+            Task::CoordRequest(coord) => UnitMessage::RequestCoord(self.index(), *coord),
+            Task::ParentsRequest(hash, _) => UnitMessage::RequestParents(self.index(), *hash),
+            Task::UnitMulticast(signed_unit) => UnitMessage::NewUnit(signed_unit.clone()),
+            Task::RequestNewest(salt) => UnitMessage::RequestNewest(self.index(), *salt),
+        }
+    }
+
+    fn recipient(&self, task: &Task<H, D, S>, counter: usize) -> Recipient {
+        match (self.preferred_recipient(task), counter) {
+            (Recipient::Everyone, _) => Recipient::Everyone,
+            (recipient, 0) => recipient,
+            (_, _) => Recipient::Node(self.random_peer()),
+        }
+    }
+
+    fn preferred_recipient(&self, task: &Task<H, D, S>) -> Recipient {
+        match task {
+            Task::CoordRequest(coord) => Recipient::Node(coord.creator()),
+            Task::ParentsRequest(_, preferred_recipient) => preferred_recipient.clone(),
+            Task::UnitMulticast(_) => Recipient::Everyone,
+            Task::RequestNewest(_) => Recipient::Everyone,
+        }
+    }
+
+    fn still_valid(&self, task: &Task<H, D, S>, counter: usize) -> bool {
+        match task {
+            Task::CoordRequest(coord) => self.not_resolved_coords.contains(coord),
+            Task::ParentsRequest(hash, _preferred_recipient) => {
+                self.not_resolved_parents.contains(hash)
             }
-            Task::ParentsRequest(hash, preferred_recipient) => {
-                if !self.not_resolved_parents.contains(hash) {
-                    return None;
-                }
-                let message = UnitMessage::RequestParents(self.index(), *hash);
-                let preferred_recipient = preferred_recipient.clone();
-                (message, preferred_recipient)
-            }
-            Task::UnitMulticast(signed_unit) => {
-                let message = UnitMessage::NewUnit(signed_unit.clone());
-                let preferred_recipient = Recipient::Everyone;
-                (message, preferred_recipient)
-            }
-            Task::RequestNewest(salt) => {
-                if self.newest_unit_resolved {
-                    return None;
-                }
-                let message = UnitMessage::RequestNewest(self.index(), *salt);
-                let preferred_recipient = Recipient::Everyone;
-                (message, preferred_recipient)
-            }
-        };
-        let (recipient, delay) = match preferred_recipient {
-            Recipient::Everyone => (
-                Recipient::Everyone,
-                (self.config.delay_config.unit_broadcast_delay)(counter),
-            ),
-            Recipient::Node(preferred_id) => {
-                let recipient = if counter == 0 {
-                    preferred_id
-                } else {
-                    self.random_peer()
-                };
-                (
-                    Recipient::Node(recipient),
-                    self.config.delay_config.requests_interval,
-                )
-            }
-        };
-        Some((message, recipient, delay))
+            Task::RequestNewest(_) => !self.newest_unit_resolved,
+            Task::UnitMulticast(_) => counter == 0,
+        }
+    }
+
+    fn delay(&self, task: &Task<H, D, S>, counter: usize) -> Duration {
+        match task {
+            Task::CoordRequest(_) => self.config.delay_config.requests_interval,
+            Task::ParentsRequest(_, _) => self.config.delay_config.requests_interval,
+            Task::UnitMulticast(_) => (self.config.delay_config.unit_broadcast_delay)(counter),
+            Task::RequestNewest(_) => (self.config.delay_config.unit_broadcast_delay)(counter),
+        }
     }
 
     fn on_unit_message_from_units(&mut self, message: RunwayNotificationOut<H, D, S>) {
