@@ -87,7 +87,11 @@ struct ScheduledTask<H: Hasher, D: Data, S: Signature> {
 
 impl<H: Hasher, D: Data, S: Signature> fmt::Display for ScheduledTask<H, D, S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}, counter {}", self.task, self.counter)
+        write!(
+            f,
+            "ScheduledTask({:?}, counter {})",
+            self.task, self.counter
+        )
     }
 }
 

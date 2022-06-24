@@ -36,7 +36,11 @@ impl<'a> fmt::Display for UnitStoreStatus<'a> {
             write!(f, "; DAG height - {}", r)?;
         }
         if !self.first_missing_rounds.is_empty() {
-            write!(f, "; DAG missing rounds - {:?}", self.first_missing_rounds)?;
+            write!(
+                f,
+                "; DAG first missing rounds - {:?}",
+                self.first_missing_rounds
+            )?;
         }
         write!(f, "; DAG top row - {:?}", self.top_row)?;
         if self.forkers.elements().next().is_some() {
@@ -83,8 +87,8 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
                     *f = true;
                 }
             }
-            match w.into_iter().find(|x| *x) {
-                Some(r) => r.into(),
+            match w.into_iter().position(|x| !x) {
+                Some(r) => r as u16,
                 None => v.len() as u16,
             }
         }
