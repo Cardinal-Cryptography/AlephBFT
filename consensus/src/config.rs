@@ -10,6 +10,8 @@ pub struct DelayConfig {
     pub tick_interval: Duration,
     /// After what delay, we repeat a request for a coord or parents.
     pub requests_interval: Duration,
+    /// Frequency of broadcast of top known units.
+    pub unit_rebroadcast_interval: Duration,
     /// DelaySchedule(k) represents the delay between the kth and (k+1)th broadcast.
     pub unit_broadcast_delay: DelaySchedule,
     /// DelaySchedule(k) represents the delay between creating the (k-1)th and kth unit.
@@ -64,6 +66,7 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
     let delay_config = DelayConfig {
         tick_interval: Duration::from_millis(100),
         requests_interval: Duration::from_millis(3000),
+        unit_rebroadcast_interval: Duration::from_millis(5000),
         unit_broadcast_delay: Arc::new(|t| exponential_slowdown(t, 4000.0, 0, 2.0)),
         // 4000, 8000, 16000, 32000, ...
         unit_creation_delay,
