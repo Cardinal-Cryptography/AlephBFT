@@ -7,8 +7,8 @@ use crate::{
         UnitStore, UnitStoreStatus, Validator,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, NodeSubset, Receiver, Recipient, Round, Sender, SessionId, Signature,
-    Signed, SpawnHandle, UncheckedSigned,
+    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signature, Signed,
+    SpawnHandle, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -145,27 +145,29 @@ where
 }
 
 struct RunwayStatus<'a, H: Hasher> {
-    pub forkers: &'a NodeSubset,
-    pub size: usize,
-    pub height: Option<Round>,
-    pub top_row: Vec<(usize, Round)>,
-    pub missing_coords: &'a HashSet<UnitCoord>,
-    pub missing_parents: &'a HashSet<H::Hash>,
+    status: UnitStoreStatus<'a>,
+    missing_coords: &'a HashSet<UnitCoord>,
+    missing_parents: &'a HashSet<H::Hash>,
+}
+
+impl<'a, H: Hasher> RunwayStatus<'a, H> {
+    fn new(
+        status: UnitStoreStatus<'a>,
+        missing_coords: &'a HashSet<UnitCoord>,
+        missing_parents: &'a HashSet<H::Hash>,
+    ) -> Self {
+        Self {
+            status,
+            missing_coords,
+            missing_parents,
+        }
+    }
 }
 
 impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Runway status report: ")?;
-        write!(f, "DAG size - {}", self.size)?;
-        if let Some(r) = self.height {
-            write!(f, "; DAG height - {}", r)?;
-        }
-        write!(f, "; DAG top row - {:?}", self.top_row)?;
-        if self.forkers.elements().next().is_some() {
-            let mut v_forkers: Vec<usize> = self.forkers.elements().map(|n| n.into()).collect();
-            v_forkers.sort();
-            write!(f, "; forkers - {:?}", v_forkers)?;
-        }
+        write!(f, "{}", self.status)?;
         if !self.missing_coords.is_empty() {
             let mut v_coords: Vec<(usize, Round)> = self
                 .missing_coords
@@ -672,20 +674,11 @@ where
     }
 
     fn status_report(&self) {
-        let UnitStoreStatus {
-            forkers,
-            size,
-            height,
-            top_row,
-        } = self.store.get_status();
-        let runway_status: RunwayStatus<H> = RunwayStatus {
-            forkers,
-            size,
-            height,
-            top_row,
-            missing_coords: &self.missing_coords,
-            missing_parents: &self.missing_parents,
-        };
+        let runway_status: RunwayStatus<H> = RunwayStatus::new(
+            self.store.get_status(),
+            &self.missing_coords,
+            &self.missing_parents,
+        );
         info!(target: "AlephBFT-runway", "{}", runway_status);
     }
 

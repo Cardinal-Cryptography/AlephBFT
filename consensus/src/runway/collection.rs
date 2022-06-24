@@ -133,6 +133,7 @@ pub struct Collection<'a, MK: KeyBox> {
     validator: &'a Validator<'a, MK>,
     starting_round: Round,
     responders: HashSet<NodeIndex>,
+    collected_responses: Vec<Option<Round>>,
     threshold: NodeCount,
     salt: Salt,
 }
@@ -147,12 +148,14 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
     ) -> (Self, Salt) {
         let salt = generate_salt();
         let responders = [keychain.index()].into();
+        let collected_responses = vec![None; keychain.node_count().0];
         (
             Collection {
                 keychain,
                 validator,
                 starting_round: 0,
                 responders,
+                collected_responses,
                 threshold,
                 salt,
             },
@@ -176,6 +179,9 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
                 return Err(Error::ForeignUnit(checked_unit.creator()));
             }
             self.starting_round = max(self.starting_round, checked_unit.round() + 1);
+            if let Some(round) = self.collected_responses.get_mut(response.responder.0) {
+                *round = Some(checked_unit.round() + 1);
+            }
         }
         self.responders.insert(response.responder);
         Ok(self.status())
@@ -241,7 +247,7 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
     }
 
     fn status_report(&self) {
-        info!(target: "AlephBFT-runway", "Initial unit collection status report: {:?}", self.collection.status());
+        info!(target: "AlephBFT-runway", "Initial unit collection status report: status - {:?}, collected responses - {:?}", self.collection.status(), self.collection.collected_responses);
     }
 
     /// Run the initial unit collection until it sends the initial round.

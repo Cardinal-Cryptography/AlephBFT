@@ -85,6 +85,12 @@ struct ScheduledTask<H: Hasher, D: Data, S: Signature> {
     counter: usize,
 }
 
+impl<H: Hasher, D: Data, S: Signature> fmt::Display for ScheduledTask<H, D, S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}, counter {}", self.task, self.counter)
+    }
+}
+
 impl<H: Hasher, D: Data, S: Signature> ScheduledTask<H, D, S> {
     fn new(task: Task<H, D, S>, scheduled_time: time::Instant) -> Self {
         ScheduledTask {
@@ -142,9 +148,28 @@ where
     D: Data,
     S: Signature,
 {
-    pub task_queue: &'a BinaryHeap<ScheduledTask<H, D, S>>,
-    pub not_resolved_parents: &'a HashSet<H::Hash>,
-    pub not_resolved_coords: &'a HashSet<UnitCoord>,
+    task_queue: &'a BinaryHeap<ScheduledTask<H, D, S>>,
+    not_resolved_parents: &'a HashSet<H::Hash>,
+    not_resolved_coords: &'a HashSet<UnitCoord>,
+}
+
+impl<'a, H, D, S> MemberStatus<'a, H, D, S>
+where
+    H: Hasher,
+    D: Data,
+    S: Signature,
+{
+    fn new(
+        task_queue: &'a BinaryHeap<ScheduledTask<H, D, S>>,
+        not_resolved_parents: &'a HashSet<H::Hash>,
+        not_resolved_coords: &'a HashSet<UnitCoord>,
+    ) -> Self {
+        Self {
+            task_queue,
+            not_resolved_parents,
+            not_resolved_coords,
+        }
+    }
 }
 
 impl<'a, H, D, S> fmt::Display for MemberStatus<'a, H, D, S>
@@ -154,42 +179,52 @@ where
     S: Signature,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut count: (usize, usize, usize, usize) = (0, 0, 0, 0);
+        let mut count_coord_request: usize = 0;
+        let mut count_parents_request: usize = 0;
+        let mut count_unit_multicast: usize = 0;
+        let mut count_request_newest: usize = 0;
         for task in self.task_queue.iter().map(|st| &st.task) {
             match task {
-                Task::CoordRequest(_) => count.0 += 1,
-                Task::ParentsRequest(..) => count.1 += 1,
-                Task::UnitMulticast(_) => count.2 += 1,
-                Task::RequestNewest(_) => count.3 += 1,
+                Task::CoordRequest(_) => count_coord_request += 1,
+                Task::ParentsRequest(..) => count_parents_request += 1,
+                Task::UnitMulticast(_) => count_unit_multicast += 1,
+                Task::RequestNewest(_) => count_request_newest += 1,
             }
         }
-        let pending_tasks: Vec<_> = self
+        let long_time_pending_tasks: Vec<_> = self
             .task_queue
             .iter()
             .filter(|st| match st.task {
                 Task::UnitMulticast(_) => false,
-                _ => st.counter >= 1,
+                _ => st.counter >= 5,
             })
             .collect();
         write!(f, "Member status report: ")?;
-        write!(
-            f,
-            "not_resolved_coords.len() - {}",
-            self.not_resolved_coords.len()
-        )?;
-        write!(
-            f,
-            "; not_resolved_parents.len() - {}",
-            self.not_resolved_parents.len()
-        )?;
-        write!(f, "; task queue content: ")?;
+        write!(f, "task queue content: ")?;
         write!(
             f,
             "CoordRequest - {}, ParentsRequest - {}, UnitMulticast - {}, RequestNewest - {}",
-            count.0, count.1, count.2, count.3
+            count_coord_request, count_parents_request, count_unit_multicast, count_request_newest,
         )?;
-        if !pending_tasks.is_empty() {
-            write!(f, "; pending tasks - {:?}", pending_tasks)?;
+        if !self.not_resolved_coords.is_empty() {
+            write!(
+                f,
+                "; not_resolved_coords.len() - {}",
+                self.not_resolved_coords.len()
+            )?;
+        }
+        if !self.not_resolved_parents.is_empty() {
+            write!(
+                f,
+                "; not_resolved_parents.len() - {}",
+                self.not_resolved_parents.len()
+            )?;
+        }
+        if !long_time_pending_tasks.is_empty() {
+            write!(f, "; pending tasks with count >= 5 -")?;
+            for task in long_time_pending_tasks.iter() {
+                write!(f, " {},", task)?;
+            }
         }
         write!(f, ".")?;
         Ok(())
@@ -411,11 +446,11 @@ where
     }
 
     fn status_report(&self) {
-        let status = MemberStatus {
-            task_queue: &self.task_queue,
-            not_resolved_parents: &self.not_resolved_parents,
-            not_resolved_coords: &self.not_resolved_coords,
-        };
+        let status = MemberStatus::new(
+            &self.task_queue,
+            &self.not_resolved_parents,
+            &self.not_resolved_coords,
+        );
         info!(target: "AlephBFT-member", "{}", status);
     }
 

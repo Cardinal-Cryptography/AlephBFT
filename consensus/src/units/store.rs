@@ -1,6 +1,46 @@
 use super::*;
 use itertools::Itertools;
 use log::{trace, warn};
+use std::fmt;
+
+pub(crate) struct UnitStoreStatus<'a> {
+    forkers: &'a NodeSubset,
+    size: usize,
+    height: Option<Round>,
+    top_row: Vec<(usize, Round)>,
+}
+
+impl<'a> UnitStoreStatus<'a> {
+    fn new(
+        forkers: &'a NodeSubset,
+        size: usize,
+        height: Option<Round>,
+        top_row: Vec<(usize, Round)>,
+    ) -> Self {
+        Self {
+            forkers,
+            size,
+            height,
+            top_row,
+        }
+    }
+}
+
+impl<'a> fmt::Display for UnitStoreStatus<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "DAG size - {}", self.size)?;
+        if let Some(r) = self.height {
+            write!(f, "; DAG height - {}", r)?;
+        }
+        write!(f, "; DAG top row - {:?}", self.top_row)?;
+        if self.forkers.elements().next().is_some() {
+            let mut v_forkers: Vec<usize> = self.forkers.elements().map(|n| n.into()).collect();
+            v_forkers.sort();
+            write!(f, "; forkers - {:?}", v_forkers)?;
+        }
+        Ok(())
+    }
+}
 
 /// A component for temporarily storing units before they are declared "legit" and sent
 /// to the Terminal. We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
@@ -14,13 +54,6 @@ pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
     is_forker: NodeSubset,
     legit_buffer: Vec<SignedUnit<'a, H, D, KB>>,
     max_round: Round,
-}
-
-pub(crate) struct UnitStoreStatus<'a> {
-    pub forkers: &'a NodeSubset,
-    pub size: usize,
-    pub height: Option<Round>,
-    pub top_row: Vec<(usize, Round)>,
 }
 
 impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
@@ -37,22 +70,33 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
     }
 
     pub fn get_status(&self) -> UnitStoreStatus {
+        // fn first_missing(v: Vec<Round>) -> Round {
+        //     let mut w = vec![false; v.len()];
+        //     for r in &v {
+        //         if let Some(f) = w.get_mut(*r as usize) {
+        //             *f = true;
+        //         }
+        //     }
+        //     match w.into_iter().find(|x| *x) {
+        //         Some(r) => r.into(),
+        //         None => v.len() as u16,
+        //     }
+        // }
         let mut top_row: Vec<(usize, Round)> = self
             .by_coord
             .keys()
-            .map(|c| (c.creator, c.round))
-            .into_group_map()
+            .map(|c| (c.creator.0, c.round))
+            .into_grouping_map()
+            .max()
             .into_iter()
-            .map(|(k, v)| (k, v.into_iter().max().unwrap_or(0)))
-            .map(|(k, v)| (k.0, v))
             .collect();
         top_row.sort();
-        UnitStoreStatus {
-            forkers: &self.is_forker,
-            size: self.by_coord.len(),
-            height: self.by_coord.keys().map(|k| k.round).max(),
+        UnitStoreStatus::new(
+            &self.is_forker,
+            self.by_coord.len(),
+            self.by_coord.keys().map(|k| k.round).max(),
             top_row,
-        }
+        )
     }
 
     pub(crate) fn unit_by_coord(&self, coord: UnitCoord) -> Option<&SignedUnit<'a, H, D, KB>> {
