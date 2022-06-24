@@ -8,6 +8,7 @@ pub(crate) struct UnitStoreStatus<'a> {
     size: usize,
     height: Option<Round>,
     top_row: Vec<(usize, Round)>,
+    first_missing_rounds: Vec<(usize, Round)>,
 }
 
 impl<'a> UnitStoreStatus<'a> {
@@ -16,12 +17,14 @@ impl<'a> UnitStoreStatus<'a> {
         size: usize,
         height: Option<Round>,
         top_row: Vec<(usize, Round)>,
+        first_missing_rounds: Vec<(usize, Round)>,
     ) -> Self {
         Self {
             forkers,
             size,
             height,
             top_row,
+            first_missing_rounds,
         }
     }
 }
@@ -31,6 +34,9 @@ impl<'a> fmt::Display for UnitStoreStatus<'a> {
         write!(f, "DAG size - {}", self.size)?;
         if let Some(r) = self.height {
             write!(f, "; DAG height - {}", r)?;
+        }
+        if !self.first_missing_rounds.is_empty() {
+            write!(f, "; DAG missing rounds - {:?}", self.first_missing_rounds)?;
         }
         write!(f, "; DAG top row - {:?}", self.top_row)?;
         if self.forkers.elements().next().is_some() {
@@ -70,32 +76,42 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
     }
 
     pub fn get_status(&self) -> UnitStoreStatus {
-        // fn first_missing(v: Vec<Round>) -> Round {
-        //     let mut w = vec![false; v.len()];
-        //     for r in &v {
-        //         if let Some(f) = w.get_mut(*r as usize) {
-        //             *f = true;
-        //         }
-        //     }
-        //     match w.into_iter().find(|x| *x) {
-        //         Some(r) => r.into(),
-        //         None => v.len() as u16,
-        //     }
-        // }
-        let mut top_row: Vec<(usize, Round)> = self
+        fn first_missing(v: Vec<Round>) -> Round {
+            let mut w = vec![false; v.len()];
+            for r in &v {
+                if let Some(f) = w.get_mut(*r as usize) {
+                    *f = true;
+                }
+            }
+            match w.into_iter().find(|x| *x) {
+                Some(r) => r.into(),
+                None => v.len() as u16,
+            }
+        }
+        let gm = self
             .by_coord
             .keys()
             .map(|c| (c.creator.0, c.round))
-            .into_grouping_map()
-            .max()
+            .into_grouping_map();
+        let top_row: HashMap<usize, Round> = gm.clone().max();
+        let mut first_missing_rounds: Vec<(usize, Round)> = gm
+            .collect::<Vec<_>>()
             .into_iter()
+            .map(|(id, rounds)| (id, first_missing(rounds)))
+            .filter(|(id, round)| match top_row.get(id) {
+                Some(top_round) => round < top_round,
+                None => false,
+            })
             .collect();
+        let mut top_row: Vec<(usize, Round)> = top_row.into_iter().collect();
+        first_missing_rounds.sort();
         top_row.sort();
         UnitStoreStatus::new(
             &self.is_forker,
             self.by_coord.len(),
             self.by_coord.keys().map(|k| k.round).max(),
             top_row,
+            first_missing_rounds,
         )
     }
 
