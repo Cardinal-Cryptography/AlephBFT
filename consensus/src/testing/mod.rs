@@ -44,7 +44,7 @@ pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount) -> Config {
         requests_interval: Duration::from_millis(50),
         unit_rebroadcast_interval_min: Duration::from_millis(400),
         unit_rebroadcast_interval_max: Duration::from_millis(500),
-        unit_broadcast_delay: Arc::new(|t| exponential_slowdown(t, 100.0, 1, 3.0)),
+        retransmit_delay: Arc::new(|t| exponential_slowdown(t, 100.0, 1, 3.0)),
         //100, 100, 300, 900, 2700, ...
         unit_creation_delay: Arc::new(|t| exponential_slowdown(t, 50.0, usize::MAX, 1.000)),
         //50, 50, 50, 50, ...

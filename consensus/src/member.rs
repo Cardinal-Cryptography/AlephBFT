@@ -398,7 +398,7 @@ where
                 let millis = rand::thread_rng().gen_range(low.as_millis()..high.as_millis());
                 Duration::from_millis(millis as u64)
             }
-            Task::RequestNewest(_) => (self.config.delay_config.unit_broadcast_delay)(counter),
+            Task::RequestNewest(_) => (self.config.delay_config.retransmit_delay)(counter),
         }
     }
 
