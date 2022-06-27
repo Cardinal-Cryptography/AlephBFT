@@ -192,7 +192,7 @@ where
         let n_members = config.n_members;
 
         let tasks = (0usize..n_members.into())
-            .filter(|node| &NodeIndex(*node) != &config.node_ix)
+            .filter(|node| NodeIndex(*node) != config.node_ix)
             .map(|node| {
                 ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
             });
@@ -351,7 +351,7 @@ where
         if time::Instant::now().duration_since(top_unit.discovered)
             > self.config.delay_config.unit_rebroadcast_interval_min
         {
-            Some(UnitMessage::NewUnit(top_unit.unit.clone().into()))
+            Some(UnitMessage::NewUnit(top_unit.unit.clone()))
         } else {
             None
         }
