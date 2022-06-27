@@ -129,6 +129,12 @@ pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US:
     _phantom: PhantomData<D>,
 }
 
+#[derive(Debug)]
+pub struct TopUnit<H: Hasher, D: Data, S: Signature> {
+    unit: UncheckedSignedUnit<H, D, S>,
+    discovered: time::Instant,
+}
+
 impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Read>
     LocalIO<D, DP, FH, US, UL>
 {
@@ -166,7 +172,7 @@ where
     notifications_from_runway: Receiver<RunwayNotificationOut<H, D, S>>,
     resolved_requests: Receiver<Request<H>>,
     exiting: bool,
-    top_units: HashMap<NodeIndex, UncheckedSignedUnit<H, D, S>>,
+    top_units: HashMap<NodeIndex, TopUnit<H, D, S>>,
 }
 
 impl<H, D, S> Member<H, D, S>
@@ -184,13 +190,17 @@ where
         resolved_requests: Receiver<Request<H>>,
     ) -> Self {
         let n_members = config.n_members;
-        let tasks = (0..n_members.into()).map(|node| {
-            ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
-        });
+
+        let tasks = (0usize..n_members.into())
+            .filter(|node| &NodeIndex(*node) != &config.node_ix)
+            .map(|node| {
+                ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
+            });
+        let task_queue = BinaryHeap::from_iter(tasks);
 
         Self {
             config,
-            task_queue: BinaryHeap::from_iter(tasks),
+            task_queue,
             not_resolved_parents: HashSet::new(),
             not_resolved_coords: HashSet::new(),
             newest_unit_resolved: false,
@@ -213,10 +223,14 @@ where
 
     fn on_unit_discovered(&mut self, new_unit: UncheckedSignedUnit<H, D, S>) {
         match self.top_units.get(&new_unit.as_signable().creator()) {
-            Some(unit) if unit.as_signable().round() >= new_unit.as_signable().round() => None,
-            _ => self
-                .top_units
-                .insert(new_unit.as_signable().creator(), new_unit),
+            Some(u) if u.unit.as_signable().round() >= new_unit.as_signable().round() => None,
+            _ => self.top_units.insert(
+                new_unit.as_signable().creator(),
+                TopUnit {
+                    unit: new_unit,
+                    discovered: time::Instant::now(),
+                },
+            ),
         };
     }
 
@@ -328,8 +342,18 @@ where
             Task::UnitRebroadcast(node) => self
                 .top_units
                 .get(node)
-                .map(|unit| UnitMessage::NewUnit(unit.clone().into())),
+                .and_then(|u| self.rebroadcast_if_old(u)),
             Task::RequestNewest(salt) => Some(UnitMessage::RequestNewest(self.index(), *salt)),
+        }
+    }
+
+    fn rebroadcast_if_old(&self, top_unit: &TopUnit<H, D, S>) -> Option<UnitMessage<H, D, S>> {
+        if time::Instant::now().duration_since(top_unit.discovered)
+            > self.config.delay_config.unit_rebroadcast_interval
+        {
+            Some(UnitMessage::NewUnit(top_unit.unit.clone().into()))
+        } else {
+            None
         }
     }
 
@@ -367,8 +391,17 @@ where
         match task {
             Task::CoordRequest(_) => self.config.delay_config.requests_interval,
             Task::ParentsRequest(_, _) => self.config.delay_config.requests_interval,
-            Task::UnitMulticast(_) => (self.config.delay_config.unit_broadcast_delay)(counter),
-            Task::UnitRebroadcast(_) => self.config.delay_config.unit_rebroadcast_interval,
+            Task::UnitMulticast(_) => Duration::from_millis(0),
+            Task::UnitRebroadcast(_) => {
+                let millis = rand::thread_rng().gen_range(
+                    0..(self
+                        .config
+                        .delay_config
+                        .unit_rebroadcast_interval
+                        .as_millis() as u64),
+                );
+                Duration::from_millis(millis)
+            }
             Task::RequestNewest(_) => (self.config.delay_config.unit_broadcast_delay)(counter),
         }
     }

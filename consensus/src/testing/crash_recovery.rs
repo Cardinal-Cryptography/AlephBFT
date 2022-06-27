@@ -10,6 +10,7 @@ use futures::{
     StreamExt,
 };
 use parking_lot::Mutex;
+use serial_test::serial;
 use std::{collections::HashMap, sync::Arc};
 
 struct NodeData {
@@ -187,8 +188,7 @@ async fn crashed_nodes_recover(
         let buf = &mut &saved_units_before[..];
         let mut counter = 0;
         while !buf.is_empty() {
-            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf)
-                .expect("should be correct");
+            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf).unwrap();
             let su = u.as_signable();
             let coord = su.coord();
             assert_eq!(coord.creator(), ix);
@@ -199,8 +199,7 @@ async fn crashed_nodes_recover(
 
         let buf = &mut &saved_units.lock()[..];
         while !buf.is_empty() {
-            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf)
-                .expect("should be correct");
+            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf).unwrap();
             let su = u.as_signable();
             let coord = su.coord();
             assert_eq!(coord.creator(), ix);
@@ -215,7 +214,8 @@ async fn crashed_nodes_recover(
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn saves_created_units() {
     init_log();
     let n_batches = 2;
@@ -250,8 +250,7 @@ async fn saves_created_units() {
         let buf = &mut &saved_units[..];
         let mut counter = 0;
         while !buf.is_empty() {
-            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf)
-                .expect("should be correct");
+            let u = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf).unwrap();
             let su = u.as_signable();
             let coord = su.coord();
             assert_eq!(coord.creator(), ix);
@@ -261,17 +260,20 @@ async fn saves_created_units() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn small_node_crash_recovery_one_killed() {
     crashed_nodes_recover(6.into(), 1.into(), 2, 500, 1.0).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn small_node_crash_recovery_three_killed() {
     crashed_nodes_recover(10.into(), 3.into(), 2, 500, 1.0).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
 async fn medium_node_crash_recovery_nine_killed() {
     crashed_nodes_recover(28.into(), 9.into(), 2, 500, 1.0).await;
 }

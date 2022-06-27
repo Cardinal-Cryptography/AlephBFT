@@ -266,12 +266,9 @@ where
                 }
                 Response::NewestUnit(response) => {
                     trace!(target: "AlephBFT-runway", "{:?} Response newest unit received from {:?}.", self.index(), response.index());
-                    if self
-                        .responses_for_collection
-                        .unbounded_send(response)
-                        .is_err()
-                    {
-                        debug!(target: "AlephBFT-runway", "{:?} Could not send response to collection.", self.index())
+                    let res = self.responses_for_collection.unbounded_send(response);
+                    if res.is_err() {
+                        debug!(target: "AlephBFT-runway", "{:?} Could not send response to collection ({:?}).", self.index(), res)
                     }
                 }
             },
@@ -505,6 +502,7 @@ where
                     self.on_new_forker_detected(forker, proof);
                 }
             }
+
             Units(units) => {
                 for uu in units {
                     self.on_unit_received(uu, true);
