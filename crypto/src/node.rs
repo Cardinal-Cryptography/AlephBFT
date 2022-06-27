@@ -1,6 +1,7 @@
 use codec::{Decode, Encode, Error, Input, Output};
 use derive_more::{Add, AddAssign, From, Into, Sub, SubAssign, Sum};
 use std::{
+    collections::HashMap,
     fmt,
     hash::Hash,
     ops::{Div, Index as StdIndex, Mul},
@@ -80,6 +81,18 @@ impl<T> NodeMap<T> {
     {
         let v = vec![None; len.into()];
         NodeMap(v)
+    }
+
+    pub fn with_hashmap(len: NodeCount, hashmap: HashMap<NodeIndex, T>) -> Self
+    where
+        T: Clone,
+    {
+        let v = vec![None; len.into()];
+        let mut nm = NodeMap(v);
+        for (id, item) in hashmap.into_iter() {
+            nm.insert(id, item);
+        }
+        nm
     }
 
     pub fn size(&self) -> NodeCount {
@@ -203,6 +216,14 @@ impl NodeSubset {
             .enumerate()
             .filter_map(|(i, b)| if b { Some(i.into()) } else { None })
     }
+
+    pub fn len(&self) -> usize {
+        self.elements().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl Encode for NodeSubset {
@@ -240,6 +261,14 @@ impl StdIndex<NodeIndex> for NodeSubset {
 
     fn index(&self, vidx: NodeIndex) -> &bool {
         &self.0[vidx.0 as usize]
+    }
+}
+
+impl fmt::Display for NodeSubset {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut v: Vec<usize> = self.elements().map(|n| n.into()).collect();
+        v.sort();
+        write!(f, "{:?}", v)
     }
 }
 

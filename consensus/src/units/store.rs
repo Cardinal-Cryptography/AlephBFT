@@ -3,12 +3,12 @@ use itertools::Itertools;
 use log::{trace, warn};
 use std::fmt;
 
-pub(crate) struct UnitStoreStatus<'a> {
+pub struct UnitStoreStatus<'a> {
     forkers: &'a NodeSubset,
     size: usize,
     height: Option<Round>,
-    top_row: Vec<(usize, Round)>,
-    first_missing_rounds: Vec<(usize, Round)>,
+    top_row: NodeMap<Round>,
+    first_missing_rounds: NodeMap<Round>,
 }
 
 impl<'a> UnitStoreStatus<'a> {
@@ -16,8 +16,8 @@ impl<'a> UnitStoreStatus<'a> {
         forkers: &'a NodeSubset,
         size: usize,
         height: Option<Round>,
-        top_row: Vec<(usize, Round)>,
-        first_missing_rounds: Vec<(usize, Round)>,
+        top_row: NodeMap<Round>,
+        first_missing_rounds: NodeMap<Round>,
     ) -> Self {
         Self {
             forkers,
@@ -38,15 +38,13 @@ impl<'a> fmt::Display for UnitStoreStatus<'a> {
         if !self.first_missing_rounds.is_empty() {
             write!(
                 f,
-                "; DAG first missing rounds - {:?}",
+                "; DAG first missing rounds - {}",
                 self.first_missing_rounds
             )?;
         }
-        write!(f, "; DAG top row - {:?}", self.top_row)?;
-        if self.forkers.elements().next().is_some() {
-            let mut v_forkers: Vec<usize> = self.forkers.elements().map(|n| n.into()).collect();
-            v_forkers.sort();
-            write!(f, "; forkers - {:?}", v_forkers)?;
+        write!(f, "; DAG top row - {}", self.top_row)?;
+        if !self.forkers.is_empty() {
+            write!(f, "; forkers - {}", self.forkers)?;
         }
         Ok(())
     }
@@ -92,13 +90,14 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
                 None => v.len() as u16,
             }
         }
+        let n_nodes: NodeCount = self.is_forker.size().into();
         let gm = self
             .by_coord
             .keys()
-            .map(|c| (c.creator.0, c.round))
+            .map(|c| (c.creator, c.round))
             .into_grouping_map();
-        let top_row: HashMap<usize, Round> = gm.clone().max();
-        let mut first_missing_rounds: Vec<(usize, Round)> = gm
+        let top_row: HashMap<NodeIndex, Round> = gm.clone().max();
+        let first_missing_rounds: HashMap<NodeIndex, Round> = gm
             .collect::<Vec<_>>()
             .into_iter()
             .map(|(id, rounds)| (id, first_missing(rounds)))
@@ -107,15 +106,12 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
                 None => false,
             })
             .collect();
-        let mut top_row: Vec<(usize, Round)> = top_row.into_iter().collect();
-        first_missing_rounds.sort();
-        top_row.sort();
         UnitStoreStatus::new(
             &self.is_forker,
             self.by_coord.len(),
             self.by_coord.keys().map(|k| k.round).max(),
-            top_row,
-            first_missing_rounds,
+            NodeMap::with_hashmap(n_nodes, top_row),
+            NodeMap::with_hashmap(n_nodes, first_missing_rounds),
         )
     }
 
