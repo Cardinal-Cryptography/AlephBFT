@@ -349,7 +349,7 @@ where
 
     fn rebroadcast_if_old(&self, top_unit: &TopUnit<H, D, S>) -> Option<UnitMessage<H, D, S>> {
         if time::Instant::now().duration_since(top_unit.discovered)
-            > self.config.delay_config.unit_rebroadcast_interval
+            > self.config.delay_config.unit_rebroadcast_interval_min
         {
             Some(UnitMessage::NewUnit(top_unit.unit.clone().into()))
         } else {
@@ -393,14 +393,10 @@ where
             Task::ParentsRequest(_, _) => self.config.delay_config.requests_interval,
             Task::UnitMulticast(_) => Duration::from_millis(0),
             Task::UnitRebroadcast(_) => {
-                let millis = rand::thread_rng().gen_range(
-                    0..(self
-                        .config
-                        .delay_config
-                        .unit_rebroadcast_interval
-                        .as_millis() as u64),
-                );
-                Duration::from_millis(millis)
+                let low = self.config.delay_config.unit_rebroadcast_interval_min;
+                let high = self.config.delay_config.unit_rebroadcast_interval_max;
+                let millis = rand::thread_rng().gen_range(low.as_millis()..high.as_millis());
+                Duration::from_millis(millis as u64)
             }
             Task::RequestNewest(_) => (self.config.delay_config.unit_broadcast_delay)(counter),
         }
