@@ -1,8 +1,8 @@
 use crate::{
     runway::Request,
     units::{UncheckedSignedUnit, ValidationError, Validator},
-    Data, Hasher, KeyBox, NodeCount, NodeIndex, Receiver, Round, Sender, Signable, Signature,
-    SignatureError, UncheckedSigned,
+    Data, Hasher, KeyBox, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Signable,
+    Signature, SignatureError, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
@@ -10,7 +10,7 @@ use futures_timer::Delay;
 use log::{error, info, warn};
 use std::{
     cmp::max,
-    collections::{hash_map::DefaultHasher, HashSet},
+    collections::hash_map::DefaultHasher,
     fmt::{Display, Formatter, Result as FmtResult},
     hash::{Hash, Hasher as _},
     time::Duration,
@@ -131,9 +131,7 @@ pub enum Status {
 pub struct Collection<'a, MK: KeyBox> {
     keychain: &'a MK,
     validator: &'a Validator<'a, MK>,
-    starting_round: Round,
-    responders: HashSet<NodeIndex>,
-    collected_responses: Vec<Option<Round>>,
+    collected_starting_rounds: NodeMap<Round>,
     threshold: NodeCount,
     salt: Salt,
 }
@@ -147,15 +145,13 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
         threshold: NodeCount,
     ) -> (Self, Salt) {
         let salt = generate_salt();
-        let responders = [keychain.index()].into();
-        let collected_responses = vec![None; keychain.node_count().0];
+        let mut collected_starting_rounds = NodeMap::with_size(keychain.node_count());
+        collected_starting_rounds.insert(keychain.index(), 0);
         (
             Collection {
                 keychain,
                 validator,
-                starting_round: 0,
-                responders,
-                collected_responses,
+                collected_starting_rounds,
                 threshold,
                 salt,
             },
@@ -172,18 +168,26 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
         if response.salt != self.salt {
             return Err(Error::SaltMismatch(self.salt, response.salt));
         }
-        if let Some(unchecked_unit) = response.unit {
-            let checked_signed_unit = self.validator.validate_unit(unchecked_unit)?;
-            let checked_unit = checked_signed_unit.as_signable();
-            if checked_unit.creator() != self.keychain.index() {
-                return Err(Error::ForeignUnit(checked_unit.creator()));
+        let round: Round = match response.unit {
+            Some(unchecked_unit) => {
+                let checked_signed_unit = self.validator.validate_unit(unchecked_unit)?;
+                let checked_unit = checked_signed_unit.as_signable();
+                if checked_unit.creator() != self.keychain.index() {
+                    return Err(Error::ForeignUnit(checked_unit.creator()));
+                }
+                checked_unit.round() + 1
             }
-            self.starting_round = max(self.starting_round, checked_unit.round() + 1);
-            if let Some(round) = self.collected_responses.get_mut(response.responder.0) {
-                *round = Some(checked_unit.round() + 1);
-            }
+            None => 0,
+        };
+        let current_round = *self
+            .collected_starting_rounds
+            .get(response.responder)
+            .unwrap_or(&0);
+        if current_round != round {
+            info!(target: "AlephBFT-runway", "Warning: node {} responded with starting unit {}, but now says {}", response.responder.0, current_round, round);
         }
-        self.responders.insert(response.responder);
+        self.collected_starting_rounds
+            .insert(response.responder, max(current_round, round));
         Ok(self.status())
     }
 
@@ -195,12 +199,13 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
     /// The current status of the collection.
     pub fn status(&self) -> Status {
         use Status::*;
-        let responders = NodeCount(self.responders.len());
+        let responders = NodeCount(self.collected_starting_rounds.len());
+        let starting_round: Round = *self.collected_starting_rounds.values().max().unwrap_or(&0);
         if responders == self.keychain.node_count() {
-            return Finished(self.starting_round);
+            return Finished(starting_round);
         }
         if responders >= self.threshold {
-            return Ready(self.starting_round);
+            return Ready(starting_round);
         }
         Pending
     }
@@ -247,7 +252,7 @@ impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
     }
 
     fn status_report(&self) {
-        info!(target: "AlephBFT-runway", "Initial unit collection status report: status - {:?}, collected responses - {:?}", self.collection.status(), self.collection.collected_responses);
+        info!(target: "AlephBFT-runway", "Initial unit collection status report: status - {:?}, collected starting rounds - {}", self.collection.status(), self.collection.collected_starting_rounds);
     }
 
     /// Run the initial unit collection until it sends the initial round.

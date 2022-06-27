@@ -1,6 +1,7 @@
 use codec::{Decode, Encode, Error, Input, Output};
 use derive_more::{Add, AddAssign, From, Into, Sub, SubAssign, Sum};
 use std::{
+    fmt,
     hash::Hash,
     ops::{Div, Index as StdIndex, Mul},
     vec,
@@ -131,6 +132,14 @@ impl<T> NodeMap<T> {
     pub fn to_subset(&self) -> NodeSubset {
         NodeSubset(self.0.iter().map(Option::is_some).collect())
     }
+
+    pub fn len(&self) -> usize {
+        self.iter().count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl<T: 'static> IntoIterator for NodeMap<T> {
@@ -154,6 +163,21 @@ impl<'a, T> IntoIterator for &'a mut NodeMap<T> {
     type IntoIter = Box<dyn Iterator<Item = (NodeIndex, &'a mut T)> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
         Box::new(self.iter_mut())
+    }
+}
+
+impl<T: fmt::Display> fmt::Display for NodeMap<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "[")?;
+        let mut it = self.iter().peekable();
+        while let Some((id, item)) = it.next() {
+            write!(f, "({}, {})", id.0, item)?;
+            if it.peek().is_some() {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "]")?;
+        Ok(())
     }
 }
 
