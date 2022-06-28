@@ -190,7 +190,7 @@ where
         for task in self.task_queue.iter().map(|st| &st.task) {
             match task {
                 Task::CoordRequest(_) => count_coord_request += 1,
-                Task::ParentsRequest(..) => count_parents_request += 1,
+                Task::ParentsRequest(_, _) => count_parents_request += 1,
                 Task::UnitMulticast(_) => count_unit_multicast += 1,
                 Task::RequestNewest(_) => count_request_newest += 1,
             }

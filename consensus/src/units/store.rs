@@ -96,22 +96,24 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             .keys()
             .map(|c| (c.creator, c.round))
             .into_grouping_map();
-        let top_row: HashMap<NodeIndex, Round> = gm.clone().max();
-        let first_missing_rounds: HashMap<NodeIndex, Round> = gm
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|(id, rounds)| (id, first_missing(rounds)))
-            .filter(|(id, round)| match top_row.get(id) {
-                Some(top_round) => round < top_round,
-                None => false,
-            })
-            .collect();
+        let top_row = NodeMap::with_hashmap(n_nodes, gm.clone().max());
+        let first_missing_rounds = NodeMap::with_hashmap(
+            n_nodes,
+            gm.collect::<Vec<_>>()
+                .into_iter()
+                .map(|(id, rounds)| (id, first_missing(rounds)))
+                .filter(|(id, round)| match top_row.get(*id) {
+                    Some(top_round) => round < top_round,
+                    None => false,
+                })
+                .collect(),
+        );
         UnitStoreStatus::new(
             &self.is_forker,
             self.by_coord.len(),
             self.by_coord.keys().map(|k| k.round).max(),
-            NodeMap::with_hashmap(n_nodes, top_row),
-            NodeMap::with_hashmap(n_nodes, first_missing_rounds),
+            top_row,
+            first_missing_rounds,
         )
     }
 
