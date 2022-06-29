@@ -15,9 +15,6 @@ pub struct DelayConfig {
     pub unit_rebroadcast_interval_min: Duration,
     /// Maximum frequency of broadcast of top known units.
     pub unit_rebroadcast_interval_max: Duration,
-    /// DelaySchedule(k) represents the delay between the kth and (k+1)th send. Currently only used
-    /// to delay multiple requests for parents.
-    pub retransmit_delay: DelaySchedule,
     /// DelaySchedule(k) represents the delay between creating the (k-1)th and kth unit.
     pub unit_creation_delay: DelaySchedule,
 }
@@ -72,7 +69,6 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
         requests_interval: Duration::from_millis(3000),
         unit_rebroadcast_interval_min: Duration::from_millis(5000),
         unit_rebroadcast_interval_max: Duration::from_millis(10000),
-        retransmit_delay: Arc::new(|t| exponential_slowdown(t, 4000.0, 0, 2.0)),
         // 4000, 8000, 16000, 32000, ...
         unit_creation_delay,
         // 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)
