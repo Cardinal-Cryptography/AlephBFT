@@ -170,7 +170,7 @@ async fn crashed_nodes_recover(n_members: NodeCount, n_batches: usize) {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     for (_, data) in node_data.iter_mut() {
-        while let Some(_) = data.try_receive() {}
+        while data.try_receive().is_some() {}
     }
 
     let finalized_before_kill = node_data
