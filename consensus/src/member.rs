@@ -8,6 +8,7 @@ use crate::{
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
     NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
 };
+use aleph_bft_types::NodeMap;
 use codec::{Decode, Encode};
 use futures::{
     channel::{mpsc, oneshot},
@@ -20,7 +21,7 @@ use network::NetworkData;
 use rand::Rng;
 use std::{
     cmp::Ordering,
-    collections::{BinaryHeap, HashMap, HashSet},
+    collections::{BinaryHeap, HashSet},
     convert::TryInto,
     fmt::Debug,
     io::{Read, Write},
@@ -129,7 +130,7 @@ pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US:
     _phantom: PhantomData<D>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TopUnit<H: Hasher, D: Data, S: Signature> {
     unit: UncheckedSignedUnit<H, D, S>,
     discovered: time::Instant,
@@ -172,7 +173,7 @@ where
     notifications_from_runway: Receiver<RunwayNotificationOut<H, D, S>>,
     resolved_requests: Receiver<Request<H>>,
     exiting: bool,
-    top_units: HashMap<NodeIndex, TopUnit<H, D, S>>,
+    top_units: NodeMap<TopUnit<H, D, S>>,
 }
 
 impl<H, D, S> Member<H, D, S>
@@ -191,16 +192,13 @@ where
     ) -> Self {
         let n_members = config.n_members;
 
-        let tasks = (0usize..n_members.into())
-            .filter(|node| NodeIndex(*node) != config.node_ix)
-            .map(|node| {
-                ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
-            });
-        let task_queue = BinaryHeap::from_iter(tasks);
+        let tasks = (0usize..n_members.into()).map(|node| {
+            ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
+        });
 
         Self {
             config,
-            task_queue,
+            task_queue: BinaryHeap::from_iter(tasks),
             not_resolved_parents: HashSet::new(),
             not_resolved_coords: HashSet::new(),
             newest_unit_resolved: false,
@@ -211,7 +209,7 @@ where
             notifications_from_runway,
             resolved_requests,
             exiting: false,
-            top_units: HashMap::with_capacity(n_members.into()),
+            top_units: NodeMap::with_size(n_members),
         }
     }
 
@@ -222,8 +220,8 @@ where
     }
 
     fn on_unit_discovered(&mut self, new_unit: UncheckedSignedUnit<H, D, S>) {
-        match self.top_units.get(&new_unit.as_signable().creator()) {
-            Some(u) if u.unit.as_signable().round() >= new_unit.as_signable().round() => None,
+        match self.top_units.get(new_unit.as_signable().creator()) {
+            Some(u) if u.unit.as_signable().round() >= new_unit.as_signable().round() => (),
             _ => self.top_units.insert(
                 new_unit.as_signable().creator(),
                 TopUnit {
@@ -341,14 +339,14 @@ where
             Task::UnitMulticast(signed_unit) => Some(UnitMessage::NewUnit(signed_unit.clone())),
             Task::UnitRebroadcast(node) => self
                 .top_units
-                .get(node)
+                .get(*node)
                 .and_then(|u| self.rebroadcast_if_old(u)),
             Task::RequestNewest(salt) => Some(UnitMessage::RequestNewest(self.index(), *salt)),
         }
     }
 
     fn rebroadcast_if_old(&self, top_unit: &TopUnit<H, D, S>) -> Option<UnitMessage<H, D, S>> {
-        if time::Instant::now().duration_since(top_unit.discovered)
+        if time::Instant::now().saturating_duration_since(top_unit.discovered)
             > self.config.delay_config.unit_rebroadcast_interval_min
         {
             Some(UnitMessage::NewUnit(top_unit.unit.clone()))
