@@ -4,6 +4,7 @@ use crate::{
         self, NetworkIO, NewestUnitResponse, Request, Response, RunwayIO, RunwayNotificationIn,
         RunwayNotificationOut,
     },
+    task_queue::{TaskQueue, TaskResult},
     units::{UncheckedSignedUnit, UnitCoord},
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
     NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
@@ -20,13 +21,12 @@ use log::{debug, error, info, trace, warn};
 use network::NetworkData;
 use rand::Rng;
 use std::{
-    cmp::Ordering,
-    collections::{BinaryHeap, HashSet},
+    collections::HashSet,
     convert::TryInto,
     fmt::Debug,
     io::{Read, Write},
     marker::PhantomData,
-    time,
+    mem, time,
     time::Duration,
 };
 
@@ -76,37 +76,6 @@ enum Task<H: Hasher> {
     UnitRebroadcast(NodeIndex),
     // Request the newest unit created by node itself.
     RequestNewest(u64),
-}
-
-#[derive(Eq, PartialEq)]
-struct ScheduledTask<H: Hasher> {
-    task: Task<H>,
-    scheduled_time: time::Instant,
-    // The number of times the task was performed so far.
-    counter: usize,
-}
-
-impl<H: Hasher> ScheduledTask<H> {
-    fn new(task: Task<H>, scheduled_time: time::Instant) -> Self {
-        ScheduledTask {
-            task,
-            scheduled_time,
-            counter: 0,
-        }
-    }
-}
-
-impl<H: Hasher> Ord for ScheduledTask<H> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // we want earlier times to come first when used in max-heap, hence the below:
-        other.scheduled_time.cmp(&self.scheduled_time)
-    }
-}
-
-impl<H: Hasher> PartialOrd for ScheduledTask<H> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
 }
 
 enum TaskDetails<H: Hasher, D: Data, S: Signature> {
@@ -160,7 +129,7 @@ where
     S: Signature,
 {
     config: Config,
-    task_queue: BinaryHeap<ScheduledTask<H>>,
+    task_queue: TaskQueue<Task<H>>,
     not_resolved_parents: HashSet<H::Hash>,
     not_resolved_coords: HashSet<UnitCoord>,
     newest_unit_resolved: bool,
@@ -190,13 +159,14 @@ where
     ) -> Self {
         let n_members = config.n_members;
 
-        let tasks = (0usize..n_members.into()).map(|node| {
-            ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
-        });
+        let mut task_queue = TaskQueue::new();
+        for node in 0..n_members.into() {
+            task_queue.schedule(Task::UnitRebroadcast(node.into()), time::Instant::now());
+        }
 
         Self {
             config,
-            task_queue: BinaryHeap::from_iter(tasks),
+            task_queue,
             not_resolved_parents: HashSet::new(),
             not_resolved_coords: HashSet::new(),
             newest_unit_resolved: false,
@@ -233,9 +203,8 @@ where
         if !self.not_resolved_coords.insert(coord) {
             return;
         }
-        let curr_time = time::Instant::now();
-        let task = ScheduledTask::new(Task::CoordRequest(coord), curr_time);
-        self.task_queue.push(task);
+
+        self.task_queue.schedule_now(Task::CoordRequest(coord));
         self.trigger_tasks();
     }
 
@@ -243,49 +212,34 @@ where
         if !self.not_resolved_parents.insert(u_hash) {
             return;
         }
-        let curr_time = time::Instant::now();
-        let task = ScheduledTask::new(Task::ParentsRequest(u_hash, recipient), curr_time);
-        self.task_queue.push(task);
+
+        self.task_queue
+            .schedule_now(Task::ParentsRequest(u_hash, recipient));
         self.trigger_tasks();
     }
 
     fn on_request_newest(&mut self, salt: u64) {
-        let curr_time = time::Instant::now();
-        let task = ScheduledTask::new(Task::RequestNewest(salt), curr_time);
-        self.task_queue.push(task);
+        self.task_queue.schedule_now(Task::RequestNewest(salt));
         self.trigger_tasks();
     }
 
-    // Pulls tasks from the priority queue (sorted by scheduled time) and sends them to random peers
-    // as long as they are scheduled at time <= curr_time
     fn trigger_tasks(&mut self) {
-        while let Some(request) = self.task_queue.peek() {
-            let curr_time = time::Instant::now();
-            if request.scheduled_time > curr_time {
-                break;
+        let mut task_queue = mem::take(&mut self.task_queue);
+
+        task_queue.work_off(|task, counter| match self.task_details(task, counter) {
+            TaskDetails::Cancel => TaskResult::Cancel,
+            TaskDetails::Delay(delay) => TaskResult::Delay(delay),
+            TaskDetails::Perform {
+                message,
+                recipient,
+                reschedule,
+            } => {
+                self.send_unit_message(message, recipient);
+                TaskResult::Perform(reschedule)
             }
-            let mut request = self.task_queue.pop().expect("The element was peeked");
+        });
 
-            match self.task_details(&request.task, request.counter) {
-                TaskDetails::Cancel => (),
-
-                TaskDetails::Delay(delay) => {
-                    request.scheduled_time += delay;
-                    self.task_queue.push(request);
-                }
-
-                TaskDetails::Perform {
-                    message,
-                    recipient,
-                    reschedule,
-                } => {
-                    self.send_unit_message(message, recipient);
-                    request.scheduled_time += reschedule;
-                    request.counter += 1;
-                    self.task_queue.push(request);
-                }
-            }
-        }
+        self.task_queue = task_queue;
     }
 
     fn random_peer(&self) -> NodeIndex {
@@ -313,7 +267,7 @@ where
     /// `Delay(Duration)` if the task is active, but cannot be performed right now, and
     /// `Perform { message, recipient, reschedule }` if the task is to send `message` to `recipient` and it should
     /// be rescheduled after `reschedule`.
-    fn task_details(&mut self, task: &Task<H>, counter: usize) -> TaskDetails<H, D, S> {
+    fn task_details(&self, task: &Task<H>, counter: usize) -> TaskDetails<H, D, S> {
         if !self.still_valid(task) {
             TaskDetails::Cancel
         } else {
