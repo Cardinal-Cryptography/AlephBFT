@@ -58,9 +58,9 @@ The `send` method has straightforward semantics: sending a message to a single o
 The `Keychain` trait is an abstraction for digitally signing arbitrary data and verifying signatures created by other nodes.
 
 ```rust
-pub trait Keychain: Index + Clone + Send {
+pub trait Keychain: Index + Clone + Send + Sync + 'static {
     type Signature: Signature;
-    fn sign(&self, msg: &[u8]) -> Self::Signature;
+    async fn sign(&self, msg: &[u8]) -> Self::Signature;
     fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool;
 }
 ```
