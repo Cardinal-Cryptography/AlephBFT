@@ -67,8 +67,8 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
     let delay_config = DelayConfig {
         tick_interval: Duration::from_millis(100),
         requests_interval: Duration::from_millis(3000),
-        unit_rebroadcast_interval_min: Duration::from_millis(5000),
-        unit_rebroadcast_interval_max: Duration::from_millis(10000),
+        unit_rebroadcast_interval_min: Duration::from_millis(15000),
+        unit_rebroadcast_interval_max: Duration::from_millis(20000),
         // 4000, 8000, 16000, 32000, ...
         unit_creation_delay,
         // 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)

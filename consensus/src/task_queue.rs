@@ -64,6 +64,11 @@ impl<T: Eq> TaskQueue<T> {
 
         None
     }
+
+    /// Returns an iterator over all pending tasks.
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.queue.iter().map(|x| &x.task)
+    }
 }
 
 #[cfg(test)]
