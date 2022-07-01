@@ -89,10 +89,11 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             n_nodes,
             gm.collect::<HashSet<_>>()
                 .into_iter()
-                .filter_map(|(id, rounds)| {
-                    (0..*top_row.get(id).unwrap())
+                .filter_map(|(id, rounds)| match top_row.get(id) {
+                    Some(&row) => (0..row)
                         .position(|round| !rounds.contains(&round))
-                        .map(|round| (id, round as u16))
+                        .map(|round| (id, round as Round)),
+                    None => None,
                 })
                 .collect(),
         );
