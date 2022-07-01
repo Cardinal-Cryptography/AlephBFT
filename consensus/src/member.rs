@@ -225,7 +225,7 @@ where
             )?;
         }
         if !long_time_pending_tasks.is_empty() {
-            write!(f, "; pending tasks with count >= 5 -")?;
+            write!(f, "; pending tasks with counter >= 5 -")?;
             for task in long_time_pending_tasks.iter() {
                 write!(f, " {},", task)?;
             }
