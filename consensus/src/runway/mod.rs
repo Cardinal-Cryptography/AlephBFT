@@ -281,7 +281,7 @@ where
                 self.resolve_missing_coord(&su.as_signable().coord());
                 if alert {
                     // Units from alerts explicitly come from forkers, and we want them anyway.
-                    self.store.add_unit(su, true);
+                    self.add_to_store(su, true);
                 } else {
                     self.add_unit_to_store_unless_fork(su);
                 }
@@ -316,7 +316,7 @@ where
             return;
         }
 
-        self.store.add_unit(su, false);
+        self.add_to_store(su, false);
     }
 
     fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, MK::Signature>) {
@@ -490,7 +490,7 @@ where
         let full_unit = FullUnit::new(u, data, self.session_id);
         let signed_unit = Signed::sign(full_unit, self.keychain).await;
         self.save_unit(signed_unit.clone().into());
-        self.store.add_unit(signed_unit, false);
+        self.add_to_store(signed_unit, false);
     }
 
     fn on_alert_notification(&mut self, notification: ForkingNotification<H, D, MK::Signature>) {
@@ -526,10 +526,6 @@ where
                 self.store.add_parents(h, p_hashes);
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
-                    self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(
-                        su.clone().into(),
-                    ));
-
                     if su.as_signable().creator() == self.index() {
                         trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), h);
                         self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(
@@ -540,6 +536,12 @@ where
                     error!(target: "AlephBFT-runway", "{:?} A unit already added to DAG is not in our store: {:?}.", self.index(), h);
                 }
             }
+        }
+    }
+
+    fn add_to_store(&mut self, unit: SignedUnit<'a, H, D, MK>, alert: bool) {
+        if self.store.add_unit(unit.clone(), alert) {
+            self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(unit.into()));
         }
     }
 
