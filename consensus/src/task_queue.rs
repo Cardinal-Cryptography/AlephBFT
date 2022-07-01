@@ -1,17 +1,9 @@
 use std::{cmp::Ordering, collections::BinaryHeap, time, time::Duration};
 
-pub enum TaskResult {
-    Cancel,
-    Delay(Duration),
-    Perform(Duration),
-}
-
 #[derive(Eq, PartialEq)]
 struct ScheduledTask<T: Eq> {
     task: T,
     scheduled_time: time::Instant,
-    // The number of times the task was performed so far.
-    counter: usize,
 }
 
 impl<T: Eq> PartialOrd for ScheduledTask<T> {
@@ -31,51 +23,65 @@ pub struct TaskQueue<T: Eq + PartialEq> {
     queue: BinaryHeap<ScheduledTask<T>>,
 }
 
-impl<T: Eq> Default for TaskQueue<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
+/// Implements a queue allowing for scheduling tasks for some time in the future.
+///
+/// Note that this queue is passive - nothing will happen until you call `pop_due_task`.
 impl<T: Eq> TaskQueue<T> {
+    /// Creates an empty queue.
     pub fn new() -> Self {
         Self {
             queue: BinaryHeap::new(),
         }
     }
 
+    /// Schedules `task` for as soon as possible.
     pub fn schedule_now(&mut self, task: T) {
         self.schedule(task, time::Instant::now());
     }
 
+    /// Schedules `task` for execution after `delay`.
+    pub fn schedule_in(&mut self, task: T, delay: Duration) {
+        self.schedule(task, time::Instant::now() + delay)
+    }
+
+    /// Schedules `task` for execution at `scheduled_time`.
     pub fn schedule(&mut self, task: T, scheduled_time: time::Instant) {
         self.queue.push(ScheduledTask {
             task,
             scheduled_time,
-            counter: 0,
         })
     }
 
-    pub fn work_off<F: FnMut(&T, usize) -> TaskResult>(&mut self, mut processor: F) {
-        while let Some(task) = self.queue.peek() {
-            let curr_time = time::Instant::now();
-            if task.scheduled_time > curr_time {
-                break;
-            }
-            let mut task = self.queue.pop().expect("The element was peeked");
-
-            match processor(&task.task, task.counter) {
-                TaskResult::Cancel => (),
-                TaskResult::Delay(delay) => {
-                    task.scheduled_time += delay;
-                    self.queue.push(task);
-                }
-                TaskResult::Perform(delay) => {
-                    task.scheduled_time += delay;
-                    task.counter += 1;
-                    self.queue.push(task);
-                }
+    /// Returns `Some(task)` if `task` is the most overdue task, and `None` if there are no overdue
+    /// tasks.
+    pub fn pop_due_task(&mut self) -> Option<T> {
+        if let Some(task) = self.queue.peek() {
+            if task.scheduled_time <= time::Instant::now() {
+                let task = self.queue.pop().expect("The element was peeked");
+                return Some(task.task);
             }
         }
+
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread;
+
+    #[test]
+    fn test_scheduling() {
+        let mut q = TaskQueue::new();
+        q.schedule_now(1);
+        q.schedule_in(2, Duration::from_millis(5));
+        q.schedule_in(3, Duration::from_millis(30));
+
+        thread::sleep(Duration::from_millis(10));
+
+        assert_eq!(Some(1), q.pop_due_task());
+        assert_eq!(Some(2), q.pop_due_task());
+        assert_eq!(None, q.pop_due_task());
     }
 }
