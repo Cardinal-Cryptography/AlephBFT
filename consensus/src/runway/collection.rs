@@ -7,7 +7,7 @@ use crate::{
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use std::{
     cmp::max,
     collections::hash_map::DefaultHasher,
@@ -184,7 +184,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
             .get(response.responder)
             .unwrap_or(&0);
         if current_round != round {
-            warn!(target: "AlephBFT-runway", "Node {} responded with starting unit {}, but now says {}", response.responder.0, current_round, round);
+            debug!(target: "AlephBFT-runway", "Node {} responded with starting unit {}, but now says {}", response.responder.0, current_round, round);
         }
         self.collected_starting_rounds
             .insert(response.responder, max(current_round, round));
