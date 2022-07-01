@@ -1,7 +1,7 @@
 use super::*;
 use itertools::Itertools;
 use log::{trace, warn};
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 pub struct UnitStoreStatus<'a> {
     forkers: &'a NodeSubset,
@@ -78,18 +78,6 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
     }
 
     pub fn get_status(&self) -> UnitStoreStatus {
-        fn first_missing(v: Vec<Round>) -> Round {
-            let mut w = vec![false; v.len()];
-            for r in &v {
-                if let Some(f) = w.get_mut(*r as usize) {
-                    *f = true;
-                }
-            }
-            match w.into_iter().position(|x| !x) {
-                Some(r) => r as u16,
-                None => v.len() as u16,
-            }
-        }
         let n_nodes: NodeCount = self.is_forker.size().into();
         let gm = self
             .by_coord
@@ -99,12 +87,12 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         let top_row = NodeMap::with_hashmap(n_nodes, gm.clone().max());
         let first_missing_rounds = NodeMap::with_hashmap(
             n_nodes,
-            gm.collect::<Vec<_>>()
+            gm.collect::<HashSet<_>>()
                 .into_iter()
-                .map(|(id, rounds)| (id, first_missing(rounds)))
-                .filter(|(id, round)| match top_row.get(*id) {
-                    Some(top_round) => round < top_round,
-                    None => false,
+                .filter_map(|(id, rounds)| {
+                    (0..*top_row.get(id).unwrap())
+                        .position(|round| !rounds.contains(&round))
+                        .map(|round| (id, round as u16))
                 })
                 .collect(),
         );
