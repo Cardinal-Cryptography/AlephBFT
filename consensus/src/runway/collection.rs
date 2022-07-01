@@ -182,7 +182,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
         let current_round = *self
             .collected_starting_rounds
             .get(response.responder)
-            .unwrap_or(&0);
+            .unwrap_or(&round);
         if current_round != round {
             debug!(target: "AlephBFT-runway", "Node {} responded with starting unit {}, but now says {}", response.responder.0, current_round, round);
         }
