@@ -165,10 +165,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             .collect()
     }
 
-    /// Adds `su` to the store.
-    ///
-    /// Returns `true` if the unit was not already in the store, false otherwise.
-    pub(crate) fn add_unit(&mut self, su: SignedUnit<'a, H, D, KB>, alert: bool) -> bool {
+    pub(crate) fn add_unit(&mut self, su: SignedUnit<'a, H, D, KB>, alert: bool) {
         let hash = su.as_signable().hash();
         let creator = su.as_signable().creator();
 
@@ -182,7 +179,7 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         if self.contains_hash(&hash) {
             // Ignoring a duplicate.
             trace!(target: "AlephBFT-unit-store", "A unit ignored as a duplicate {:?}.", su.as_signable());
-            return false;
+            return;
         }
         self.by_hash.insert(hash, su.clone());
         self.by_coord.insert(su.as_signable().coord(), su.clone());
@@ -190,8 +187,6 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
         if alert || !self.is_forker[creator] {
             self.legit_buffer.push(su);
         }
-
-        true
     }
 
     pub(crate) fn add_parents(&mut self, hash: H::Hash, parents: Vec<H::Hash>) {
