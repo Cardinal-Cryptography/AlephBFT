@@ -54,7 +54,7 @@ impl<'a> fmt::Display for UnitStoreStatus<'a> {
 /// to the Terminal. We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component and the notion of "legit" units.
 
-pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
+pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: Keychain> {
     by_coord: HashMap<UnitCoord, SignedUnit<'a, H, D, KB>>,
     by_hash: HashMap<H::Hash, SignedUnit<'a, H, D, KB>>,
     parents: HashMap<H::Hash, Vec<H::Hash>>,
@@ -64,7 +64,7 @@ pub(crate) struct UnitStore<'a, H: Hasher, D: Data, KB: KeyBox> {
     max_round: Round,
 }
 
-impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
+impl<'a, H: Hasher, D: Data, KB: Keychain> UnitStore<'a, H, D, KB> {
     pub(crate) fn new(n_nodes: NodeCount, max_round: Round) -> Self {
         UnitStore {
             by_coord: HashMap::new(),
@@ -211,7 +211,7 @@ mod tests {
         node_idx: NodeIndex,
         count: NodeCount,
         session_id: u64,
-        keybox: &'_ Keychain,
+        keychain: &'_ Keychain,
     ) -> SignedUnit<'_, Hasher64, Data, Keychain> {
         let preunit = PreUnit::<Hasher64>::new(
             node_idx,
@@ -219,7 +219,7 @@ mod tests {
             ControlHash::new(&NodeMap::with_size(count)),
         );
         let full_unit = FullUnit::new(preunit, 0, session_id);
-        Signed::sign(full_unit, keybox).await
+        Signed::sign(full_unit, keychain).await
     }
 
     #[tokio::test]
@@ -228,15 +228,15 @@ mod tests {
 
         let mut store = UnitStore::<Hasher64, Data, Keychain>::new(n_nodes, 100);
 
-        let keyboxes: Vec<_> = (0..=4)
+        let keychains: Vec<_> = (0..=4)
             .map(|i| Keychain::new(n_nodes, NodeIndex(i)))
             .collect();
 
         let mut forker_hashes = Vec::new();
 
         for round in 0..4 {
-            for (i, keybox) in keyboxes.iter().enumerate() {
-                let unit = create_unit(round, NodeIndex(i), n_nodes, 0, keybox).await;
+            for (i, keychain) in keychains.iter().enumerate() {
+                let unit = create_unit(round, NodeIndex(i), n_nodes, 0, keychain).await;
                 if i == 0 {
                     forker_hashes.push(unit.as_signable().hash());
                 }
@@ -246,7 +246,7 @@ mod tests {
 
         // Forker's units
         for round in 4..7 {
-            let unit = create_unit(round, NodeIndex(0), n_nodes, 0, &keyboxes[0]).await;
+            let unit = create_unit(round, NodeIndex(0), n_nodes, 0, &keychains[0]).await;
             forker_hashes.push(unit.as_signable().hash());
             store.add_unit(unit, false);
         }

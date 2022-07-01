@@ -1,5 +1,5 @@
 use crate::{
-    Data, Hasher, Index, KeyBox, NodeCount, NodeIndex, NodeMap, NodeSubset, Round, SessionId,
+    Data, Hasher, Index, Keychain, NodeCount, NodeIndex, NodeMap, NodeSubset, Round, SessionId,
     Signable, Signed, UncheckedSigned,
 };
 use codec::{Decode, Encode};

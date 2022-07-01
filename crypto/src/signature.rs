@@ -13,13 +13,13 @@ impl<T: Debug + Clone + Codec + Send + Sync + Eq + 'static> Signature for T {}
 
 /// Abstraction of the signing data and verifying signatures.
 ///
-/// A typical implementation of KeyBox would be a collection of `N` public keys,
+/// A typical implementation of Keychain would be a collection of `N` public keys,
 /// an index `i` and a single private key corresponding to the public key number `i`.
 /// The meaning of sign is then to produce a signature `s` using the given private key,
 /// and `verify(msg, s, j)` is to verify whether the signature s under the message msg is
 /// correct with respect to the public key of the jth node.
 #[async_trait]
-pub trait KeyBox: Index + Clone + Send + Sync + 'static {
+pub trait Keychain: Index + Clone + Send + Sync + 'static {
     type Signature: Signature;
 
     /// Returns the total number of known public keys.
@@ -45,11 +45,11 @@ pub trait PartialMultisignature: Signature {
     fn add_signature(self, signature: &Self::Signature, index: NodeIndex) -> Self;
 }
 
-/// Extends KeyBox with multisigning functionalities.
+/// Extends Keychain with multisigning functionalities.
 ///
 /// A single Signature can be rised to a Multisignature.
 /// Allows to verify whether a partial multisignature is complete (and valid).
-pub trait MultiKeychain: KeyBox {
+pub trait MultiKeychain: Keychain {
     type PartialMultisignature: PartialMultisignature<Signature = Self::Signature>;
     /// Transform a single signature to a multisignature consisting of the signature.
     fn bootstrap_multi(
@@ -130,12 +130,12 @@ pub struct SignatureError<T: Signable, S: Signature> {
 
 impl<T: Signable + Index, S: Signature> UncheckedSigned<T, S> {
     /// Verifies whether the signature matches the key with the index as in the signed data.
-    pub fn check<KB: KeyBox<Signature = S>>(
+    pub fn check<KB: Keychain<Signature = S>>(
         self,
-        key_box: &KB,
+        keychain: &KB,
     ) -> Result<Signed<T, KB>, SignatureError<T, S>> {
         let index = self.signable.index();
-        if !key_box.verify(self.signable.hash().as_ref(), &self.signature, index) {
+        if !keychain.verify(self.signable.hash().as_ref(), &self.signature, index) {
             return Err(SignatureError { unchecked: self });
         }
         Ok(Signed {
@@ -184,15 +184,15 @@ impl<T: Signable, S: Signature> From<UncheckedSigned<Indexed<T>, S>> for Uncheck
 
 /// A correctly signed object of type `T`.
 ///
-/// The correctness is guaranteed by storing a (phantom) reference to the `KeyBox` that verified
+/// The correctness is guaranteed by storing a (phantom) reference to the `Keychain` that verified
 /// the signature.
 #[derive(Debug)]
-pub struct Signed<'a, T: Signable + Index, KB: KeyBox> {
+pub struct Signed<'a, T: Signable + Index, KB: Keychain> {
     unchecked: UncheckedSigned<T, KB::Signature>,
     marker: PhantomData<&'a KB>,
 }
 
-impl<'a, T: Signable + Clone + Index, KB: KeyBox> Clone for Signed<'a, T, KB> {
+impl<'a, T: Signable + Clone + Index, KB: Keychain> Clone for Signed<'a, T, KB> {
     fn clone(&self) -> Self {
         Signed {
             unchecked: self.unchecked.clone(),
@@ -201,11 +201,11 @@ impl<'a, T: Signable + Clone + Index, KB: KeyBox> Clone for Signed<'a, T, KB> {
     }
 }
 
-impl<'a, T: Signable + Index, KB: KeyBox> Signed<'a, T, KB> {
-    /// Create a signed object from a signable. The index of `signable` must match the index of the `key_box`.
-    pub async fn sign(signable: T, key_box: &'a KB) -> Signed<'a, T, KB> {
-        assert_eq!(signable.index(), key_box.index());
-        let signature = key_box.sign(signable.hash().as_ref()).await;
+impl<'a, T: Signable + Index, KB: Keychain> Signed<'a, T, KB> {
+    /// Create a signed object from a signable. The index of `signable` must match the index of the `keychain`.
+    pub async fn sign(signable: T, keychain: &'a KB) -> Signed<'a, T, KB> {
+        assert_eq!(signable.index(), keychain.index());
+        let signature = keychain.sign(signable.hash().as_ref()).await;
         Signed {
             unchecked: UncheckedSigned {
                 signable,
@@ -229,10 +229,10 @@ impl<'a, T: Signable + Index, KB: KeyBox> Signed<'a, T, KB> {
     }
 }
 
-impl<'a, T: Signable, KB: KeyBox> Signed<'a, Indexed<T>, KB> {
-    /// Create a signed object from a signable. The index is added based on the index of the `key_box`.
-    pub async fn sign_with_index(signable: T, key_box: &'a KB) -> Signed<'a, Indexed<T>, KB> {
-        Signed::sign(Indexed::new(signable, key_box.index()), key_box).await
+impl<'a, T: Signable, KB: Keychain> Signed<'a, Indexed<T>, KB> {
+    /// Create a signed object from a signable. The index is added based on the index of the `keychain`.
+    pub async fn sign_with_index(signable: T, keychain: &'a KB) -> Signed<'a, Indexed<T>, KB> {
+        Signed::sign(Indexed::new(signable, keychain.index()), keychain).await
     }
 }
 
@@ -259,7 +259,7 @@ impl<'a, T: Signable, MK: MultiKeychain> Signed<'a, Indexed<T>, MK> {
     }
 }
 
-impl<'a, T: Signable + Index, KB: KeyBox> From<Signed<'a, T, KB>>
+impl<'a, T: Signable + Index, KB: Keychain> From<Signed<'a, T, KB>>
     for UncheckedSigned<T, KB::Signature>
 {
     fn from(signed: Signed<'a, T, KB>) -> Self {
@@ -429,26 +429,26 @@ impl<'a, T: Signable, MK: MultiKeychain> PartiallyMultisigned<'a, T, MK> {
 mod tests {
 
     use crate::{
-        Index, KeyBox, MultiKeychain, NodeCount, NodeIndex, PartialMultisignature,
+        Index, Keychain, MultiKeychain, NodeCount, NodeIndex, PartialMultisignature,
         PartiallyMultisigned, Signable, SignatureSet, Signed,
     };
     use async_trait::async_trait;
     use codec::{Decode, Encode};
     use std::fmt::Debug;
 
-    /// Keybox wrapper which implements MultiKeychain such that a partial multisignature is a list of
+    /// Keychain wrapper which implements MultiKeychain such that a partial multisignature is a list of
     /// signatures and a partial multisignature is considered complete if it contains more than 2N/3 signatures.
     ///
     /// Note: this way of multisigning is very inefficient, and should be used only for testing.
     #[derive(Debug, Clone)]
-    struct DefaultMultiKeychain<KB: KeyBox> {
-        key_box: KB,
+    struct DefaultMultiKeychain<KB: Keychain> {
+        keychain: KB,
     }
 
-    impl<KB: KeyBox> DefaultMultiKeychain<KB> {
-        // Create a new `DefaultMultiKeychain` using the provided `KeyBox`.
-        fn new(key_box: KB) -> Self {
-            DefaultMultiKeychain { key_box }
+    impl<KB: Keychain> DefaultMultiKeychain<KB> {
+        // Create a new `DefaultMultiKeychain` using the provided `Keychain`.
+        fn new(keychain: KB) -> Self {
+            DefaultMultiKeychain { keychain }
         }
 
         fn quorum(&self) -> usize {
@@ -456,30 +456,30 @@ mod tests {
         }
     }
 
-    impl<KB: KeyBox> Index for DefaultMultiKeychain<KB> {
+    impl<KB: Keychain> Index for DefaultMultiKeychain<KB> {
         fn index(&self) -> NodeIndex {
-            self.key_box.index()
+            self.keychain.index()
         }
     }
 
     #[async_trait::async_trait]
-    impl<KB: KeyBox> KeyBox for DefaultMultiKeychain<KB> {
+    impl<KB: Keychain> Keychain for DefaultMultiKeychain<KB> {
         type Signature = KB::Signature;
 
         async fn sign(&self, msg: &[u8]) -> Self::Signature {
-            self.key_box.sign(msg).await
+            self.keychain.sign(msg).await
         }
 
         fn node_count(&self) -> NodeCount {
-            self.key_box.node_count()
+            self.keychain.node_count()
         }
 
         fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool {
-            self.key_box.verify(msg, sgn, index)
+            self.keychain.verify(msg, sgn, index)
         }
     }
 
-    impl<KB: KeyBox> MultiKeychain for DefaultMultiKeychain<KB> {
+    impl<KB: Keychain> MultiKeychain for DefaultMultiKeychain<KB> {
         type PartialMultisignature = SignatureSet<KB::Signature>;
 
         fn bootstrap_multi(
@@ -501,7 +501,7 @@ mod tests {
             }
             partial
                 .iter()
-                .all(|(i, sgn)| self.key_box.verify(msg, sgn, i))
+                .all(|(i, sgn)| self.keychain.verify(msg, sgn, i))
         }
     }
 
@@ -530,25 +530,25 @@ mod tests {
     }
 
     #[derive(Clone, Debug)]
-    struct TestKeyBox {
+    struct TestKeychain {
         count: NodeCount,
         index: NodeIndex,
     }
 
-    impl TestKeyBox {
+    impl TestKeychain {
         fn new(count: NodeCount, index: NodeIndex) -> Self {
-            TestKeyBox { count, index }
+            TestKeychain { count, index }
         }
     }
 
-    impl Index for TestKeyBox {
+    impl Index for TestKeychain {
         fn index(&self) -> NodeIndex {
             self.index
         }
     }
 
     #[async_trait]
-    impl KeyBox for TestKeyBox {
+    impl Keychain for TestKeychain {
         type Signature = TestSignature;
 
         fn node_count(&self) -> NodeCount {
@@ -567,11 +567,11 @@ mod tests {
         }
     }
 
-    type TestMultiKeychain = DefaultMultiKeychain<TestKeyBox>;
+    type TestMultiKeychain = DefaultMultiKeychain<TestKeychain>;
 
     fn test_multi_keychain(node_count: NodeCount, index: NodeIndex) -> TestMultiKeychain {
-        let key_box = TestKeyBox::new(node_count, index);
-        DefaultMultiKeychain::new(key_box)
+        let keychain = TestKeychain::new(node_count, index);
+        DefaultMultiKeychain::new(keychain)
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 use crate::{
     units::{FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit},
-    Data, Hasher, KeyBox, NodeCount, Round, SessionId, Signature, SignatureError,
+    Data, Hasher, Keychain, NodeCount, Round, SessionId, Signature, SignatureError,
 };
 use std::{
     fmt::{Display, Formatter, Result as FmtResult},
@@ -56,7 +56,7 @@ impl<H: Hasher, D: Data, S: Signature> From<SignatureError<FullUnit<H, D>, S>>
     }
 }
 
-pub struct Validator<'a, KB: KeyBox> {
+pub struct Validator<'a, KB: Keychain> {
     session_id: SessionId,
     keychain: &'a KB,
     max_round: Round,
@@ -64,9 +64,9 @@ pub struct Validator<'a, KB: KeyBox> {
 }
 
 type Result<'a, H, D, KB> =
-    StdResult<SignedUnit<'a, H, D, KB>, ValidationError<H, D, <KB as KeyBox>::Signature>>;
+    StdResult<SignedUnit<'a, H, D, KB>, ValidationError<H, D, <KB as Keychain>::Signature>>;
 
-impl<'a, KB: KeyBox> Validator<'a, KB> {
+impl<'a, KB: Keychain> Validator<'a, KB> {
     pub fn new(
         session_id: SessionId,
         keychain: &'a KB,
