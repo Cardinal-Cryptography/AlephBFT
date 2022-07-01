@@ -83,7 +83,7 @@ impl<T> NodeMap<T> {
         NodeMap(v)
     }
 
-    pub fn with_hashmap(len: NodeCount, hashmap: HashMap<NodeIndex, T>) -> Self
+    pub fn from_hashmap(len: NodeCount, hashmap: HashMap<NodeIndex, T>) -> Self
     where
         T: Clone,
     {
@@ -146,12 +146,8 @@ impl<T> NodeMap<T> {
         NodeSubset(self.0.iter().map(Option::is_some).collect())
     }
 
-    pub fn len(&self) -> usize {
+    pub fn item_count(&self) -> usize {
         self.iter().count()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 }
 

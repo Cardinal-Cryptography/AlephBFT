@@ -35,7 +35,7 @@ impl<'a> fmt::Display for UnitStoreStatus<'a> {
         if let Some(r) = self.height {
             write!(f, "; DAG height - {}", r)?;
         }
-        if !self.first_missing_rounds.is_empty() {
+        if self.first_missing_rounds.item_count() > 0 {
             write!(
                 f,
                 "; DAG first missing rounds - {}",
@@ -84,8 +84,8 @@ impl<'a, H: Hasher, D: Data, KB: KeyBox> UnitStore<'a, H, D, KB> {
             .keys()
             .map(|c| (c.creator, c.round))
             .into_grouping_map();
-        let top_row = NodeMap::with_hashmap(n_nodes, gm.clone().max());
-        let first_missing_rounds = NodeMap::with_hashmap(
+        let top_row = NodeMap::from_hashmap(n_nodes, gm.clone().max());
+        let first_missing_rounds = NodeMap::from_hashmap(
             n_nodes,
             gm.collect::<HashSet<_>>()
                 .into_iter()

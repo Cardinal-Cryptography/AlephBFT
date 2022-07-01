@@ -199,7 +199,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
     /// The current status of the collection.
     pub fn status(&self) -> Status {
         use Status::*;
-        let responders = NodeCount(self.collected_starting_rounds.len());
+        let responders = NodeCount(self.collected_starting_rounds.item_count());
         let starting_round: Round = *self.collected_starting_rounds.values().max().unwrap_or(&0);
         if responders == self.keychain.node_count() {
             return Finished(starting_round);
