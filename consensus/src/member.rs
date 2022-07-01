@@ -378,17 +378,27 @@ where
         }
     }
 
+    /// Most tasks use `requests_interval` (see [crate::DelayConfig]) as their delay.
+    /// The exception is [Task::UnitRebroadcast] - this one picks a random delay between
+    /// `unit_rebroadcast_interval_min` and `unit_rebroadcast_interval_max`.
+    ///
+    /// The properties of this scheme are:
+    /// 1. A unit is broadcast after `unit_rebroadcast_interval_min` since first learning about the
+    ///    unit at the earliest (see check in [Self::message]).
+    /// 2. A unit is broadcast after `unit_rebroadcast_interval_min + unit_rebroadcast_interval_max`
+    ///    since first learning about the unit at the latest. This happens because the unit might
+    ///    have been barely not old enough after the task triggered `unit_rebroadcast_interval_min`
+    ///    since discovery and the next task run after that is randomly selected to happen after
+    ///    `unit_rebroadcast_interval_max`.
     fn delay(&self, task: &Task<H>) -> Duration {
         match task {
-            Task::CoordRequest(_) => self.config.delay_config.requests_interval,
-            Task::ParentsRequest(_, _) => self.config.delay_config.requests_interval,
             Task::UnitRebroadcast(_) => {
                 let low = self.config.delay_config.unit_rebroadcast_interval_min;
                 let high = self.config.delay_config.unit_rebroadcast_interval_max;
                 let millis = rand::thread_rng().gen_range(low.as_millis()..high.as_millis());
                 Duration::from_millis(millis as u64)
             }
-            Task::RequestNewest(_) => self.config.delay_config.requests_interval,
+            _ => self.config.delay_config.requests_interval,
         }
     }
 
