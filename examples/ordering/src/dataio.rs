@@ -15,14 +15,16 @@ pub struct DataProvider {
     id: NodeIndex,
     counter: u32,
     n_data: u32,
+    stalled: bool,
 }
 
 impl DataProvider {
-    pub fn new(id: NodeIndex, counter: u32, n_data: u32) -> Self {
+    pub fn new(id: NodeIndex, counter: u32, n_data: u32, stalled: bool) -> Self {
         Self {
             id,
             counter,
             n_data,
+            stalled,
         }
     }
 }
@@ -31,6 +33,10 @@ impl DataProvider {
 impl DataProviderT<Data> for DataProvider {
     async fn get_data(&mut self) -> Data {
         if self.n_data == 0 {
+            if self.stalled {
+                info!("Awaiting DataProvider::get_data forever");
+                std::future::pending::<()>().await;
+            }
             info!("Providing empty data");
             (self.id, None)
         } else {
