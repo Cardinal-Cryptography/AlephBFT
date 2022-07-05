@@ -5,7 +5,7 @@ use crate::{
     extender::ExtenderUnit,
     runway::{NotificationIn, NotificationOut},
     units::{ControlHash, Unit, UnitCoord},
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, member::{ExiterConnection, Exiter},
 };
 use log::{debug, info, trace, warn};
 
@@ -348,7 +348,7 @@ impl<H: Hasher> Terminal<H> {
         }
     }
 
-    pub(crate) async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub(crate) async fn run(&mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connection : ExiterConnection) {
         loop {
             futures::select! {
                 n = self.ntfct_rx.next() => {
@@ -376,5 +376,7 @@ impl<H: Hasher> Terminal<H> {
                 break;
             }
         }
+
+        Exiter::new(Some(parent_exiter_connection), "terminal").exit_gracefully().await;
     }
 }

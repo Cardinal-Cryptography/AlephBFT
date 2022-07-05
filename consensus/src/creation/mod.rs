@@ -2,7 +2,7 @@ use crate::{
     config::{Config as GeneralConfig, DelaySchedule},
     runway::NotificationOut,
     units::{PreUnit, Unit},
-    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender,
+    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender, member::{ExiterConnection, Exiter},
 };
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -93,6 +93,7 @@ pub async fn run<H: Hasher>(
     io: IO<H>,
     mut starting_round: oneshot::Receiver<Option<Round>>,
     mut exit: oneshot::Receiver<()>,
+    parent_exiter_connection : ExiterConnection,
 ) {
     let Config {
         node_id,
@@ -105,6 +106,8 @@ pub async fn run<H: Hasher>(
         mut incoming_parents,
         outgoing_units,
     } = io;
+
+    let exiter = Exiter::new(Some(parent_exiter_connection), "creator");
     let starting_round = futures::select! {
         maybe_round =  starting_round => match maybe_round {
             Ok(Some(round)) => round,
@@ -117,7 +120,10 @@ pub async fn run<H: Hasher>(
                 return;
             }
         },
-        _ = &mut exit => return,
+        _ = &mut exit => {
+            exiter.exit_gracefully().await;
+            return;
+        },
     };
     debug!(target: "AlephBFT-creator", "Creator starting from round {}", starting_round);
     for round in starting_round..max_round {
@@ -137,6 +143,7 @@ pub async fn run<H: Hasher>(
         {
             Ok((u, ph)) => (u, ph),
             Err(_) => {
+                exiter.exit_gracefully().await;
                 return;
             }
         };
@@ -144,8 +151,11 @@ pub async fn run<H: Hasher>(
             outgoing_units.unbounded_send(NotificationOut::CreatedPreUnit(unit, parent_hashes))
         {
             warn!(target: "AlephBFT-creator", "Notification send error: {}. Exiting.", e);
+            exiter.exit_gracefully().await;
             return;
         }
     }
+
     warn!(target: "AlephBFT-creator", "Maximum round reached. Not creating another unit.");
+    exiter.exit_gracefully().await;
 }

@@ -1,7 +1,7 @@
 use crate::{
     alerts::{self, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     consensus,
-    member::UnitMessage,
+    member::{UnitMessage, Exiter, ExiterConnection},
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, UnitStoreStatus, Validator,
@@ -686,6 +686,7 @@ where
         mut self,
         units_from_backup: oneshot::Receiver<Vec<UncheckedSignedUnit<H, D, MK::Signature>>>,
         mut exit: oneshot::Receiver<()>,
+        parent_exiter_connection : ExiterConnection,
     ) {
         let index = self.index();
         let units_from_backup = units_from_backup.fuse();
@@ -760,6 +761,8 @@ where
                 break;
             }
         }
+
+        Exiter::new(Some(parent_exiter_connection), "Runway").exit_gracefully().await;
 
         info!(target: "AlephBFT-runway", "{:?} Run ended.", index);
     }
@@ -865,6 +868,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     spawn_handle: SH,
     network_io: NetworkIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
+    parent_exiter_connection : ExiterConnection,
 ) where
     H: Hasher,
     D: Data,
@@ -886,6 +890,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         n_members: config.n_members,
     };
     let (alerter_exit, exit_stream) = oneshot::channel();
+    let mut exiter = Exiter::new(Some(parent_exiter_connection), "run");
+    let alerter_exiter_connection = exiter.add_offspring_connection();
     let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
@@ -898,12 +904,14 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             alerts_from_units,
             alert_config,
             exit_stream,
+            alerter_exiter_connection,
         )
         .await;
     });
     let mut alerter_handle = alerter_handle.fuse();
 
     let (consensus_exit, exit_stream) = oneshot::channel();
+    let consensus_exiter_connection = exiter.add_offspring_connection();
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
     let (starting_round_sender, starting_round) = oneshot::channel();
@@ -917,6 +925,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             consensus_spawner,
             starting_round,
             exit_stream,
+            consensus_exiter_connection,
         )
         .await
     });
@@ -984,8 +993,9 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         max_round: config.max_round,
     };
     let (runway_exit, exit_stream) = oneshot::channel();
+    let runway_exiter_connection = exiter.add_offspring_connection();
     let runway = Runway::new(runway_config, &keychain, &validator);
-    let runway_handle = runway.run(loaded_units_rx, exit_stream).fuse();
+    let runway_handle = runway.run(loaded_units_rx, exit_stream, runway_exiter_connection).fuse();
     pin_mut!(runway_handle);
 
     loop {
@@ -1017,6 +1027,17 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     if consensus_exit.send(()).is_err() {
         debug!(target: "AlephBFT-runway", "{:?} Consensus already stopped.", index);
     }
+
+    if runway_exit.send(()).is_err() {
+        debug!(target: "AlephBFT-runway", "{:?} Runway already stopped.", index);
+    }
+
+    if alerter_exit.send(()).is_err() {
+        debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
+    }
+
+    exiter.exit_gracefully().await;
+
     if !consensus_handle.is_terminated() {
         if let Err(()) = consensus_handle.await {
             warn!(target: "AlephBFT-runway", "{:?} Consensus finished with an error", index);
@@ -1024,9 +1045,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Consensus stopped.", index);
     }
 
-    if alerter_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
-    }
     if !alerter_handle.is_terminated() {
         if let Err(()) = alerter_handle.await {
             warn!(target: "AlephBFT-runway", "{:?} Alerter finished with an error", index);
@@ -1034,9 +1052,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
     }
 
-    if runway_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Runway already stopped.", index);
-    }
     if !runway_handle.is_terminated() {
         runway_handle.await;
         debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);

@@ -1,5 +1,5 @@
 use crate::{
-    alerts::AlertMessage, member::UnitMessage, Data, Hasher, Network, PartialMultisignature,
+    alerts::AlertMessage, member::{UnitMessage, ExiterConnection, Exiter}, Data, Hasher, Network, PartialMultisignature,
     Receiver, Recipient, Sender, Signature,
 };
 use codec::{Decode, Encode};
@@ -126,7 +126,7 @@ impl<
         }
     }
 
-    async fn run(mut self, mut exit: oneshot::Receiver<()>) {
+    async fn run(mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connection : ExiterConnection) {
         loop {
             use NetworkDataInner::*;
             futures::select! {
@@ -154,6 +154,8 @@ impl<
                 _ = &mut exit => break,
             }
         }
+
+        Exiter::new(Some(parent_exiter_connection), "network").exit_gracefully().await;
         info!(target: "AlephBFT-network-hub", "Network ended.");
     }
 }
@@ -171,6 +173,7 @@ pub(crate) async fn run<
     alerts_to_send: Receiver<(AlertMessage<H, D, S, MS>, Recipient)>,
     alerts_received: Sender<AlertMessage<H, D, S, MS>>,
     exit: oneshot::Receiver<()>,
+    parent_exiter_connection : ExiterConnection,
 ) {
     NetworkHub::new(
         network,
@@ -179,7 +182,7 @@ pub(crate) async fn run<
         alerts_to_send,
         alerts_received,
     )
-    .run(exit)
+    .run(exit, parent_exiter_connection)
     .await
 }
 

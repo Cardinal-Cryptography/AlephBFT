@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 
 use log::{debug, info, warn};
 
-use crate::{Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender};
+use crate::{Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, member::{ExiterConnection, Exiter}};
 
 pub(crate) struct ExtenderUnit<H: Hasher> {
     creator: NodeIndex,
@@ -294,7 +294,7 @@ impl<H: Hasher> Extender<H> {
         }
     }
 
-    pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connextion : ExiterConnection) {
         loop {
             futures::select! {
                 v = self.electors.next() => {
@@ -314,6 +314,8 @@ impl<H: Hasher> Extender<H> {
                 break;
             }
         }
+
+        Exiter::new(Some(parent_exiter_connextion), "extender").exit_gracefully().await;
     }
 }
 

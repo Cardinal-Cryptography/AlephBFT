@@ -1,7 +1,7 @@
 use crate::{
     units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount,
     NodeIndex, PartialMultisignature, Receiver, Recipient, Sender, SessionId, Signable, Signature,
-    Signed, UncheckedSigned,
+    Signed, UncheckedSigned, member::{ExiterConnection, Exiter},
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use codec::{Decode, Encode};
@@ -412,6 +412,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
     mut exit: oneshot::Receiver<()>,
+    parent_exiter_connection : ExiterConnection,
 ) {
     use self::io::IO;
 
@@ -504,6 +505,9 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
             break;
         }
     }
+
+    let exiter = Exiter::new(Some(parent_exiter_connection), "alerter");
+    exiter.exit_gracefully().await;
 }
 
 #[cfg(test)]
