@@ -95,7 +95,7 @@ impl<T: AsRef<[u8]> + Clone> Signable for T {
 /// A pair consisting of an instance of the `Signable` trait and an (arbitrary) signature.
 ///
 /// The method `[UncheckedSigned::check]` can be used to upgrade this `struct` to
-/// `[Signed<'a, T, KB>]` which ensures that the signature matches the signed object.
+/// `[Signed<'a, T, K>]` which ensures that the signature matches the signed object.
 #[derive(Clone, Debug, Decode, Encode, PartialEq, Eq, Hash)]
 pub struct UncheckedSigned<T: Signable, S: Signature> {
     signable: T,
@@ -130,10 +130,10 @@ pub struct SignatureError<T: Signable, S: Signature> {
 
 impl<T: Signable + Index, S: Signature> UncheckedSigned<T, S> {
     /// Verifies whether the signature matches the key with the index as in the signed data.
-    pub fn check<KB: Keychain<Signature = S>>(
+    pub fn check<K: Keychain<Signature = S>>(
         self,
-        keychain: &KB,
-    ) -> Result<Signed<T, KB>, SignatureError<T, S>> {
+        keychain: &K,
+    ) -> Result<Signed<T, K>, SignatureError<T, S>> {
         let index = self.signable.index();
         if !keychain.verify(self.signable.hash().as_ref(), &self.signature, index) {
             return Err(SignatureError { unchecked: self });
@@ -187,12 +187,12 @@ impl<T: Signable, S: Signature> From<UncheckedSigned<Indexed<T>, S>> for Uncheck
 /// The correctness is guaranteed by storing a (phantom) reference to the `Keychain` that verified
 /// the signature.
 #[derive(Debug)]
-pub struct Signed<'a, T: Signable + Index, KB: Keychain> {
-    unchecked: UncheckedSigned<T, KB::Signature>,
-    marker: PhantomData<&'a KB>,
+pub struct Signed<'a, T: Signable + Index, K: Keychain> {
+    unchecked: UncheckedSigned<T, K::Signature>,
+    marker: PhantomData<&'a K>,
 }
 
-impl<'a, T: Signable + Clone + Index, KB: Keychain> Clone for Signed<'a, T, KB> {
+impl<'a, T: Signable + Clone + Index, K: Keychain> Clone for Signed<'a, T, K> {
     fn clone(&self) -> Self {
         Signed {
             unchecked: self.unchecked.clone(),
@@ -201,9 +201,9 @@ impl<'a, T: Signable + Clone + Index, KB: Keychain> Clone for Signed<'a, T, KB> 
     }
 }
 
-impl<'a, T: Signable + Index, KB: Keychain> Signed<'a, T, KB> {
+impl<'a, T: Signable + Index, K: Keychain> Signed<'a, T, K> {
     /// Create a signed object from a signable. The index of `signable` must match the index of the `keychain`.
-    pub async fn sign(signable: T, keychain: &'a KB) -> Signed<'a, T, KB> {
+    pub async fn sign(signable: T, keychain: &'a K) -> Signed<'a, T, K> {
         assert_eq!(signable.index(), keychain.index());
         let signature = keychain.sign(signable.hash().as_ref()).await;
         Signed {
@@ -224,14 +224,14 @@ impl<'a, T: Signable + Index, KB: Keychain> Signed<'a, T, KB> {
         self.unchecked.signable
     }
 
-    pub fn into_unchecked(self) -> UncheckedSigned<T, KB::Signature> {
+    pub fn into_unchecked(self) -> UncheckedSigned<T, K::Signature> {
         self.unchecked
     }
 }
 
-impl<'a, T: Signable, KB: Keychain> Signed<'a, Indexed<T>, KB> {
+impl<'a, T: Signable, K: Keychain> Signed<'a, Indexed<T>, K> {
     /// Create a signed object from a signable. The index is added based on the index of the `keychain`.
-    pub async fn sign_with_index(signable: T, keychain: &'a KB) -> Signed<'a, Indexed<T>, KB> {
+    pub async fn sign_with_index(signable: T, keychain: &'a K) -> Signed<'a, Indexed<T>, K> {
         Signed::sign(Indexed::new(signable, keychain.index()), keychain).await
     }
 }
@@ -259,10 +259,10 @@ impl<'a, T: Signable, MK: MultiKeychain> Signed<'a, Indexed<T>, MK> {
     }
 }
 
-impl<'a, T: Signable + Index, KB: Keychain> From<Signed<'a, T, KB>>
-    for UncheckedSigned<T, KB::Signature>
+impl<'a, T: Signable + Index, K: Keychain> From<Signed<'a, T, K>>
+    for UncheckedSigned<T, K::Signature>
 {
-    fn from(signed: Signed<'a, T, KB>) -> Self {
+    fn from(signed: Signed<'a, T, K>) -> Self {
         signed.into_unchecked()
     }
 }
@@ -441,13 +441,13 @@ mod tests {
     ///
     /// Note: this way of multisigning is very inefficient, and should be used only for testing.
     #[derive(Debug, Clone)]
-    struct DefaultMultiKeychain<KB: Keychain> {
-        keychain: KB,
+    struct DefaultMultiKeychain<K: Keychain> {
+        keychain: K,
     }
 
-    impl<KB: Keychain> DefaultMultiKeychain<KB> {
+    impl<K: Keychain> DefaultMultiKeychain<K> {
         // Create a new `DefaultMultiKeychain` using the provided `Keychain`.
-        fn new(keychain: KB) -> Self {
+        fn new(keychain: K) -> Self {
             DefaultMultiKeychain { keychain }
         }
 
@@ -456,15 +456,15 @@ mod tests {
         }
     }
 
-    impl<KB: Keychain> Index for DefaultMultiKeychain<KB> {
+    impl<K: Keychain> Index for DefaultMultiKeychain<K> {
         fn index(&self) -> NodeIndex {
             self.keychain.index()
         }
     }
 
     #[async_trait::async_trait]
-    impl<KB: Keychain> Keychain for DefaultMultiKeychain<KB> {
-        type Signature = KB::Signature;
+    impl<K: Keychain> Keychain for DefaultMultiKeychain<K> {
+        type Signature = K::Signature;
 
         async fn sign(&self, msg: &[u8]) -> Self::Signature {
             self.keychain.sign(msg).await
@@ -479,8 +479,8 @@ mod tests {
         }
     }
 
-    impl<KB: Keychain> MultiKeychain for DefaultMultiKeychain<KB> {
-        type PartialMultisignature = SignatureSet<KB::Signature>;
+    impl<K: Keychain> MultiKeychain for DefaultMultiKeychain<K> {
+        type PartialMultisignature = SignatureSet<K::Signature>;
 
         fn bootstrap_multi(
             &self,

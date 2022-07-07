@@ -196,7 +196,7 @@ impl<H: Hasher, D: Data> Index for FullUnit<H, D> {
 
 pub(crate) type UncheckedSignedUnit<H, D, S> = UncheckedSigned<FullUnit<H, D>, S>;
 
-pub(crate) type SignedUnit<'a, H, D, KB> = Signed<'a, FullUnit<H, D>, KB>;
+pub(crate) type SignedUnit<'a, H, D, K> = Signed<'a, FullUnit<H, D>, K>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Encode, Decode)]
 pub struct Unit<H: Hasher> {
