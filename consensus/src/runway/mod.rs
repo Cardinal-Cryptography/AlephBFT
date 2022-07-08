@@ -997,40 +997,33 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let runway_handle = runway.run(loaded_units_rx, exit_stream, Some(runway_exiter_connection)).fuse();
     pin_mut!(runway_handle);
 
-    debug!(target: "AlephBFT-runway", "{:?} (Runway) before select.", index);
-
     loop {
         futures::select! {
             _ = runway_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} (Runway) Runway task terminated early.", index);
+                debug!(target: "AlephBFT-runway", "{:?} Runway task terminated early.", index);
                 break;
             },
             _ = alerter_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} (Runway) Alerter task terminated early.", index);
+                debug!(target: "AlephBFT-runway", "{:?} Alerter task terminated early.", index);
                 break;
             },
             _ = consensus_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} (Runway) Consensus task terminated early.", index);
+                debug!(target: "AlephBFT-runway", "{:?} Consensus task terminated early.", index);
                 break;
             },
             _ = starting_round_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} (Runway) Starting round task terminated.", index);
+                debug!(target: "AlephBFT-runway", "{:?} Starting round task terminated.", index);
             },
             _ = backup_loading_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} (Runway) Backup loading task terminated.", index);
+                debug!(target: "AlephBFT-runway", "{:?} Backup loading task terminated.", index);
             },
             _ = &mut exit => {
-                debug!(target: "AlephBFT-runway", "{:?} (Runway) exit received.", index);
                 break;
             }
         }
-
-        debug!(target: "AlephBFT-runway", "{:?} (Runway) in select.", index);
     }
 
-    info!(target: "AlephBFT-runway", "{:?} (Runway) Ending run.", index);
-
-    //info!(target: "AlephBFT-runway", "{:?} Ending run.", index);
+    info!(target: "AlephBFT-runway", "{:?} Ending run.", index);
 
     if consensus_exit.send(()).is_err() {
         debug!(target: "AlephBFT-runway", "{:?} Consensus already stopped.", index);
@@ -1044,7 +1037,20 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
     }
 
-    exiter.exit_gracefully().await;
+    let exiter_handle = exiter.exit_gracefully().fuse();
+    pin_mut!(exiter_handle);
+
+    loop {
+        futures::select! {
+            _ = runway_handle => {
+                debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
+            },
+
+            _ = exiter_handle => {},
+
+            complete => break,
+        }
+    }
 
     if !consensus_handle.is_terminated() {
         if let Err(()) = consensus_handle.await {
@@ -1058,11 +1064,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             warn!(target: "AlephBFT-runway", "{:?} Alerter finished with an error", index);
         }
         debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
-    }
-
-    if !runway_handle.is_terminated() {
-        runway_handle.await;
-        debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
     }
 
     info!(target: "AlephBFT-runway", "{:?} Runway ended.", index);

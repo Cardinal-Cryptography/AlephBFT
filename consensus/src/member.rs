@@ -362,16 +362,12 @@ where
     }
 
     fn on_create(&mut self, u: UncheckedSignedUnit<H, D, S>) {
-        info!(target: "AlephBFT-member", "{:?} (member) on_create", self.index());
-                        log::logger().flush();
         let curr_time = time::Instant::now();
         let task = ScheduledTask::new(Task::UnitMulticast(u), curr_time);
         self.task_queue.push(task);
     }
 
     fn on_request_coord(&mut self, coord: UnitCoord) {
-        info!(target: "AlephBFT-member", "{:?} (member) on_request_coord", self.index());
-                        log::logger().flush();
         trace!(target: "AlephBFT-member", "{:?} Dealing with missing coord notification {:?}.", self.index(), coord);
         if !self.not_resolved_coords.insert(coord) {
             return;
@@ -383,8 +379,6 @@ where
     }
 
     fn on_request_parents(&mut self, u_hash: H::Hash, recipient: Recipient) {
-        info!(target: "AlephBFT-member", "{:?} (member) on_request_parents", self.index());
-                        log::logger().flush();
         if !self.not_resolved_parents.insert(u_hash) {
             return;
         }
@@ -395,8 +389,6 @@ where
     }
 
     fn on_request_newest(&mut self, salt: u64) {
-        info!(target: "AlephBFT-member", "{:?} (member) on_request_newest", self.index());
-                        log::logger().flush();
         let curr_time = time::Instant::now();
         let task = ScheduledTask::new(Task::RequestNewest(salt), curr_time);
         self.task_queue.push(task);
@@ -406,10 +398,7 @@ where
     // Pulls tasks from the priority queue (sorted by scheduled time) and sends them to random peers
     // as long as they are scheduled at time <= curr_time
     fn trigger_tasks(&mut self) {
-        info!(target: "AlephBFT-member", "{:?} (member) trigger_tasks", self.index());
-                        log::logger().flush();
         while let Some(request) = self.task_queue.peek() {
-            info!(target: "AlephBFT-member", "{:?} (member) trigger_tasks loop", self.index());
             let curr_time = time::Instant::now();
             if request.scheduled_time > curr_time {
                 break;
@@ -437,8 +426,6 @@ where
     }
 
     fn send_unit_message(&mut self, message: UnitMessage<H, D, S>, recipient: Recipient) {
-        info!(target: "AlephBFT-member", "{:?} (member) send_unit_message", self.index());
-                        log::logger().flush();
         if self
             .unit_messages_for_network
             .unbounded_send((message, recipient))
@@ -457,8 +444,6 @@ where
         task: &Task<H, D, S>,
         counter: usize,
     ) -> Option<(UnitMessage<H, D, S>, Recipient, time::Duration)> {
-        info!(target: "AlephBFT-member", "{:?} (member) task_details", self.index());
-                        log::logger().flush();
         // preferred_recipient is Everyone if the message is supposed to be broadcast,
         // and Node(node_id) if the message should be send to one peer (node_id when
         // the task is done for the first time or a random peer otherwise)
@@ -514,8 +499,6 @@ where
     }
 
     fn on_unit_message_from_units(&mut self, message: RunwayNotificationOut<H, D, S>) {
-        info!(target: "AlephBFT-member", "{:?} (member) unit_messages_from_units", self.index());
-                        log::logger().flush();
         match message {
             RunwayNotificationOut::NewUnit(u) => self.on_create(u),
             RunwayNotificationOut::Request(request, recipient) => match request {
@@ -560,13 +543,10 @@ where
             futures::select! {
                 event = self.notifications_from_runway.next() => match event {
                     Some(message) => {
-                        info!(target: "AlephBFT-member", "{:?} (member) from runway", self.index());
-                        log::logger().flush();
                         self.on_unit_message_from_units(message);
                     },
                     None => {
                         error!(target: "AlephBFT-member", "{:?} (member) Unit message stream from Runway closed.", self.index());
-                        log::logger().flush();
                         break;
                     },
                 },
@@ -574,23 +554,17 @@ where
                 event = self.resolved_requests.next() => match event {
                     Some(request) => match request {
                         Request::Coord(coord) => {
-                            info!(target: "AlephBFT-member", "{:?} (member) Coord", self.index());
-                            log::logger().flush();
                             self.not_resolved_coords.remove(&coord);
                         },
                         Request::Parents(u_hash) => {
-                            info!(target: "AlephBFT-member", "{:?} (member) Parents", self.index());
-                        log::logger().flush();
                             self.not_resolved_parents.remove(&u_hash);
                         },
                         Request::NewestUnit(_) => {
-                            info!(target: "AlephBFT-member", "{:?} (member) NewestUnit", self.index());
-                        log::logger().flush();
                             self.newest_unit_resolved = true;
                         }
                     },
                     None => {
-                        error!(target: "AlephBFT-member", "{:?} (member) Resolved-requests stream from Runway closed.", self.index());
+                        error!(target: "AlephBFT-member", "{:?} Resolved-requests stream from Runway closed.", self.index());
                         break;
                     }
                 },
@@ -598,63 +572,39 @@ where
                 event = self.unit_messages_from_network.next() => match event {
                     Some(message) => match message.try_into() {
                         Ok(notification) => {
-                            info!(target: "AlephBFT-member", "{:?} (member) Unit messages from network", self.index());
-                        log::logger().flush();
                             self.send_notification_to_runway(notification)
                         },
-                        Err(_) => error!(target: "AlephBFT-member", "{:?} (member) Unable to convert a UnitMessage into an instance of RunwayNotificationIn.", self.index()),
+                        Err(_) => error!(target: "AlephBFT-member", "{:?} Unable to convert a UnitMessage into an instance of RunwayNotificationIn.", self.index()),
                     },
                     None => {
-                        error!(target: "AlephBFT-member", "{:?} (member) Unit message stream from network closed.", self.index());
+                        error!(target: "AlephBFT-member", "{:?} Unit message stream from network closed.", self.index());
                         break;
                     },
                 },
 
                 _ = &mut ticker => {
-                    info!(target: "AlephBFT-member", "{:?} (member) tick", self.index());
-                        log::logger().flush();
                     self.trigger_tasks();
                     ticker = Delay::new(ticker_delay).fuse();
-
-                    /*match exit.try_recv() {
-                        Ok(Some(_)) => {
-                            self.exiting = true;
-                            info!(target: "AlephBFT-member", "{:?} (member) very cool", self.index());
-                        },
-                        Ok(None) => {
-                            info!(target: "AlephBFT-member", "{:?} (member) just wow", exit.is_terminated());
-                        },
-                        _ => {
-                            info!(target: "AlephBFT-member", "{:?} (member) what are you talking about", self.exiting);
-                        }
-                    }*/
                 },
 
                 _ = &mut status_ticker => {
-                    info!(target: "AlephBFT-member", "{:?} (member) status", self.index());
-                        log::logger().flush();
                     self.status_report();
                     status_ticker = Delay::new(status_ticker_delay).fuse();
                 },
 
                 _ = &mut exit => {
-                    info!(target: "AlephBFT-member", "{:?} (member) received exit signal", self.index());
-                        log::logger().flush();
+                    info!(target: "AlephBFT-member", "{:?} received exit signal", self.index());
                     self.exiting = true;
                 },
             }
             if self.exiting {
-                info!(target: "AlephBFT-member", "{:?} (member) Member decided to exit.", self.index());
-                        log::logger().flush();
-                Exiter::new(parent_exiter_connection, "member");
+                info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
+                Exiter::new(parent_exiter_connection, "member").exit_gracefully().await;
                 break;
             }
-
-            info!(target: "AlephBFT-member", "{:?} (member) still processing requests", self.index());
-                        log::logger().flush();
         }
 
-        debug!(target: "AlephBFT-member", "{:?} (member) Member stopped.", self.index());
+        debug!(target: "AlephBFT-member", "{:?} Member stopped.", self.index());
     }
 
     fn send_notification_to_runway(&mut self, notification: RunwayNotificationIn<H, D, S>) {
@@ -749,7 +699,6 @@ pub async fn run_session<
         spawn_handle.clone(),
         network_io,
         exit_stream,
-        //None,
         Some(runway_exiter_connection),
     );
     let runway_handle = runway_handle.fuse();
@@ -768,7 +717,6 @@ pub async fn run_session<
     let (member_exit, exit_stream) = oneshot::channel();
     let member_exiter_connection = exiter.add_offspring_connection();
     let member_handle = member.run(exit_stream, Some(member_exiter_connection)).fuse();
-    //let member_handle = member.run(exit_stream, None).fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);
 
@@ -797,24 +745,29 @@ pub async fn run_session<
 
     if member_exit.send(()).is_err() {
         debug!(target: "AlephBFT-member", "{:?} Member already stopped.", index);
-    } else {
-        debug!(target: "AlephBFT-member", "{:?} Member exit call success.", index);
     }
 
     if network_exit.send(()).is_err() {
         debug!(target: "AlephBFT-member", "{:?} Network-hub already stopped.", index);
     }
 
-    exiter.exit_gracefully().await;
+    let exiter_handle = exiter.exit_gracefully().fuse();
+    pin_mut!(exiter_handle);
 
-    if !runway_handle.is_terminated() {
-        runway_handle.await;
-        debug!(target: "AlephBFT-member", "{:?} Runway stopped.", index);
-    }
+    loop {
+        futures::select! {
+            _ = runway_handle => {
+                debug!(target: "AlephBFT-member", "{:?} Runway stopped.", index);
+            },
 
-    if !member_handle.is_terminated() {
-        member_handle.await;
-        debug!(target: "AlephBFT-member", "{:?} Member stopped.", index);
+            _ = member_handle => {
+                debug!(target: "AlephBFT-member", "{:?} Member stopped.", index);
+            },
+
+            _ = exiter_handle => {}
+
+            complete => break,
+        }
     }
 
     if !network_handle.is_terminated() {
