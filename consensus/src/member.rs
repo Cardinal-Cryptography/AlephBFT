@@ -570,7 +570,7 @@ where
                         self.on_unit_message_from_units(message);
                     },
                     None => {
-                        error!(target: "AlephBFT-member", "{:?} (member) Unit message stream from Runway closed.", self.index());
+                        error!(target: "AlephBFT-member", "{:?} Unit message stream from Runway closed.", self.index());
                         break;
                     },
                 },

@@ -750,7 +750,7 @@ where
                 },
 
                 _ = &mut exit => {
-                    info!(target: "AlephBFT-runway", "{:?} (Runway) received exit signal", index);
+                    info!(target: "AlephBFT-runway", "{:?} received exit signal", index);
                     self.exiting = true;
                 }
             };

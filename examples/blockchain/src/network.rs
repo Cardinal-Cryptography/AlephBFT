@@ -211,7 +211,7 @@ impl NetworkManager {
     pub async fn run(
         &mut self,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection: ExiterConnection,
+        parent_exiter_connection: Option<ExiterConnection>,
     ) {
         let mut dns_interval = tokio::time::interval(std::time::Duration::from_millis(1000));
         let mut dns_hello_interval = tokio::time::interval(std::time::Duration::from_millis(5000));
@@ -274,7 +274,7 @@ impl NetworkManager {
             }
         }
 
-        Exiter::new(Some(parent_exiter_connection), "Blockchain network")
+        Exiter::new(parent_exiter_connection, "Blockchain network")
             .exit_gracefully()
             .await;
     }

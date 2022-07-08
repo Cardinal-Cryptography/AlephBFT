@@ -83,7 +83,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let terminal_exiter_connection = exiter.add_offspring_connection();
     let mut terminal_handle = spawn_handle
         .spawn_essential("consensus/terminal", async move {
-            terminal.run(exit_rx, terminal_exiter_connection).await
+            terminal
+                .run(exit_rx, Some(terminal_exiter_connection))
+                .await
         })
         .fuse();
     info!(target: "AlephBFT", "{:?} All services started.", index);
