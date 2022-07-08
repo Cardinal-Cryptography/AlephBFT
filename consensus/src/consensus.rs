@@ -9,9 +9,10 @@ use crate::{
     config::Config,
     creation,
     extender::Extender,
+    member::{Exiter, ExiterConnection},
     runway::{NotificationIn, NotificationOut},
     terminal::Terminal,
-    Hasher, Receiver, Round, Sender, SpawnHandle, member::{ExiterConnection, Exiter},
+    Hasher, Receiver, Round, Sender, SpawnHandle,
 };
 
 pub(crate) async fn run<H: Hasher + 'static>(
@@ -22,7 +23,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     spawn_handle: impl SpawnHandle,
     starting_round: oneshot::Receiver<Option<Round>>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection : Option<ExiterConnection>,
+    parent_exiter_connection: Option<ExiterConnection>,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
 
@@ -36,7 +37,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let extender_exiter_connection = exiter.add_offspring_connection();
     let mut extender_handle = spawn_handle
         .spawn_essential("consensus/extender", async move {
-            extender.extend(exit_rx, Some(extender_exiter_connection)).await
+            extender
+                .extend(exit_rx, Some(extender_exiter_connection))
+                .await
         })
         .fuse();
 
@@ -50,7 +53,14 @@ pub(crate) async fn run<H: Hasher + 'static>(
     };
     let mut creator_handle = spawn_handle
         .spawn_essential("consensus/creation", async move {
-            creation::run(conf.clone().into(), io, starting_round, exit_rx, Some(creator_exiter_connection)).await;
+            creation::run(
+                conf.clone().into(),
+                io,
+                starting_round,
+                exit_rx,
+                Some(creator_exiter_connection),
+            )
+            .await;
         })
         .fuse();
 
@@ -72,10 +82,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (terminal_exit, exit_rx) = oneshot::channel();
     let terminal_exiter_connection = exiter.add_offspring_connection();
     let mut terminal_handle = spawn_handle
-        .spawn_essential(
-            "consensus/terminal",
-            async move { terminal.run(exit_rx, terminal_exiter_connection).await },
-        )
+        .spawn_essential("consensus/terminal", async move {
+            terminal.run(exit_rx, terminal_exiter_connection).await
+        })
         .fuse();
     info!(target: "AlephBFT", "{:?} All services started.", index);
 

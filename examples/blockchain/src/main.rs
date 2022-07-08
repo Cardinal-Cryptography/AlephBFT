@@ -12,7 +12,7 @@ use log::{debug, error, info};
 use parking_lot::Mutex;
 use time::{macros::format_description, OffsetDateTime};
 
-use aleph_bft::{run_session, NodeIndex, Exiter};
+use aleph_bft::{run_session, Exiter, NodeIndex};
 use aleph_bft_mock::{FinalizationHandler, Keychain, Loader, Saver, Spawner};
 use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use data::{Data, DataProvider, DataStore};
@@ -102,7 +102,8 @@ async fn main() {
     let (close_network, exit) = oneshot::channel();
     let mut exiter = Exiter::new(None, "Blockchain example");
     let network_exiter_connection = exiter.add_offspring_connection();
-    let network_handle = tokio::spawn(async move { manager.run(exit, network_exiter_connection).await });
+    let network_handle =
+        tokio::spawn(async move { manager.run(exit, network_exiter_connection).await });
 
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = ChainConfig::new(
@@ -142,7 +143,16 @@ async fn main() {
             backup_saver,
             backup_loader,
         );
-        run_session(config, local_io, network, keychain, Spawner {}, exit, Some(member_exiter_connection)).await
+        run_session(
+            config,
+            local_io,
+            network,
+            keychain,
+            Spawner {},
+            exit,
+            Some(member_exiter_connection),
+        )
+        .await
     });
 
     let mut max_block_finalized = 0;

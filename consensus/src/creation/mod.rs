@@ -1,8 +1,9 @@
 use crate::{
     config::{Config as GeneralConfig, DelaySchedule},
+    member::{Exiter, ExiterConnection},
     runway::NotificationOut,
     units::{PreUnit, Unit},
-    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender, member::{ExiterConnection, Exiter},
+    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender,
 };
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -93,7 +94,7 @@ pub async fn run<H: Hasher>(
     io: IO<H>,
     mut starting_round: oneshot::Receiver<Option<Round>>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection : Option<ExiterConnection>,
+    parent_exiter_connection: Option<ExiterConnection>,
 ) {
     let Config {
         node_id,

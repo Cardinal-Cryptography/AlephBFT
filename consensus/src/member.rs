@@ -32,17 +32,17 @@ use std::{
 pub type ExiterConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
 
 pub struct Exiter {
-    component_name : String,
-    parent_connection : Option<ExiterConnection>,
-    offspring_connections : Vec<ExiterConnection>,
+    component_name: String,
+    parent_connection: Option<ExiterConnection>,
+    offspring_connections: Vec<ExiterConnection>,
 }
 
 impl Exiter {
-    pub fn new(parent_connection : Option<ExiterConnection>, component_name : &str) -> Self {
+    pub fn new(parent_connection: Option<ExiterConnection>, component_name: &str) -> Self {
         Self {
-            component_name : String::from(component_name),
+            component_name: String::from(component_name),
             parent_connection,
-            offspring_connections : Vec::<ExiterConnection>::new(),
+            offspring_connections: Vec::<ExiterConnection>::new(),
         }
     }
 
@@ -58,31 +58,45 @@ impl Exiter {
     }
 
     pub async fn exit_gracefully(self) {
-        let (offspring_senders, offspring_receivers) : (Vec<_>, Vec<_>) = self.offspring_connections.into_iter().unzip();
+        let (offspring_senders, offspring_receivers): (Vec<_>, Vec<_>) =
+            self.offspring_connections.into_iter().unzip();
 
-        info!("Exiter for {} starting a graceful exit.", self.component_name);
-
+        info!(
+            "Exiter for {} starting a graceful exit.",
+            self.component_name
+        );
 
         // Make sure that all descendants recieved exit and won't be communicating with other components
         for receiver in offspring_receivers {
             if receiver.await.is_err() {
-                error!("Exiter for {} failed to receive from descendants. Graceful exit unsuccessful.", self.component_name);
+                error!(
+                    "Exiter for {} failed to receive from descendants. Graceful exit unsuccessful.",
+                    self.component_name
+                );
                 return;
             }
         }
 
-        info!("Exiter for {} gathered notifications from descendants.", self.component_name);
-
+        info!(
+            "Exiter for {} gathered notifications from descendants.",
+            self.component_name
+        );
 
         // Notify parent that our subtree is ready for graceful exit
         // and wait for signal that all other components are ready
         if self.parent_connection.is_some() {
             let (sender, receiver) = self.parent_connection.unwrap();
             if sender.send(()).is_err() {
-                error!("Exiter for {} failed to notify parent component. Graceful exit unsuccessful.", self.component_name);
+                error!(
+                    "Exiter for {} failed to notify parent component. Graceful exit unsuccessful.",
+                    self.component_name
+                );
             }
 
-            info!("Exiter for {} notified parent component.", self.component_name);
+            info!(
+                "Exiter for {} notified parent component.",
+                self.component_name
+            );
 
             if receiver.await.is_err() {
                 error!("Exiter for {} failed to receive from parent component. Graceful exit unsuccessful.", self.component_name);
@@ -95,12 +109,18 @@ impl Exiter {
         // Notify descendants that exiting is now safe
         for sender in offspring_senders {
             if sender.send(()).is_err() {
-                error!("Exiter for {} failed to notify descendants. Graceful exit unsuccessful.", self.component_name);
+                error!(
+                    "Exiter for {} failed to notify descendants. Graceful exit unsuccessful.",
+                    self.component_name
+                );
                 return;
             }
         }
 
-        info!("Exiter for {} sent permits to descendants: ready to exit.", self.component_name);
+        info!(
+            "Exiter for {} sent permits to descendants: ready to exit.",
+            self.component_name
+        );
     }
 }
 
@@ -533,7 +553,11 @@ where
         info!(target: "AlephBFT-member", "{}", status);
     }
 
-    async fn run(mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connection : Option<ExiterConnection>) {
+    async fn run(
+        mut self,
+        mut exit: oneshot::Receiver<()>,
+        parent_exiter_connection: Option<ExiterConnection>,
+    ) {
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
         let status_ticker_delay = Duration::from_secs(10);
@@ -599,7 +623,9 @@ where
             }
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
-                Exiter::new(parent_exiter_connection, "member").exit_gracefully().await;
+                Exiter::new(parent_exiter_connection, "member")
+                    .exit_gracefully()
+                    .await;
                 break;
             }
         }
@@ -716,7 +742,9 @@ pub async fn run_session<
     );
     let (member_exit, exit_stream) = oneshot::channel();
     let member_exiter_connection = exiter.add_offspring_connection();
-    let member_handle = member.run(exit_stream, Some(member_exiter_connection)).fuse();
+    let member_handle = member
+        .run(exit_stream, Some(member_exiter_connection))
+        .fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);
 

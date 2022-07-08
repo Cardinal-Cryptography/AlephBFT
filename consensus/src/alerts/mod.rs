@@ -1,7 +1,8 @@
 use crate::{
-    units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount,
-    NodeIndex, PartialMultisignature, Receiver, Recipient, Sender, SessionId, Signable, Signature,
-    Signed, UncheckedSigned, member::{ExiterConnection, Exiter},
+    member::{Exiter, ExiterConnection},
+    units::UncheckedSignedUnit,
+    Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount, NodeIndex, PartialMultisignature,
+    Receiver, Recipient, Sender, SessionId, Signable, Signature, Signed, UncheckedSigned,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use codec::{Decode, Encode};
@@ -412,7 +413,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection : Option<ExiterConnection>,
+    parent_exiter_connection: Option<ExiterConnection>,
 ) {
     use self::io::IO;
 
@@ -502,7 +503,9 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
         }
         if alerter.exiting {
             info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", alerter.index());
-            Exiter::new(parent_exiter_connection, "alerter").exit_gracefully().await;
+            Exiter::new(parent_exiter_connection, "alerter")
+                .exit_gracefully()
+                .await;
             break;
         }
     }

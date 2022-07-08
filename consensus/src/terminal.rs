@@ -3,9 +3,10 @@ use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{
     extender::ExtenderUnit,
+    member::{Exiter, ExiterConnection},
     runway::{NotificationIn, NotificationOut},
     units::{ControlHash, Unit, UnitCoord},
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, member::{ExiterConnection, Exiter},
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
 };
 use log::{debug, info, trace, warn};
 
@@ -348,7 +349,11 @@ impl<H: Hasher> Terminal<H> {
         }
     }
 
-    pub(crate) async fn run(&mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connection : ExiterConnection) {
+    pub(crate) async fn run(
+        &mut self,
+        mut exit: oneshot::Receiver<()>,
+        parent_exiter_connection: ExiterConnection,
+    ) {
         loop {
             futures::select! {
                 n = self.ntfct_rx.next() => {
@@ -373,10 +378,11 @@ impl<H: Hasher> Terminal<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
-                Exiter::new(Some(parent_exiter_connection), "terminal").exit_gracefully().await;
+                Exiter::new(Some(parent_exiter_connection), "terminal")
+                    .exit_gracefully()
+                    .await;
                 break;
             }
         }
-
     }
 }

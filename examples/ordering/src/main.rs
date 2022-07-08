@@ -1,7 +1,7 @@
 mod dataio;
 mod network;
 
-use aleph_bft::{run_session, NodeIndex, Exiter};
+use aleph_bft::{run_session, Exiter, NodeIndex};
 use aleph_bft_mock::{Keychain, Spawner};
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};
@@ -111,7 +111,16 @@ async fn main() {
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
         let config = aleph_bft::default_config(n_members, id, 0);
-        run_session(config, local_io, network, keychain, Spawner {}, exit, Some(member_exiter_connection)).await
+        run_session(
+            config,
+            local_io,
+            network,
+            keychain,
+            Spawner {},
+            exit,
+            Some(member_exiter_connection),
+        )
+        .await
     });
 
     let mut count_finalized: HashMap<NodeIndex, u32> =

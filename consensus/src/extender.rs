@@ -3,7 +3,10 @@ use std::collections::{HashMap, VecDeque};
 
 use log::{debug, info, warn};
 
-use crate::{Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, member::{ExiterConnection, Exiter}};
+use crate::{
+    member::{Exiter, ExiterConnection},
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
+};
 
 pub(crate) struct ExtenderUnit<H: Hasher> {
     creator: NodeIndex,
@@ -294,7 +297,11 @@ impl<H: Hasher> Extender<H> {
         }
     }
 
-    pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connextion : Option<ExiterConnection>) {
+    pub(crate) async fn extend(
+        &mut self,
+        mut exit: oneshot::Receiver<()>,
+        parent_exiter_connextion: Option<ExiterConnection>,
+    ) {
         loop {
             futures::select! {
                 v = self.electors.next() => {
@@ -311,7 +318,9 @@ impl<H: Hasher> Extender<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
-                Exiter::new(parent_exiter_connextion, "extender").exit_gracefully().await;
+                Exiter::new(parent_exiter_connextion, "extender")
+                    .exit_gracefully()
+                    .await;
                 break;
             }
         }

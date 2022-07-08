@@ -1,7 +1,7 @@
 use crate::{
     alerts::{self, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     consensus,
-    member::{UnitMessage, Exiter, ExiterConnection},
+    member::{Exiter, ExiterConnection, UnitMessage},
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, UnitStoreStatus, Validator,
@@ -686,7 +686,7 @@ where
         mut self,
         units_from_backup: oneshot::Receiver<Vec<UncheckedSignedUnit<H, D, MK::Signature>>>,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection : Option<ExiterConnection>,
+        parent_exiter_connection: Option<ExiterConnection>,
     ) {
         let index = self.index();
         let units_from_backup = units_from_backup.fuse();
@@ -758,7 +758,9 @@ where
 
             if self.exiting {
                 info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
-                Exiter::new(parent_exiter_connection, "Runway").exit_gracefully().await;
+                Exiter::new(parent_exiter_connection, "Runway")
+                    .exit_gracefully()
+                    .await;
                 break;
             }
         }
@@ -867,7 +869,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     spawn_handle: SH,
     network_io: NetworkIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection : Option<ExiterConnection>,
+    parent_exiter_connection: Option<ExiterConnection>,
 ) where
     H: Hasher,
     D: Data,
@@ -994,7 +996,9 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let (runway_exit, exit_stream) = oneshot::channel();
     let runway_exiter_connection = exiter.add_offspring_connection();
     let runway = Runway::new(runway_config, &keychain, &validator);
-    let runway_handle = runway.run(loaded_units_rx, exit_stream, Some(runway_exiter_connection)).fuse();
+    let runway_handle = runway
+        .run(loaded_units_rx, exit_stream, Some(runway_exiter_connection))
+        .fuse();
     pin_mut!(runway_handle);
 
     loop {

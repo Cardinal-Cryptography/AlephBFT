@@ -1,6 +1,7 @@
 use crate::{
-    alerts::AlertMessage, member::{UnitMessage, ExiterConnection, Exiter}, Data, Hasher, Network, PartialMultisignature,
-    Receiver, Recipient, Sender, Signature,
+    alerts::AlertMessage,
+    member::{Exiter, ExiterConnection, UnitMessage},
+    Data, Hasher, Network, PartialMultisignature, Receiver, Recipient, Sender, Signature,
 };
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
@@ -126,7 +127,11 @@ impl<
         }
     }
 
-    async fn run(mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connection : Option<ExiterConnection>) {
+    async fn run(
+        mut self,
+        mut exit: oneshot::Receiver<()>,
+        parent_exiter_connection: Option<ExiterConnection>,
+    ) {
         loop {
             use NetworkDataInner::*;
             futures::select! {
@@ -175,7 +180,7 @@ pub(crate) async fn run<
     alerts_to_send: Receiver<(AlertMessage<H, D, S, MS>, Recipient)>,
     alerts_received: Sender<AlertMessage<H, D, S, MS>>,
     exit: oneshot::Receiver<()>,
-    parent_exiter_connection : Option<ExiterConnection>,
+    parent_exiter_connection: Option<ExiterConnection>,
 ) {
     NetworkHub::new(
         network,
