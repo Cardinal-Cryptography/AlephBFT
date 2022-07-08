@@ -93,7 +93,7 @@ pub async fn run<H: Hasher>(
     io: IO<H>,
     mut starting_round: oneshot::Receiver<Option<Round>>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection : ExiterConnection,
+    parent_exiter_connection : Option<ExiterConnection>,
 ) {
     let Config {
         node_id,
@@ -107,7 +107,7 @@ pub async fn run<H: Hasher>(
         outgoing_units,
     } = io;
 
-    let exiter = Exiter::new(Some(parent_exiter_connection), "creator");
+    let exiter = Exiter::new(parent_exiter_connection, "creator");
     let starting_round = futures::select! {
         maybe_round =  starting_round => match maybe_round {
             Ok(Some(round)) => round,
@@ -151,7 +151,6 @@ pub async fn run<H: Hasher>(
             outgoing_units.unbounded_send(NotificationOut::CreatedPreUnit(unit, parent_hashes))
         {
             warn!(target: "AlephBFT-creator", "Notification send error: {}. Exiting.", e);
-            exiter.exit_gracefully().await;
             return;
         }
     }

@@ -113,7 +113,7 @@ async fn main() {
         INITIAL_DELAY,
     );
     let (close_chain, exit) = oneshot::channel();
-    let chain_exiter_connection = exiter.add_offspring_connection();
+    //let chain_exiter_connection = exiter.add_offspring_connection();
     let chain_handle = tokio::spawn(async move {
         run_blockchain(
             chain_config,
@@ -123,7 +123,8 @@ async fn main() {
             block_from_data_io_tx,
             message_from_network,
             exit,
-            chain_exiter_connection,
+            None,
+            //chain_exiter_connection,
         )
         .await
     });

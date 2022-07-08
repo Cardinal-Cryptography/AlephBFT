@@ -294,7 +294,7 @@ impl<H: Hasher> Extender<H> {
         }
     }
 
-    pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connextion : ExiterConnection) {
+    pub(crate) async fn extend(&mut self, mut exit: oneshot::Receiver<()>, parent_exiter_connextion : Option<ExiterConnection>) {
         loop {
             futures::select! {
                 v = self.electors.next() => {
@@ -311,11 +311,10 @@ impl<H: Hasher> Extender<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
+                Exiter::new(parent_exiter_connextion, "extender").exit_gracefully().await;
                 break;
             }
         }
-
-        Exiter::new(Some(parent_exiter_connextion), "extender").exit_gracefully().await;
     }
 }
 
@@ -358,7 +357,7 @@ mod tests {
         let (electors_tx, electors_rx) = mpsc::unbounded();
         let mut extender = Extender::<Hasher64>::new(0.into(), n_members, electors_rx, batch_tx);
         let (exit_tx, exit_rx) = oneshot::channel();
-        let extender_handle = tokio::spawn(async move { extender.extend(exit_rx).await });
+        let extender_handle = tokio::spawn(async move { extender.extend(exit_rx, None).await });
 
         for round in 0..rounds {
             for creator in n_members.into_iterator() {

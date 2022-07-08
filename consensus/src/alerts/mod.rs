@@ -412,7 +412,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection : ExiterConnection,
+    parent_exiter_connection : Option<ExiterConnection>,
 ) {
     use self::io::IO;
 
@@ -502,12 +502,10 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
         }
         if alerter.exiting {
             info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", alerter.index());
+            Exiter::new(parent_exiter_connection, "alerter").exit_gracefully().await;
             break;
         }
     }
-
-    let exiter = Exiter::new(Some(parent_exiter_connection), "alerter");
-    exiter.exit_gracefully().await;
 }
 
 #[cfg(test)]

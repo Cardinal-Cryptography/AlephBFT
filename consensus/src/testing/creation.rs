@@ -97,7 +97,7 @@ fn setup_test(
         let (killer, exit) = oneshot::channel::<()>();
 
         let handle =
-            tokio::spawn(async move { run(config.into(), io, starting_round, exit).await });
+            tokio::spawn(async move { run(config.into(), io, starting_round, exit, None).await });
         starting_round_for_consensus
             .send(Some(0))
             .expect("Sending the starting round should work.");

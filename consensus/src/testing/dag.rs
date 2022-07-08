@@ -140,6 +140,7 @@ async fn run_consensus_on_dag(
             spawner.clone(),
             starting_round,
             exit_rx,
+            None,
         ),
     );
     spawner.spawn("feeder", feeder.run());

@@ -373,10 +373,10 @@ impl<H: Hasher> Terminal<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
+                Exiter::new(Some(parent_exiter_connection), "terminal").exit_gracefully().await;
                 break;
             }
         }
 
-        Exiter::new(Some(parent_exiter_connection), "terminal").exit_gracefully().await;
     }
 }

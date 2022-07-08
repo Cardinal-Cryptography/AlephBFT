@@ -229,6 +229,7 @@ impl TestCase {
                 session_id: 0,
             },
             exit,
+            None,
         ));
 
         use Input::*;
