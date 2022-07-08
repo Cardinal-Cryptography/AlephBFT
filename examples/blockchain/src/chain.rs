@@ -134,13 +134,12 @@ pub async fn run_blockchain(
                 }
                 _ = &mut exit => {
                     info!(target: "Blockchain-chain", "Received exit signal.");
+                    Exiter::new(parent_exiter_connection, "chain")
+                        .exit_gracefully()
+                        .await;
                     return;
                 },
             }
         }
     }
-
-    Exiter::new(parent_exiter_connection, "chain")
-        .exit_gracefully()
-        .await;
 }

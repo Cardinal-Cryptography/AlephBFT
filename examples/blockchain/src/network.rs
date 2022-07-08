@@ -270,12 +270,13 @@ impl NetworkManager {
                     self.send(Message::Block(block), Recipient::Everyone);
                 }
 
-               _ = &mut exit  => break,
+               _ = &mut exit  => {
+                    Exiter::new(parent_exiter_connection, "Blockchain network")
+                        .exit_gracefully()
+                        .await;
+                    break;
+               },
             }
         }
-
-        Exiter::new(parent_exiter_connection, "Blockchain network")
-            .exit_gracefully()
-            .await;
     }
 }
