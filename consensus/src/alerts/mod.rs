@@ -503,7 +503,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
         }
         if alerter.exiting {
             info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", alerter.index());
-            Terminator::new(parent_terminator_connection, "alerter")
+            Terminator::new(parent_terminator_connection, "AlephBFT-alerter")
                 .exit_gracefully()
                 .await;
             break;

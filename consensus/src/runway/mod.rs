@@ -758,7 +758,7 @@ where
 
             if self.exiting {
                 info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
-                Terminator::new(parent_terminator_connection, "Runway")
+                Terminator::new(parent_terminator_connection, "AlephBFT-runway")
                     .exit_gracefully()
                     .await;
                 break;
@@ -891,8 +891,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         n_members: config.n_members,
     };
     let (alerter_exit, exit_stream) = oneshot::channel();
-    let mut terminator = Terminator::new(parent_terminator_connection, "run");
-    let alerter_terminator_connection = terminator.add_offspring_connection();
+    let mut terminator = Terminator::new(parent_terminator_connection, "AlephBFT-runway");
+    let alerter_terminator_connection = terminator.add_offspring_connection("alerter");
     let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
@@ -912,7 +912,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let mut alerter_handle = alerter_handle.fuse();
 
     let (consensus_exit, exit_stream) = oneshot::channel();
-    let consensus_terminator_connection = terminator.add_offspring_connection();
+    let consensus_terminator_connection = terminator.add_offspring_connection("consensus");
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
     let (starting_round_sender, starting_round) = oneshot::channel();
@@ -994,7 +994,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         max_round: config.max_round,
     };
     let (runway_exit, exit_stream) = oneshot::channel();
-    let runway_terminator_connection = terminator.add_offspring_connection();
+    let runway_terminator_connection = terminator.add_offspring_connection("runway");
     let runway = Runway::new(runway_config, &keychain, &validator);
     let runway_handle = runway
         .run(loaded_units_rx, exit_stream, Some(runway_terminator_connection))

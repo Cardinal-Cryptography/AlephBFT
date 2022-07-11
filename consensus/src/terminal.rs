@@ -379,7 +379,7 @@ impl<H: Hasher> Terminal<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
-                Terminator::new(parent_terminator_connection, "terminal")
+                Terminator::new(parent_terminator_connection, "AlephBFT-terminal")
                     .exit_gracefully()
                     .await;
                 break;

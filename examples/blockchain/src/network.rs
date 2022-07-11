@@ -1,5 +1,5 @@
 use crate::{Block, Data};
-use aleph_bft::{Exiter, ExiterConnection, NodeIndex, Recipient};
+use aleph_bft::{Terminator, TerminatorConnection, NodeIndex, Recipient};
 use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use futures::{
@@ -211,7 +211,7 @@ impl NetworkManager {
     pub async fn run(
         &mut self,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection: Option<ExiterConnection>,
+        parent_terminator_connection: Option<TerminatorConnection>,
     ) {
         let mut dns_interval = tokio::time::interval(std::time::Duration::from_millis(1000));
         let mut dns_hello_interval = tokio::time::interval(std::time::Duration::from_millis(5000));
@@ -271,7 +271,7 @@ impl NetworkManager {
                 }
 
                _ = &mut exit  => {
-                    Exiter::new(parent_exiter_connection, "Blockchain network")
+                    Terminator::new(parent_terminator_connection, "Blockchain network")
                         .exit_gracefully()
                         .await;
                     break;

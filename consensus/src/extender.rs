@@ -318,7 +318,7 @@ impl<H: Hasher> Extender<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
-                Terminator::new(parent_terminator_connextion, "extender")
+                Terminator::new(parent_terminator_connextion, "AlephBFT-extender")
                     .exit_gracefully()
                     .await;
                 break;

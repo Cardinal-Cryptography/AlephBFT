@@ -12,7 +12,7 @@ use log::{debug, error, info};
 use parking_lot::Mutex;
 use time::{macros::format_description, OffsetDateTime};
 
-use aleph_bft::{run_session, Exiter, NodeIndex};
+use aleph_bft::{run_session, Terminator, NodeIndex};
 use aleph_bft_mock::{FinalizationHandler, Keychain, Loader, Saver, Spawner};
 use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use data::{Data, DataProvider, DataStore};
@@ -64,12 +64,13 @@ async fn main() {
         .format(move |buf, record| {
             writeln!(
                 buf,
-                "{} {}: {}",
+                "{} {} {}: {}",
                 record.level(),
                 OffsetDateTime::now_local()
                     .unwrap_or_else(|_| OffsetDateTime::now_utc())
                     .format(&time_format)
                     .unwrap(),
+                record.target(),
                 record.args()
             )
         })
@@ -100,8 +101,8 @@ async fn main() {
     let data_store = DataStore::new(current_block.clone(), message_for_network);
 
     let (close_network, exit) = oneshot::channel();
-    let mut exiter = Exiter::new(None, "Blockchain example");
-    let network_exiter_connection = exiter.add_offspring_connection();
+    let mut exiter = Terminator::new(None, "Blockchain example");
+    let network_exiter_connection = exiter.add_offspring_connection("blockchain network");
     let network_handle =
         tokio::spawn(async move { manager.run(exit, Some(network_exiter_connection)).await });
 
@@ -114,7 +115,7 @@ async fn main() {
         INITIAL_DELAY,
     );
     let (close_chain, exit) = oneshot::channel();
-    let chain_exiter_connection = exiter.add_offspring_connection();
+    let chain_exiter_connection = exiter.add_offspring_connection("chain");
     let chain_handle = tokio::spawn(async move {
         run_blockchain(
             chain_config,
@@ -130,7 +131,7 @@ async fn main() {
     });
 
     let (close_member, exit) = oneshot::channel();
-    let member_exiter_connection = exiter.add_offspring_connection();
+    let member_exiter_connection = exiter.add_offspring_connection("member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);

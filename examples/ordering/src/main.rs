@@ -1,7 +1,7 @@
 mod dataio;
 mod network;
 
-use aleph_bft::{run_session, Exiter, NodeIndex};
+use aleph_bft::{run_session, Terminator, NodeIndex};
 use aleph_bft_mock::{Keychain, Spawner};
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};
@@ -69,12 +69,13 @@ async fn main() {
         .format(move |buf, record| {
             writeln!(
                 buf,
-                "{} {}: {}",
+                "{} {} {}: {}",
                 record.level(),
                 OffsetDateTime::now_local()
                     .unwrap_or_else(|_| OffsetDateTime::now_utc())
                     .format(&time_format)
                     .unwrap(),
+                record.target(),
                 record.args()
             )
         })
@@ -106,8 +107,8 @@ async fn main() {
     );
 
     let (close_member, exit) = oneshot::channel();
-    let mut exiter = Exiter::new(None, "Ordering example");
-    let member_exiter_connection = exiter.add_offspring_connection();
+    let mut exiter = Terminator::new(None, "Ordering example");
+    let member_exiter_connection = exiter.add_offspring_connection("member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
         let config = aleph_bft::default_config(n_members, id, 0);

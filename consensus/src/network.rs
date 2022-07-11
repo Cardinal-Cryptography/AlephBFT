@@ -157,7 +157,7 @@ impl<
                     }
                 },
                 _ = &mut exit => {
-                    Terminator::new(parent_terminator_connection, "network").exit_gracefully().await;
+                    Terminator::new(parent_terminator_connection, "AlephBFT-network-hub").exit_gracefully().await;
                     break;
                 }
             }

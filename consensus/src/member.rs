@@ -35,6 +35,7 @@ pub struct Terminator {
     component_name: String,
     parent_connection: Option<TerminatorConnection>,
     offspring_connections: Vec<TerminatorConnection>,
+    offspring_names: Vec<String>,
 }
 
 impl Terminator {
@@ -43,10 +44,11 @@ impl Terminator {
             component_name: String::from(component_name),
             parent_connection,
             offspring_connections: Vec::<_>::new(),
+            offspring_names: Vec::<_>::new(),
         }
     }
 
-    pub fn add_offspring_connection(&mut self) -> TerminatorConnection {
+    pub fn add_offspring_connection(&mut self, name: &str) -> TerminatorConnection {
         let (sender, offspring_recv) = oneshot::channel();
         let (offspring_sender, recv) = oneshot::channel();
 
@@ -54,32 +56,35 @@ impl Terminator {
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
         self.offspring_connections.push(endpoint);
+        self.offspring_names.push(name.to_string());
         offspring_endpoint
     }
 
     pub async fn exit_gracefully(self) {
         let (offspring_senders, offspring_receivers): (Vec<_>, Vec<_>) =
             self.offspring_connections.into_iter().unzip();
+        //let offspring_senders = offspring_senders.into_iter().zip(self.offspring_names.clone().into_iter()).collect();
+        //let offspring_receivers = offspring_receivers.into_iter().zip(self.offspring_names.clone().into_iter()).collect();
 
-        info!(
-            "Terminator for {} starting a graceful exit.",
-            self.component_name
+        debug!(
+            target: &self.component_name,
+            "Terminator preparing for shutdown.",
         );
 
         // Make sure that all descendants recieved exit and won't be communicating with other components
         for receiver in offspring_receivers {
             if receiver.await.is_err() {
-                error!(
-                    "Terminator for {} failed to receive from descendants. Graceful exit unsuccessful.",
-                    self.component_name
+                debug!(
+                    target: &self.component_name,
+                    "Terminator failed to receive from ... . Clean shutdown unsuccessful.",
                 );
                 return;
             }
         }
 
-        info!(
-            "Terminator for {} gathered notifications from descendants.",
-            self.component_name
+        debug!(
+            target: &self.component_name,
+            "Terminator gathered notifications from descendants.",
         );
 
         // Notify parent that our subtree is ready for graceful exit
@@ -87,39 +92,45 @@ impl Terminator {
         if self.parent_connection.is_some() {
             let (sender, receiver) = self.parent_connection.unwrap();
             if sender.send(()).is_err() {
-                error!(
-                    "Terminator for {} failed to notify parent component. Graceful exit unsuccessful.",
-                    self.component_name
+                debug!(
+                    target: &self.component_name,
+                    "Terminator failed to notify parent component. Clean shutdown unsuccessful.",
                 );
             }
 
-            info!(
-                "Terminator for {} notified parent component.",
-                self.component_name
+            debug!(
+                target: &self.component_name,
+                "Terminator notified parent component.",
             );
 
             if receiver.await.is_err() {
-                error!("Terminator for {} failed to receive from parent component. Graceful exit unsuccessful.", self.component_name);
+                debug!(
+                    target: &self.component_name,
+                    "Terminator failed to receive from parent component. Clean shutdown unsuccessful."
+                );
                 return;
             }
 
-            info!("Terminator for {} recieved exit permit.", self.component_name);
+            debug!(
+                target: &self.component_name,
+                "Terminator recieved shutdown permission from parent component."
+            );
         }
 
         // Notify descendants that exiting is now safe
         for sender in offspring_senders {
             if sender.send(()).is_err() {
-                error!(
-                    "Terminator for {} failed to notify descendants. Graceful exit unsuccessful.",
-                    self.component_name
+                debug!(
+                    target: &self.component_name,
+                    "Terminator failed to notify ... . Clean exit unsuccessful.",
                 );
                 return;
             }
         }
 
-        info!(
-            "Terminator for {} sent permits to descendants: ready to exit.",
-            self.component_name
+        debug!(
+            target: &self.component_name,
+            "Terminator sent permits to descendants: ready to exit.",
         );
     }
 }
@@ -623,7 +634,7 @@ where
             }
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
-                Terminator::new(parent_terminator_connection, "member")
+                Terminator::new(parent_terminator_connection, "AlephBFT-member")
                     .exit_gracefully()
                     .await;
                 break;
@@ -683,7 +694,7 @@ pub async fn run_session<
     info!(target: "AlephBFT-member", "{:?} Spawning network.", index);
     let (network_exit, exit_stream) = oneshot::channel();
     let mut terminator = Terminator::new(terminator_parent_connection, "AlephBFT-member");
-    let network_terminator_connection = terminator.add_offspring_connection();
+    let network_terminator_connection = terminator.add_offspring_connection("network");
 
     let network_handle = spawn_handle.spawn_essential("member/network", async move {
         network::run(
@@ -704,7 +715,7 @@ pub async fn run_session<
     info!(target: "AlephBFT-member", "{:?} Initializing Runway.", index);
     let (runway_exit, exit_stream) = oneshot::channel();
 
-    let runway_terminator_connection = terminator.add_offspring_connection();
+    let runway_terminator_connection = terminator.add_offspring_connection("runway");
     let network_io = NetworkIO {
         alert_messages_for_network,
         alert_messages_from_network,
@@ -741,7 +752,7 @@ pub async fn run_session<
         resolved_requests_rx,
     );
     let (member_exit, exit_stream) = oneshot::channel();
-    let member_terminator_connection = terminator.add_offspring_connection();
+    let member_terminator_connection = terminator.add_offspring_connection("member");
     let member_handle = member
         .run(exit_stream, Some(member_terminator_connection))
         .fuse();

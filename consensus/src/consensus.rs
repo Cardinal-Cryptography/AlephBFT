@@ -33,8 +33,8 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (electors_tx, electors_rx) = mpsc::unbounded();
     let mut extender = Extender::<H>::new(index, n_members, electors_rx, ordered_batch_tx);
     let (extender_exit, exit_rx) = oneshot::channel();
-    let mut terminator = Terminator::new(parent_terminator_connection, "consensus");
-    let extender_terminator_connection = terminator.add_offspring_connection();
+    let mut terminator = Terminator::new(parent_terminator_connection, "AlephBFT");
+    let extender_terminator_connection = terminator.add_offspring_connection("extender");
     let mut extender_handle = spawn_handle
         .spawn_essential("consensus/extender", async move {
             extender
@@ -46,7 +46,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (parents_for_creator, parents_from_terminal) = mpsc::unbounded();
 
     let (creator_exit, exit_rx) = oneshot::channel();
-    let creator_terminator_connection = terminator.add_offspring_connection();
+    let creator_terminator_connection = terminator.add_offspring_connection("creator");
     let io = creation::IO {
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
@@ -80,7 +80,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     }));
 
     let (terminal_exit, exit_rx) = oneshot::channel();
-    let terminal_terminator_connection = terminator.add_offspring_connection();
+    let terminal_terminator_connection = terminator.add_offspring_connection("terminal");
     let mut terminal_handle = spawn_handle
         .spawn_essential("consensus/terminal", async move {
             terminal

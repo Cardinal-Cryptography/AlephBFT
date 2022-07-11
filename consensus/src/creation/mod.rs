@@ -108,7 +108,7 @@ pub async fn run<H: Hasher>(
         outgoing_units,
     } = io;
 
-    let terminator = Terminator::new(parent_terminator_connection, "creator");
+    let terminator = Terminator::new(parent_terminator_connection, "AlephBFT-creator");
     let starting_round = futures::select! {
         maybe_round =  starting_round => match maybe_round {
             Ok(Some(round)) => round,

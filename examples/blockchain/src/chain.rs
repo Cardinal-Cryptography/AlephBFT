@@ -1,5 +1,5 @@
 use crate::{network::NetworkData, DataStore};
-use aleph_bft::{Exiter, ExiterConnection, NodeIndex};
+use aleph_bft::{Terminator, TerminatorConnection, NodeIndex};
 use codec::{Decode, Encode};
 use futures::{
     channel::{
@@ -95,7 +95,7 @@ pub async fn run_blockchain(
     blocks_for_network: UnboundedSender<Block>,
     mut messages_from_network: UnboundedReceiver<NetworkData>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection: Option<ExiterConnection>,
+    parent_terminator_connection: Option<TerminatorConnection>,
 ) {
     let start_time = time::Instant::now();
     for block_num in 1.. {
@@ -134,7 +134,7 @@ pub async fn run_blockchain(
                 }
                 _ = &mut exit => {
                     info!(target: "Blockchain-chain", "Received exit signal.");
-                    Exiter::new(parent_exiter_connection, "chain")
+                    Terminator::new(parent_terminator_connection, "Blockchain chain")
                         .exit_gracefully()
                         .await;
                     return;
@@ -143,3 +143,4 @@ pub async fn run_blockchain(
         }
     }
 }
+
