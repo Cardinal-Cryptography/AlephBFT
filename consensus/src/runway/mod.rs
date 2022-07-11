@@ -998,7 +998,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let runway_handle = runway.run(loaded_units_rx, exit_stream).fuse();
     pin_mut!(runway_handle);
 
-    let (_provider_exit, exit_stream) = oneshot::channel();
+    let (provider_exit, exit_stream) = oneshot::channel();
     let mut provider = Provider::new(
         data_provider,
         preunits_from_runway,
@@ -1006,7 +1006,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         &keychain,
         config.session_id,
     );
-    // let provider_handle = spawn_handle.spawn_essential("runway/provider", provider.run(exit_stream)).fuse(); // would be nice
     let provider_handle = provider.run(exit_stream).fuse();
     pin_mut!(provider_handle);
 
@@ -1050,15 +1049,15 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Consensus stopped.", index);
     }
 
-    // if provider_exit.send(()).is_err() {
-    //     debug!(target: "AlephBFT-runway", "{:?} Provider already stopped.", index);
-    // }
-    // if !provider_handle.is_terminated() {
-    //     if let Err(()) = provider_handle.await {
-    //         warn!(target: "AlephBFT-runway", "{:?} Provider finished with an error", index);
-    //     }
-    //     debug!(target: "AlephBFT-runway", "{:?} Provider stopped.", index);
-    // }
+    if provider_exit.send(()).is_err() {
+        debug!(target: "AlephBFT-runway", "{:?} Provider already stopped.", index);
+    }
+    if !provider_handle.is_terminated() {
+        if let Err(()) = provider_handle.await {
+            warn!(target: "AlephBFT-runway", "{:?} Provider finished with an error", index);
+        }
+        debug!(target: "AlephBFT-runway", "{:?} Provider stopped.", index);
+    }
 
     if alerter_exit.send(()).is_err() {
         debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);

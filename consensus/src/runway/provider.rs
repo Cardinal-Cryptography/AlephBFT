@@ -49,7 +49,7 @@ where
         self.keychain.index()
     }
 
-    pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
+    pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) -> Result<(), ()> {
         info!(target: "AlephBFT-runway", "{:?} Provider started.", self.keychain.index());
         let main_loop = async { loop {
             let data = self.data_provider.get_data().await;
@@ -71,8 +71,8 @@ where
         }}.fuse();
         pin_mut!(main_loop);
         futures::select! {
-            _ = main_loop => (),
-            _ = exit => (),
+            _ = main_loop => Err(()),
+            _ = exit => Ok(()),
         }
     }
 }
