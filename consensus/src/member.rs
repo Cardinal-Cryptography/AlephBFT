@@ -31,6 +31,8 @@ use std::{
 
 pub type TerminatorConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
 
+/// Struct that holds connections to offspring and parent components/tasks
+/// and enables a clean/synchronized shutdown
 pub struct Terminator {
     component_name: String,
     parent_connection: Option<TerminatorConnection>,
@@ -39,6 +41,7 @@ pub struct Terminator {
 }
 
 impl Terminator {
+
     pub fn new(parent_connection: Option<TerminatorConnection>, component_name: &str) -> Self {
         Self {
             component_name: String::from(component_name),
@@ -48,6 +51,7 @@ impl Terminator {
         }
     }
 
+    /// Add a connection to an offspring component/task
     pub fn add_offspring_connection(&mut self, name: &str) -> TerminatorConnection {
         let (sender, offspring_recv) = oneshot::channel();
         let (offspring_sender, recv) = oneshot::channel();
@@ -60,7 +64,8 @@ impl Terminator {
         offspring_endpoint
     }
 
-    pub async fn exit_gracefully(self) {
+    /// Perform a synchronized shutdown
+    pub async fn clean_terminate(self) {
         let (offspring_senders, offspring_receivers): (Vec<_>, Vec<_>) =
             self.offspring_connections.into_iter().unzip();
         let offspring_senders: Vec<_> = offspring_senders
@@ -643,7 +648,7 @@ where
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
                 Terminator::new(parent_terminator_connection, "AlephBFT-member")
-                    .exit_gracefully()
+                    .clean_terminate()
                     .await;
                 break;
             }
@@ -798,7 +803,7 @@ pub async fn run_session<
         debug!(target: "AlephBFT-member", "{:?} Network-hub already stopped.", index);
     }
 
-    let terminator_handle = terminator.exit_gracefully().fuse();
+    let terminator_handle = terminator.clean_terminate().fuse();
     pin_mut!(terminator_handle);
 
     loop {

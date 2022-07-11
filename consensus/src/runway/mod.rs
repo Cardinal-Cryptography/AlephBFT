@@ -759,7 +759,7 @@ where
             if self.exiting {
                 info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
                 Terminator::new(parent_terminator_connection, "AlephBFT-runway")
-                    .exit_gracefully()
+                    .clean_terminate()
                     .await;
                 break;
             }
@@ -1045,7 +1045,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
     }
 
-    let terminator_handle = terminator.exit_gracefully().fuse();
+    let terminator_handle = terminator.clean_terminate().fuse();
     pin_mut!(terminator_handle);
 
     loop {

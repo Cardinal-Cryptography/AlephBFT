@@ -181,7 +181,7 @@ async fn main() {
     close_chain.send(()).expect("should send");
     close_network.send(()).expect("should send");
 
-    exiter.exit_gracefully().await;
+    exiter.clean_terminate().await;
 
     member_handle.await.unwrap();
     chain_handle.await.unwrap();

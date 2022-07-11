@@ -122,7 +122,7 @@ pub async fn run<H: Hasher>(
             }
         },
         _ = &mut exit => {
-            terminator.exit_gracefully().await;
+            terminator.clean_terminate().await;
             return;
         },
     };
@@ -144,7 +144,7 @@ pub async fn run<H: Hasher>(
         {
             Ok((u, ph)) => (u, ph),
             Err(_) => {
-                terminator.exit_gracefully().await;
+                terminator.clean_terminate().await;
                 return;
             }
         };
@@ -157,5 +157,5 @@ pub async fn run<H: Hasher>(
     }
 
     warn!(target: "AlephBFT-creator", "Maximum round reached. Not creating another unit.");
-    terminator.exit_gracefully().await;
+    terminator.clean_terminate().await;
 }

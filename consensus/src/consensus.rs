@@ -117,7 +117,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
         debug!(target: "AlephBFT-consensus", "{:?} extender already stopped.", index);
     }
 
-    terminator.exit_gracefully().await;
+    terminator.clean_terminate().await;
 
     if !terminal_handle.is_terminated() {
         if let Err(()) = terminal_handle.await {

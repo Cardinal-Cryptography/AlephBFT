@@ -272,7 +272,7 @@ impl NetworkManager {
 
                _ = &mut exit  => {
                     Terminator::new(parent_terminator_connection, "Blockchain network")
-                        .exit_gracefully()
+                        .clean_terminate()
                         .await;
                     break;
                },

@@ -135,7 +135,7 @@ pub async fn run_blockchain(
                 _ = &mut exit => {
                     info!(target: "Blockchain-chain", "Received exit signal.");
                     Terminator::new(parent_terminator_connection, "Blockchain chain")
-                        .exit_gracefully()
+                        .clean_terminate()
                         .await;
                     return;
                 },

@@ -163,6 +163,6 @@ async fn main() {
     }
 
     close_member.send(()).expect("should send");
-    exiter.exit_gracefully().await;
+    exiter.clean_terminate().await;
     member_handle.await.unwrap();
 }
