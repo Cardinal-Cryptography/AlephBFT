@@ -1,14 +1,14 @@
 use crate::{
     alerts::{self, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     consensus,
-    member::{Terminator, UnitMessage},
+    member::UnitMessage,
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, UnitStoreStatus, Validator,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
     NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, ShutdownConnection,
-    Signature, Signed, SpawnHandle, UncheckedSigned,
+    Signature, Signed, SpawnHandle, Terminator, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},

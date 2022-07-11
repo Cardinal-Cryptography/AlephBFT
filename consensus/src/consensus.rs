@@ -9,10 +9,9 @@ use crate::{
     config::Config,
     creation,
     extender::Extender,
-    member::Terminator,
     runway::{NotificationIn, NotificationOut},
     terminal::Terminal,
-    Hasher, Receiver, Round, Sender, ShutdownConnection, SpawnHandle,
+    Hasher, Receiver, Round, Sender, ShutdownConnection, SpawnHandle, Terminator,
 };
 
 pub(crate) async fn run<H: Hasher + 'static>(

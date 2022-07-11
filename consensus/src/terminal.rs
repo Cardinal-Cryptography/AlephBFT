@@ -3,10 +3,9 @@ use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{
     extender::ExtenderUnit,
-    member::Terminator,
     runway::{NotificationIn, NotificationOut},
     units::{ControlHash, Unit, UnitCoord},
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, ShutdownConnection,
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, ShutdownConnection, Terminator,
 };
 use log::{debug, info, trace, warn};
 

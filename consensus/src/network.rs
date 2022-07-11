@@ -1,8 +1,6 @@
 use crate::{
-    alerts::AlertMessage,
-    member::{Terminator, UnitMessage},
-    Data, Hasher, Network, PartialMultisignature, Receiver, Recipient, Sender, ShutdownConnection,
-    Signature,
+    alerts::AlertMessage, member::UnitMessage, Data, Hasher, Network, PartialMultisignature,
+    Receiver, Recipient, Sender, ShutdownConnection, Signature, Terminator,
 };
 use codec::{Decode, Encode};
 use futures::{FutureExt, StreamExt};

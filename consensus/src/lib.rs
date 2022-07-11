@@ -11,6 +11,7 @@ mod member;
 mod network;
 mod runway;
 mod terminal;
+mod terminator;
 mod units;
 
 #[cfg(test)]
@@ -23,8 +24,9 @@ pub use aleph_bft_types::{
     SignatureError, SignatureSet, Signed, SpawnHandle, TaskHandle, UncheckedSigned,
 };
 pub use config::{default_config, exponential_slowdown, Config, DelayConfig};
-pub use member::{run_session, LocalIO, ShutdownConnection, Terminator, TerminatorConnection};
+pub use member::{run_session, LocalIO};
 pub use network::NetworkData;
+pub use terminator::{ShutdownConnection, Terminator, TerminatorConnection};
 
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
 type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;

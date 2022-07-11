@@ -4,8 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use log::{debug, info, warn};
 
 use crate::{
-    member::Terminator, Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
-    ShutdownConnection,
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, ShutdownConnection, Terminator,
 };
 
 pub(crate) struct ExtenderUnit<H: Hasher> {

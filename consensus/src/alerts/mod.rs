@@ -1,7 +1,7 @@
 use crate::{
-    member::Terminator, units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain,
-    Multisigned, NodeCount, NodeIndex, PartialMultisignature, Receiver, Recipient, Sender,
-    SessionId, ShutdownConnection, Signable, Signature, Signed, UncheckedSigned,
+    units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount,
+    NodeIndex, PartialMultisignature, Receiver, Recipient, Sender, SessionId, ShutdownConnection,
+    Signable, Signature, Signed, Terminator, UncheckedSigned,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use codec::{Decode, Encode};
