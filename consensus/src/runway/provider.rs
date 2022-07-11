@@ -50,10 +50,8 @@ where
     }
 
     pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) -> Result<(), ()> {
-        info!(target: "AlephBFT-runway", "{:?} Provider started.", self.keychain.index());
+        info!(target: "AlephBFT-provider", "{:?} Provider started.", self.index());
         let main_loop = async { loop {
-            let data = self.data_provider.get_data().await;
-            debug!(target: "AlephBFT-provider", "{:?} Received data.", self.index());
             let preunit = match self.preunits_from_runway.next().await {
                 Some(preunit) => preunit,
                 None => {
@@ -62,17 +60,19 @@ where
                 }
             };
             debug!(target: "AlephBFT-provider", "{:?} Received PreUnit.", self.index());
+            let data = self.data_provider.get_data().await;
+            debug!(target: "AlephBFT-provider", "{:?} Received data.", self.index());
             let full_unit = FullUnit::new(preunit, data, self.session_id);
             let signed_unit = Signed::sign(full_unit, self.keychain).await;
             if self.signed_units_for_runway.unbounded_send(signed_unit).is_err() {
-                debug!(target: "AlephBFT-provider", "{:?} Could not send SignedUnit to Runway.", self.index())
+                error!(target: "AlephBFT-provider", "{:?} Could not send SignedUnit to Runway.", self.index());
+                break;
             }
-
         }}.fuse();
         pin_mut!(main_loop);
-        futures::select! {
-            _ = main_loop => Err(()),
+        futures::select_biased! {
             _ = exit => Ok(()),
+            _ = main_loop => Err(()),
         }
     }
 }
