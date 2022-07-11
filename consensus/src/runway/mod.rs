@@ -28,13 +28,13 @@ use std::{
 
 mod backup;
 mod collection;
-mod provider;
+mod packer;
 
 use backup::{UnitLoader, UnitSaver};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
 pub use collection::{NewestUnitResponse, Salt};
-use provider::Provider;
+use packer::Packer;
 
 /// Type for incoming notifications: Runway to Consensus.
 #[derive(Clone, Eq, PartialEq)]
@@ -140,8 +140,8 @@ where
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     finalization_handler: FH,
     unit_saver: UnitSaver<US, H, D, MK::Signature>,
-    preunits_for_provider: Sender<PreUnit<H>>,
-    signed_units_from_provider: Receiver<SignedUnit<'a, H, D, MK>>,
+    preunits_for_packer: Sender<PreUnit<H>>,
+    signed_units_from_packer: Receiver<SignedUnit<'a, H, D, MK>>,
     exiting: bool,
 }
 
@@ -207,8 +207,8 @@ struct RunwayConfig<
         Sender<UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     resolved_requests: Sender<Request<H>>,
-    preunits_for_provider: Sender<PreUnit<H>>,
-    signed_units_from_provider: Receiver<SignedUnit<'a, H, D, MK>>,
+    preunits_for_packer: Sender<PreUnit<H>>,
+    signed_units_from_packer: Receiver<SignedUnit<'a, H, D, MK>>,
 }
 
 impl<'a, H, D, US, FH, MK> Runway<'a, H, D, US, FH, MK>
@@ -238,8 +238,8 @@ where
             responses_for_collection,
             ordered_batch_rx,
             resolved_requests,
-            preunits_for_provider,
-            signed_units_from_provider,
+            preunits_for_packer,
+            signed_units_from_packer,
         } = config;
         let store = UnitStore::new(n_members, max_round);
 
@@ -260,8 +260,8 @@ where
             finalization_handler,
             unit_saver,
             responses_for_collection,
-            preunits_for_provider,
-            signed_units_from_provider,
+            preunits_for_packer,
+            signed_units_from_packer,
             exiting: false,
         }
     }
@@ -550,8 +550,8 @@ where
     fn on_consensus_notification(&mut self, notification: NotificationOut<H>) {
         match notification {
             NotificationOut::CreatedPreUnit(pu, _) => {
-                if self.preunits_for_provider.unbounded_send(pu).is_err() {
-                    warn!(target: "AlephBFT-runway", "{:?} preunits_for_provider channel should be open", self.index());
+                if self.preunits_for_packer.unbounded_send(pu).is_err() {
+                    warn!(target: "AlephBFT-runway", "{:?} preunits_for_packer channel should be open", self.index());
                     self.exiting = true;
                 }
             }
@@ -705,10 +705,10 @@ where
                     }
                 },
 
-                signed_unit = self.signed_units_from_provider.next() => match signed_unit {
+                signed_unit = self.signed_units_from_packer.next() => match signed_unit {
                     Some(signed_unit) => self.on_create(signed_unit),
                     None => {
-                        error!(target: "AlephBFT-runway", "{:?} Provider stream closed.", index);
+                        error!(target: "AlephBFT-runway", "{:?} Packer stream closed.", index);
                         break;
                     }
                 },
@@ -974,8 +974,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         unit_saver,
         ..
     } = runway_io;
-    let (preunits_for_provider, preunits_from_runway) = mpsc::unbounded();
-    let (signed_units_for_runway, signed_units_from_provider) = mpsc::unbounded();
+    let (preunits_for_packer, preunits_from_runway) = mpsc::unbounded();
+    let (signed_units_for_runway, signed_units_from_packer) = mpsc::unbounded();
 
     let runway_config = RunwayConfig {
         finalization_handler,
@@ -990,24 +990,24 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         responses_for_collection,
         resolved_requests: network_io.resolved_requests,
         max_round: config.max_round,
-        preunits_for_provider,
-        signed_units_from_provider,
+        preunits_for_packer,
+        signed_units_from_packer,
     };
     let (runway_exit, exit_stream) = oneshot::channel();
     let runway = Runway::new(runway_config, &keychain, &validator);
     let runway_handle = runway.run(loaded_units_rx, exit_stream).fuse();
     pin_mut!(runway_handle);
 
-    let (provider_exit, exit_stream) = oneshot::channel();
-    let mut provider = Provider::new(
+    let (packer_exit, exit_stream) = oneshot::channel();
+    let mut packer = Packer::new(
         data_provider,
         preunits_from_runway,
         signed_units_for_runway,
         &keychain,
         config.session_id,
     );
-    let provider_handle = provider.run(exit_stream).fuse();
-    pin_mut!(provider_handle);
+    let packer_handle = packer.run(exit_stream).fuse();
+    pin_mut!(packer_handle);
 
     loop {
         futures::select! {
@@ -1023,8 +1023,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
                 debug!(target: "AlephBFT-runway", "{:?} Consensus task terminated early.", index);
                 break;
             },
-            _ = provider_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} Provider task terminated early.", index);
+            _ = packer_handle => {
+                debug!(target: "AlephBFT-runway", "{:?} Packer task terminated early.", index);
                 break;
             },
             _ = starting_round_handle => {
@@ -1049,14 +1049,14 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Consensus stopped.", index);
     }
 
-    if provider_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Provider already stopped.", index);
+    if packer_exit.send(()).is_err() {
+        debug!(target: "AlephBFT-runway", "{:?} Packer already stopped.", index);
     }
-    if !provider_handle.is_terminated() {
-        if let Err(()) = provider_handle.await {
-            warn!(target: "AlephBFT-runway", "{:?} Provider finished with an error", index);
+    if !packer_handle.is_terminated() {
+        if let Err(()) = packer_handle.await {
+            warn!(target: "AlephBFT-runway", "{:?} Packer finished with an error", index);
         }
-        debug!(target: "AlephBFT-runway", "{:?} Provider stopped.", index);
+        debug!(target: "AlephBFT-runway", "{:?} Packer stopped.", index);
     }
 
     if alerter_exit.send(()).is_err() {
