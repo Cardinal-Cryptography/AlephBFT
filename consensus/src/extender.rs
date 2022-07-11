@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use log::{debug, info, warn};
 
 use crate::{
-    member::{Exiter, ExiterConnection},
+    member::{Terminator, TerminatorConnection},
     Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
 };
 
@@ -300,7 +300,7 @@ impl<H: Hasher> Extender<H> {
     pub(crate) async fn extend(
         &mut self,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connextion: Option<ExiterConnection>,
+        parent_terminator_connextion: Option<TerminatorConnection>,
     ) {
         loop {
             futures::select! {
@@ -318,7 +318,7 @@ impl<H: Hasher> Extender<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
-                Exiter::new(parent_exiter_connextion, "extender")
+                Terminator::new(parent_terminator_connextion, "extender")
                     .exit_gracefully()
                     .await;
                 break;

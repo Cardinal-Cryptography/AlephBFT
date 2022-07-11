@@ -1,5 +1,5 @@
 use crate::{
-    member::{Exiter, ExiterConnection},
+    member::{Terminator, TerminatorConnection},
     units::UncheckedSignedUnit,
     Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount, NodeIndex, PartialMultisignature,
     Receiver, Recipient, Sender, SessionId, Signable, Signature, Signed, UncheckedSigned,
@@ -413,7 +413,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection: Option<ExiterConnection>,
+    parent_terminator_connection: Option<TerminatorConnection>,
 ) {
     use self::io::IO;
 
@@ -503,7 +503,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
         }
         if alerter.exiting {
             info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", alerter.index());
-            Exiter::new(parent_exiter_connection, "alerter")
+            Terminator::new(parent_terminator_connection, "alerter")
                 .exit_gracefully()
                 .await;
             break;

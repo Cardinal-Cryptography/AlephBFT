@@ -9,7 +9,7 @@ use crate::{
     config::Config,
     creation,
     extender::Extender,
-    member::{Exiter, ExiterConnection},
+    member::{Terminator, TerminatorConnection},
     runway::{NotificationIn, NotificationOut},
     terminal::Terminal,
     Hasher, Receiver, Round, Sender, SpawnHandle,
@@ -23,7 +23,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     spawn_handle: impl SpawnHandle,
     starting_round: oneshot::Receiver<Option<Round>>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection: Option<ExiterConnection>,
+    parent_terminator_connection: Option<TerminatorConnection>,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
 
@@ -33,12 +33,12 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (electors_tx, electors_rx) = mpsc::unbounded();
     let mut extender = Extender::<H>::new(index, n_members, electors_rx, ordered_batch_tx);
     let (extender_exit, exit_rx) = oneshot::channel();
-    let mut exiter = Exiter::new(parent_exiter_connection, "consensus");
-    let extender_exiter_connection = exiter.add_offspring_connection();
+    let mut terminator = Terminator::new(parent_terminator_connection, "consensus");
+    let extender_terminator_connection = terminator.add_offspring_connection();
     let mut extender_handle = spawn_handle
         .spawn_essential("consensus/extender", async move {
             extender
-                .extend(exit_rx, Some(extender_exiter_connection))
+                .extend(exit_rx, Some(extender_terminator_connection))
                 .await
         })
         .fuse();
@@ -46,7 +46,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let (parents_for_creator, parents_from_terminal) = mpsc::unbounded();
 
     let (creator_exit, exit_rx) = oneshot::channel();
-    let creator_exiter_connection = exiter.add_offspring_connection();
+    let creator_terminator_connection = terminator.add_offspring_connection();
     let io = creation::IO {
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
@@ -58,7 +58,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
                 io,
                 starting_round,
                 exit_rx,
-                Some(creator_exiter_connection),
+                Some(creator_terminator_connection),
             )
             .await;
         })
@@ -80,11 +80,11 @@ pub(crate) async fn run<H: Hasher + 'static>(
     }));
 
     let (terminal_exit, exit_rx) = oneshot::channel();
-    let terminal_exiter_connection = exiter.add_offspring_connection();
+    let terminal_terminator_connection = terminator.add_offspring_connection();
     let mut terminal_handle = spawn_handle
         .spawn_essential("consensus/terminal", async move {
             terminal
-                .run(exit_rx, Some(terminal_exiter_connection))
+                .run(exit_rx, Some(terminal_terminator_connection))
                 .await
         })
         .fuse();
@@ -117,7 +117,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
         debug!(target: "AlephBFT-consensus", "{:?} extender already stopped.", index);
     }
 
-    exiter.exit_gracefully().await;
+    terminator.exit_gracefully().await;
 
     if !terminal_handle.is_terminated() {
         if let Err(()) = terminal_handle.await {

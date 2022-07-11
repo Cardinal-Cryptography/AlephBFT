@@ -3,7 +3,7 @@ use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{
     extender::ExtenderUnit,
-    member::{Exiter, ExiterConnection},
+    member::{Terminator, TerminatorConnection},
     runway::{NotificationIn, NotificationOut},
     units::{ControlHash, Unit, UnitCoord},
     Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
@@ -353,7 +353,7 @@ impl<H: Hasher> Terminal<H> {
     pub(crate) async fn run(
         &mut self,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection: Option<ExiterConnection>,
+        parent_terminator_connection: Option<TerminatorConnection>,
     ) {
         loop {
             futures::select! {
@@ -379,7 +379,7 @@ impl<H: Hasher> Terminal<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
-                Exiter::new(parent_exiter_connection, "terminal")
+                Terminator::new(parent_terminator_connection, "terminal")
                     .exit_gracefully()
                     .await;
                 break;

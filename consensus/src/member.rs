@@ -29,24 +29,24 @@ use std::{
     time::Duration,
 };
 
-pub type ExiterConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
+pub type TerminatorConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
 
-pub struct Exiter {
+pub struct Terminator {
     component_name: String,
-    parent_connection: Option<ExiterConnection>,
-    offspring_connections: Vec<ExiterConnection>,
+    parent_connection: Option<TerminatorConnection>,
+    offspring_connections: Vec<TerminatorConnection>,
 }
 
-impl Exiter {
-    pub fn new(parent_connection: Option<ExiterConnection>, component_name: &str) -> Self {
+impl Terminator {
+    pub fn new(parent_connection: Option<TerminatorConnection>, component_name: &str) -> Self {
         Self {
             component_name: String::from(component_name),
             parent_connection,
-            offspring_connections: Vec::<ExiterConnection>::new(),
+            offspring_connections: Vec::<_>::new(),
         }
     }
 
-    pub fn add_offspring_connection(&mut self) -> ExiterConnection {
+    pub fn add_offspring_connection(&mut self) -> TerminatorConnection {
         let (sender, offspring_recv) = oneshot::channel();
         let (offspring_sender, recv) = oneshot::channel();
 
@@ -62,7 +62,7 @@ impl Exiter {
             self.offspring_connections.into_iter().unzip();
 
         info!(
-            "Exiter for {} starting a graceful exit.",
+            "Terminator for {} starting a graceful exit.",
             self.component_name
         );
 
@@ -70,7 +70,7 @@ impl Exiter {
         for receiver in offspring_receivers {
             if receiver.await.is_err() {
                 error!(
-                    "Exiter for {} failed to receive from descendants. Graceful exit unsuccessful.",
+                    "Terminator for {} failed to receive from descendants. Graceful exit unsuccessful.",
                     self.component_name
                 );
                 return;
@@ -78,7 +78,7 @@ impl Exiter {
         }
 
         info!(
-            "Exiter for {} gathered notifications from descendants.",
+            "Terminator for {} gathered notifications from descendants.",
             self.component_name
         );
 
@@ -88,29 +88,29 @@ impl Exiter {
             let (sender, receiver) = self.parent_connection.unwrap();
             if sender.send(()).is_err() {
                 error!(
-                    "Exiter for {} failed to notify parent component. Graceful exit unsuccessful.",
+                    "Terminator for {} failed to notify parent component. Graceful exit unsuccessful.",
                     self.component_name
                 );
             }
 
             info!(
-                "Exiter for {} notified parent component.",
+                "Terminator for {} notified parent component.",
                 self.component_name
             );
 
             if receiver.await.is_err() {
-                error!("Exiter for {} failed to receive from parent component. Graceful exit unsuccessful.", self.component_name);
+                error!("Terminator for {} failed to receive from parent component. Graceful exit unsuccessful.", self.component_name);
                 return;
             }
 
-            info!("Exiter for {} recieved exit permit.", self.component_name);
+            info!("Terminator for {} recieved exit permit.", self.component_name);
         }
 
         // Notify descendants that exiting is now safe
         for sender in offspring_senders {
             if sender.send(()).is_err() {
                 error!(
-                    "Exiter for {} failed to notify descendants. Graceful exit unsuccessful.",
+                    "Terminator for {} failed to notify descendants. Graceful exit unsuccessful.",
                     self.component_name
                 );
                 return;
@@ -118,7 +118,7 @@ impl Exiter {
         }
 
         info!(
-            "Exiter for {} sent permits to descendants: ready to exit.",
+            "Terminator for {} sent permits to descendants: ready to exit.",
             self.component_name
         );
     }
@@ -556,7 +556,7 @@ where
     async fn run(
         mut self,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection: Option<ExiterConnection>,
+        parent_terminator_connection: Option<TerminatorConnection>,
     ) {
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
@@ -623,7 +623,7 @@ where
             }
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
-                Exiter::new(parent_exiter_connection, "member")
+                Terminator::new(parent_terminator_connection, "member")
                     .exit_gracefully()
                     .await;
                 break;
@@ -667,7 +667,7 @@ pub async fn run_session<
     keybox: MK,
     spawn_handle: SH,
     mut exit: oneshot::Receiver<()>,
-    exiter_parent_connection: Option<ExiterConnection>,
+    terminator_parent_connection: Option<TerminatorConnection>,
 ) {
     let index = config.node_ix;
     info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", index);
@@ -682,8 +682,8 @@ pub async fn run_session<
 
     info!(target: "AlephBFT-member", "{:?} Spawning network.", index);
     let (network_exit, exit_stream) = oneshot::channel();
-    let mut exiter = Exiter::new(exiter_parent_connection, "run_session");
-    let network_exiter_connection = exiter.add_offspring_connection();
+    let mut terminator = Terminator::new(terminator_parent_connection, "AlephBFT-member");
+    let network_terminator_connection = terminator.add_offspring_connection();
 
     let network_handle = spawn_handle.spawn_essential("member/network", async move {
         network::run(
@@ -693,7 +693,7 @@ pub async fn run_session<
             alert_messages_from_alerter,
             alert_messages_for_alerter,
             exit_stream,
-            Some(network_exiter_connection),
+            Some(network_terminator_connection),
         )
         .await
     });
@@ -704,7 +704,7 @@ pub async fn run_session<
     info!(target: "AlephBFT-member", "{:?} Initializing Runway.", index);
     let (runway_exit, exit_stream) = oneshot::channel();
 
-    let runway_exiter_connection = exiter.add_offspring_connection();
+    let runway_terminator_connection = terminator.add_offspring_connection();
     let network_io = NetworkIO {
         alert_messages_for_network,
         alert_messages_from_network,
@@ -725,7 +725,7 @@ pub async fn run_session<
         spawn_handle.clone(),
         network_io,
         exit_stream,
-        Some(runway_exiter_connection),
+        Some(runway_terminator_connection),
     );
     let runway_handle = runway_handle.fuse();
     pin_mut!(runway_handle);
@@ -741,9 +741,9 @@ pub async fn run_session<
         resolved_requests_rx,
     );
     let (member_exit, exit_stream) = oneshot::channel();
-    let member_exiter_connection = exiter.add_offspring_connection();
+    let member_terminator_connection = terminator.add_offspring_connection();
     let member_handle = member
-        .run(exit_stream, Some(member_exiter_connection))
+        .run(exit_stream, Some(member_terminator_connection))
         .fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);
@@ -779,8 +779,8 @@ pub async fn run_session<
         debug!(target: "AlephBFT-member", "{:?} Network-hub already stopped.", index);
     }
 
-    let exiter_handle = exiter.exit_gracefully().fuse();
-    pin_mut!(exiter_handle);
+    let terminator_handle = terminator.exit_gracefully().fuse();
+    pin_mut!(terminator_handle);
 
     loop {
         futures::select! {
@@ -792,7 +792,7 @@ pub async fn run_session<
                 debug!(target: "AlephBFT-member", "{:?} Member stopped.", index);
             },
 
-            _ = exiter_handle => {}
+            _ = terminator_handle => {}
 
             complete => break,
         }

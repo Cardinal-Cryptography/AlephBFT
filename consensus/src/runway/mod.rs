@@ -1,7 +1,7 @@
 use crate::{
     alerts::{self, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     consensus,
-    member::{Exiter, ExiterConnection, UnitMessage},
+    member::{Terminator, TerminatorConnection, UnitMessage},
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
         UnitStore, UnitStoreStatus, Validator,
@@ -686,7 +686,7 @@ where
         mut self,
         units_from_backup: oneshot::Receiver<Vec<UncheckedSignedUnit<H, D, MK::Signature>>>,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection: Option<ExiterConnection>,
+        parent_terminator_connection: Option<TerminatorConnection>,
     ) {
         let index = self.index();
         let units_from_backup = units_from_backup.fuse();
@@ -758,7 +758,7 @@ where
 
             if self.exiting {
                 info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
-                Exiter::new(parent_exiter_connection, "Runway")
+                Terminator::new(parent_terminator_connection, "Runway")
                     .exit_gracefully()
                     .await;
                 break;
@@ -869,7 +869,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     spawn_handle: SH,
     network_io: NetworkIO<H, D, MK>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection: Option<ExiterConnection>,
+    parent_terminator_connection: Option<TerminatorConnection>,
 ) where
     H: Hasher,
     D: Data,
@@ -891,8 +891,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         n_members: config.n_members,
     };
     let (alerter_exit, exit_stream) = oneshot::channel();
-    let mut exiter = Exiter::new(parent_exiter_connection, "run");
-    let alerter_exiter_connection = exiter.add_offspring_connection();
+    let mut terminator = Terminator::new(parent_terminator_connection, "run");
+    let alerter_terminator_connection = terminator.add_offspring_connection();
     let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
@@ -905,14 +905,14 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             alerts_from_units,
             alert_config,
             exit_stream,
-            Some(alerter_exiter_connection),
+            Some(alerter_terminator_connection),
         )
         .await;
     });
     let mut alerter_handle = alerter_handle.fuse();
 
     let (consensus_exit, exit_stream) = oneshot::channel();
-    let consensus_exiter_connection = exiter.add_offspring_connection();
+    let consensus_terminator_connection = terminator.add_offspring_connection();
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
     let (starting_round_sender, starting_round) = oneshot::channel();
@@ -926,7 +926,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             consensus_spawner,
             starting_round,
             exit_stream,
-            Some(consensus_exiter_connection),
+            Some(consensus_terminator_connection),
         )
         .await
     });
@@ -994,10 +994,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         max_round: config.max_round,
     };
     let (runway_exit, exit_stream) = oneshot::channel();
-    let runway_exiter_connection = exiter.add_offspring_connection();
+    let runway_terminator_connection = terminator.add_offspring_connection();
     let runway = Runway::new(runway_config, &keychain, &validator);
     let runway_handle = runway
-        .run(loaded_units_rx, exit_stream, Some(runway_exiter_connection))
+        .run(loaded_units_rx, exit_stream, Some(runway_terminator_connection))
         .fuse();
     pin_mut!(runway_handle);
 
@@ -1041,8 +1041,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
     }
 
-    let exiter_handle = exiter.exit_gracefully().fuse();
-    pin_mut!(exiter_handle);
+    let terminator_handle = terminator.exit_gracefully().fuse();
+    pin_mut!(terminator_handle);
 
     loop {
         futures::select! {
@@ -1050,7 +1050,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
                 debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
             },
 
-            _ = exiter_handle => {},
+            _ = terminator_handle => {},
 
             complete => break,
         }

@@ -1,6 +1,6 @@
 use crate::{
     config::{Config as GeneralConfig, DelaySchedule},
-    member::{Exiter, ExiterConnection},
+    member::{Terminator, TerminatorConnection},
     runway::NotificationOut,
     units::{PreUnit, Unit},
     Hasher, NodeCount, NodeIndex, Receiver, Round, Sender,
@@ -94,7 +94,7 @@ pub async fn run<H: Hasher>(
     io: IO<H>,
     mut starting_round: oneshot::Receiver<Option<Round>>,
     mut exit: oneshot::Receiver<()>,
-    parent_exiter_connection: Option<ExiterConnection>,
+    parent_terminator_connection: Option<TerminatorConnection>,
 ) {
     let Config {
         node_id,
@@ -108,7 +108,7 @@ pub async fn run<H: Hasher>(
         outgoing_units,
     } = io;
 
-    let exiter = Exiter::new(parent_exiter_connection, "creator");
+    let terminator = Terminator::new(parent_terminator_connection, "creator");
     let starting_round = futures::select! {
         maybe_round =  starting_round => match maybe_round {
             Ok(Some(round)) => round,
@@ -122,7 +122,7 @@ pub async fn run<H: Hasher>(
             }
         },
         _ = &mut exit => {
-            exiter.exit_gracefully().await;
+            terminator.exit_gracefully().await;
             return;
         },
     };
@@ -144,7 +144,7 @@ pub async fn run<H: Hasher>(
         {
             Ok((u, ph)) => (u, ph),
             Err(_) => {
-                exiter.exit_gracefully().await;
+                terminator.exit_gracefully().await;
                 return;
             }
         };
@@ -157,5 +157,5 @@ pub async fn run<H: Hasher>(
     }
 
     warn!(target: "AlephBFT-creator", "Maximum round reached. Not creating another unit.");
-    exiter.exit_gracefully().await;
+    terminator.exit_gracefully().await;
 }

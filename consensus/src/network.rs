@@ -1,6 +1,6 @@
 use crate::{
     alerts::AlertMessage,
-    member::{Exiter, ExiterConnection, UnitMessage},
+    member::{Terminator, TerminatorConnection, UnitMessage},
     Data, Hasher, Network, PartialMultisignature, Receiver, Recipient, Sender, Signature,
 };
 use codec::{Decode, Encode};
@@ -130,7 +130,7 @@ impl<
     async fn run(
         mut self,
         mut exit: oneshot::Receiver<()>,
-        parent_exiter_connection: Option<ExiterConnection>,
+        parent_terminator_connection: Option<TerminatorConnection>,
     ) {
         loop {
             use NetworkDataInner::*;
@@ -157,7 +157,7 @@ impl<
                     }
                 },
                 _ = &mut exit => {
-                    Exiter::new(parent_exiter_connection, "network").exit_gracefully().await;
+                    Terminator::new(parent_terminator_connection, "network").exit_gracefully().await;
                     break;
                 }
             }
@@ -180,7 +180,7 @@ pub(crate) async fn run<
     alerts_to_send: Receiver<(AlertMessage<H, D, S, MS>, Recipient)>,
     alerts_received: Sender<AlertMessage<H, D, S, MS>>,
     exit: oneshot::Receiver<()>,
-    parent_exiter_connection: Option<ExiterConnection>,
+    parent_terminator_connection: Option<TerminatorConnection>,
 ) {
     NetworkHub::new(
         network,
@@ -189,7 +189,7 @@ pub(crate) async fn run<
         alerts_to_send,
         alerts_received,
     )
-    .run(exit, parent_exiter_connection)
+    .run(exit, parent_terminator_connection)
     .await
 }
 
