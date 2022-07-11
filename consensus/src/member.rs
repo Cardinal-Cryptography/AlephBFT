@@ -63,8 +63,14 @@ impl Terminator {
     pub async fn exit_gracefully(self) {
         let (offspring_senders, offspring_receivers): (Vec<_>, Vec<_>) =
             self.offspring_connections.into_iter().unzip();
-        //let offspring_senders = offspring_senders.into_iter().zip(self.offspring_names.clone().into_iter()).collect();
-        //let offspring_receivers = offspring_receivers.into_iter().zip(self.offspring_names.clone().into_iter()).collect();
+        let offspring_senders: Vec<_> = offspring_senders
+            .into_iter()
+            .zip(self.offspring_names.clone().into_iter())
+            .collect();
+        let offspring_receivers: Vec<_> = offspring_receivers
+            .into_iter()
+            .zip(self.offspring_names.clone().into_iter())
+            .collect();
 
         debug!(
             target: &self.component_name,
@@ -72,11 +78,12 @@ impl Terminator {
         );
 
         // Make sure that all descendants recieved exit and won't be communicating with other components
-        for receiver in offspring_receivers {
+        for (receiver, name) in offspring_receivers {
             if receiver.await.is_err() {
                 debug!(
                     target: &self.component_name,
-                    "Terminator failed to receive from ... . Clean shutdown unsuccessful.",
+                    "Terminator failed to receive from {}. Clean shutdown unsuccessful.",
+                    name,
                 );
                 return;
             }
@@ -118,11 +125,12 @@ impl Terminator {
         }
 
         // Notify descendants that exiting is now safe
-        for sender in offspring_senders {
+        for (sender, name) in offspring_senders {
             if sender.send(()).is_err() {
                 debug!(
                     target: &self.component_name,
-                    "Terminator failed to notify ... . Clean exit unsuccessful.",
+                    "Terminator failed to notify {}. Clean exit unsuccessful.",
+                    name,
                 );
                 return;
             }

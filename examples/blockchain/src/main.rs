@@ -12,7 +12,7 @@ use log::{debug, error, info};
 use parking_lot::Mutex;
 use time::{macros::format_description, OffsetDateTime};
 
-use aleph_bft::{run_session, Terminator, NodeIndex};
+use aleph_bft::{run_session, NodeIndex, Terminator};
 use aleph_bft_mock::{FinalizationHandler, Keychain, Loader, Saver, Spawner};
 use chain::{run_blockchain, Block, BlockNum, ChainConfig};
 use data::{Data, DataProvider, DataStore};

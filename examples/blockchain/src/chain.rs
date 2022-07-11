@@ -1,5 +1,5 @@
 use crate::{network::NetworkData, DataStore};
-use aleph_bft::{Terminator, TerminatorConnection, NodeIndex};
+use aleph_bft::{NodeIndex, Terminator, TerminatorConnection};
 use codec::{Decode, Encode};
 use futures::{
     channel::{
@@ -143,4 +143,3 @@ pub async fn run_blockchain(
         }
     }
 }
-

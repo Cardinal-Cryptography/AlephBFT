@@ -1,7 +1,7 @@
 mod dataio;
 mod network;
 
-use aleph_bft::{run_session, Terminator, NodeIndex};
+use aleph_bft::{run_session, NodeIndex, Terminator};
 use aleph_bft_mock::{Keychain, Spawner};
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};

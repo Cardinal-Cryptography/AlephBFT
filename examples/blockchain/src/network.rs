@@ -1,5 +1,5 @@
 use crate::{Block, Data};
-use aleph_bft::{Terminator, TerminatorConnection, NodeIndex, Recipient};
+use aleph_bft::{NodeIndex, Recipient, Terminator, TerminatorConnection};
 use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use futures::{

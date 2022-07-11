@@ -997,7 +997,11 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let runway_terminator_connection = terminator.add_offspring_connection("runway");
     let runway = Runway::new(runway_config, &keychain, &validator);
     let runway_handle = runway
-        .run(loaded_units_rx, exit_stream, Some(runway_terminator_connection))
+        .run(
+            loaded_units_rx,
+            exit_stream,
+            Some(runway_terminator_connection),
+        )
         .fuse();
     pin_mut!(runway_handle);
 
