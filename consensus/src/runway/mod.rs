@@ -3,12 +3,12 @@ use crate::{
     consensus,
     member::UnitMessage,
     units::{
-        ControlHash, FullUnit, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord,
-        UnitStore, UnitStoreStatus, Validator,
+        ControlHash, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
+        UnitStoreStatus, Validator,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signature, Signed,
-    SpawnHandle, UncheckedSigned,
+    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, Signature, Signed, SpawnHandle,
+    UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -28,11 +28,13 @@ use std::{
 
 mod backup;
 mod collection;
+mod provider;
 
 use backup::{UnitLoader, UnitSaver};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
 pub use collection::{NewestUnitResponse, Salt};
+use provider::Provider;
 
 /// Type for incoming notifications: Runway to Consensus.
 #[derive(Clone, Eq, PartialEq)]
@@ -110,77 +112,6 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
             }
         };
         Ok(result)
-    }
-}
-
-struct Provider<'a, H, D, DP, MK>
-where
-    H: Hasher,
-    D: Data,
-    DP: DataProvider<D>,
-    MK: MultiKeychain,
-{
-    data_provider: DP,
-    preunits_from_runway: Receiver<PreUnit<H>>,
-    signed_units_for_runway: Sender<SignedUnit<'a, H, D, MK>>,
-    keychain: &'a MK,
-    session_id: SessionId,
-    _phantom: PhantomData<D>,
-}
-
-impl<'a, H, D, DP, MK> Provider<'a, H, D, DP, MK>
-where
-    H: Hasher,
-    D: Data,
-    DP: DataProvider<D>,
-    MK: MultiKeychain,
-{
-    fn new(
-        data_provider: DP,
-        preunits_from_runway: Receiver<PreUnit<H>>,
-        signed_units_for_runway: Sender<SignedUnit<'a, H, D, MK>>,
-        keychain: &'a MK,
-        session_id: SessionId,
-    ) -> Self {
-        Self {
-            data_provider,
-            preunits_from_runway,
-            signed_units_for_runway,
-            keychain,
-            session_id,
-            _phantom: PhantomData,
-        }
-    }
-
-    fn index(&self) -> NodeIndex {
-        self.keychain.index()
-    }
-
-    async fn run(&mut self, mut exit: oneshot::Receiver<()>) {
-        info!(target: "AlephBFT-runway", "{:?} Provider started.", self.keychain.index());
-        let main_loop = async { loop {
-            let data = self.data_provider.get_data().await;
-            debug!(target: "AlephBFT-provider", "{:?} Received data.", self.index());
-            let preunit = match self.preunits_from_runway.next().await {
-                Some(preunit) => preunit,
-                None => {
-                    error!(target: "AlephBFT-provider", "{:?} Runway PreUnit stream closed.", self.index());
-                    break;
-                }
-            };
-            debug!(target: "AlephBFT-provider", "{:?} Received PreUnit.", self.index());
-            let full_unit = FullUnit::new(preunit, data, self.session_id);
-            let signed_unit = Signed::sign(full_unit, self.keychain).await;
-            if self.signed_units_for_runway.unbounded_send(signed_unit).is_err() {
-                debug!(target: "AlephBFT-provider", "{:?} Could not send SignedUnit to Runway.", self.index())
-            }
-
-        }}.fuse();
-        pin_mut!(main_loop);
-        futures::select! {
-            _ = main_loop => (),
-            _ = exit => (),
-        }
     }
 }
 
@@ -686,7 +617,7 @@ where
         }
     }
 
-    async fn on_ordered_batch(&mut self, batch: Vec<H::Hash>) {
+    fn on_ordered_batch(&mut self, batch: Vec<H::Hash>) {
         let data_iter: Vec<_> = batch
             .iter()
             .map(|h| {
@@ -700,7 +631,7 @@ where
             .collect();
 
         for d in data_iter {
-            self.finalization_handler.data_finalized(d).await;
+            self.finalization_handler.data_finalized(d);
         }
     }
 
@@ -813,7 +744,7 @@ where
                 },
 
                 batch = self.ordered_batch_rx.next() => match batch {
-                    Some(batch) => self.on_ordered_batch(batch).await,
+                    Some(batch) => self.on_ordered_batch(batch),
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Ordered batch stream closed.", index);
                         break;
