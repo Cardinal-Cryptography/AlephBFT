@@ -1,10 +1,11 @@
 use crate::{
     alerts::AlertMessage,
-    member::{Terminator, TerminatorConnection, UnitMessage},
-    Data, Hasher, Network, PartialMultisignature, Receiver, Recipient, Sender, Signature,
+    member::{Terminator, UnitMessage},
+    Data, Hasher, Network, PartialMultisignature, Receiver, Recipient, Sender, ShutdownConnection,
+    Signature,
 };
 use codec::{Decode, Encode};
-use futures::{channel::oneshot, FutureExt, StreamExt};
+use futures::{FutureExt, StreamExt};
 use log::{error, info, warn};
 use std::fmt::Debug;
 
@@ -127,11 +128,8 @@ impl<
         }
     }
 
-    async fn run(
-        mut self,
-        mut exit: oneshot::Receiver<()>,
-        parent_terminator_connection: Option<TerminatorConnection>,
-    ) {
+    async fn run(mut self, shutdown_connection: ShutdownConnection) {
+        let (mut exit, parent_terminator_connection) = shutdown_connection;
         loop {
             use NetworkDataInner::*;
             futures::select! {
@@ -157,7 +155,7 @@ impl<
                     }
                 },
                 _ = &mut exit => {
-                    Terminator::new(parent_terminator_connection, "AlephBFT-network-hub").clean_terminate().await;
+                    Terminator::new(parent_terminator_connection, "AlephBFT-network-hub").terminate_sync().await;
                     break;
                 }
             }
@@ -179,8 +177,7 @@ pub(crate) async fn run<
     units_received: Sender<UnitMessage<H, D, S>>,
     alerts_to_send: Receiver<(AlertMessage<H, D, S, MS>, Recipient)>,
     alerts_received: Sender<AlertMessage<H, D, S, MS>>,
-    exit: oneshot::Receiver<()>,
-    parent_terminator_connection: Option<TerminatorConnection>,
+    shutdown_connection: ShutdownConnection,
 ) {
     NetworkHub::new(
         network,
@@ -189,7 +186,7 @@ pub(crate) async fn run<
         alerts_to_send,
         alerts_received,
     )
-    .run(exit, parent_terminator_connection)
+    .run(shutdown_connection)
     .await
 }
 

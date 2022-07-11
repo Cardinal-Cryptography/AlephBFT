@@ -1,12 +1,9 @@
 use crate::{Block, Data};
-use aleph_bft::{NodeIndex, Recipient, Terminator, TerminatorConnection};
+use aleph_bft::{NodeIndex, Recipient, ShutdownConnection, Terminator};
 use aleph_bft_mock::{Hasher64, PartialMultisignature, Signature};
 use codec::{Decode, Encode};
 use futures::{
-    channel::{
-        mpsc::{self, UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
+    channel::mpsc::{self, UnboundedReceiver, UnboundedSender},
     StreamExt,
 };
 use log::{debug, error, warn};
@@ -208,11 +205,8 @@ impl NetworkManager {
         .unwrap_or(());
     }
 
-    pub async fn run(
-        &mut self,
-        mut exit: oneshot::Receiver<()>,
-        parent_terminator_connection: Option<TerminatorConnection>,
-    ) {
+    pub async fn run(&mut self, shutdown_connection: ShutdownConnection) {
+        let (mut exit, parent_terminator_connection) = shutdown_connection;
         let mut dns_interval = tokio::time::interval(std::time::Duration::from_millis(1000));
         let mut dns_hello_interval = tokio::time::interval(std::time::Duration::from_millis(5000));
         loop {
@@ -272,7 +266,7 @@ impl NetworkManager {
 
                _ = &mut exit  => {
                     Terminator::new(parent_terminator_connection, "Blockchain network")
-                        .clean_terminate()
+                        .terminate_sync()
                         .await;
                     break;
                },

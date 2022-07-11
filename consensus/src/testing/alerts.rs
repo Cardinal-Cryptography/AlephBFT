@@ -228,8 +228,7 @@ impl TestCase {
                 n_members,
                 session_id: 0,
             },
-            exit,
-            None,
+            (exit, None),
         ));
 
         use Input::*;

@@ -9,10 +9,10 @@ use crate::{
     config::Config,
     creation,
     extender::Extender,
-    member::{Terminator, TerminatorConnection},
+    member::Terminator,
     runway::{NotificationIn, NotificationOut},
     terminal::Terminal,
-    Hasher, Receiver, Round, Sender, SpawnHandle,
+    Hasher, Receiver, Round, Sender, ShutdownConnection, SpawnHandle,
 };
 
 pub(crate) async fn run<H: Hasher + 'static>(
@@ -22,10 +22,11 @@ pub(crate) async fn run<H: Hasher + 'static>(
     ordered_batch_tx: Sender<Vec<H::Hash>>,
     spawn_handle: impl SpawnHandle,
     starting_round: oneshot::Receiver<Option<Round>>,
-    mut exit: oneshot::Receiver<()>,
-    parent_terminator_connection: Option<TerminatorConnection>,
+    shutdown_connection: ShutdownConnection,
 ) {
     info!(target: "AlephBFT", "{:?} Starting all services...", conf.node_ix);
+
+    let (mut exit, parent_terminator_connection) = shutdown_connection;
 
     let n_members = conf.n_members;
     let index = conf.node_ix;
@@ -38,7 +39,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let mut extender_handle = spawn_handle
         .spawn_essential("consensus/extender", async move {
             extender
-                .extend(exit_rx, Some(extender_terminator_connection))
+                .extend((exit_rx, Some(extender_terminator_connection)))
                 .await
         })
         .fuse();
@@ -57,8 +58,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
                 conf.clone().into(),
                 io,
                 starting_round,
-                exit_rx,
-                Some(creator_terminator_connection),
+                (exit_rx, Some(creator_terminator_connection)),
             )
             .await;
         })
@@ -84,7 +84,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let mut terminal_handle = spawn_handle
         .spawn_essential("consensus/terminal", async move {
             terminal
-                .run(exit_rx, Some(terminal_terminator_connection))
+                .run((exit_rx, Some(terminal_terminator_connection)))
                 .await
         })
         .fuse();
@@ -117,7 +117,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
         debug!(target: "AlephBFT-consensus", "{:?} extender already stopped.", index);
     }
 
-    terminator.clean_terminate().await;
+    terminator.terminate_sync().await;
 
     if !terminal_handle.is_terminated() {
         if let Err(()) = terminal_handle.await {

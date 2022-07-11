@@ -118,8 +118,7 @@ async fn main() {
             network,
             keychain,
             Spawner {},
-            exit,
-            Some(member_exiter_connection),
+            (exit, Some(member_exiter_connection)),
         )
         .await
     });
@@ -163,6 +162,6 @@ async fn main() {
     }
 
     close_member.send(()).expect("should send");
-    exiter.clean_terminate().await;
+    exiter.terminate_sync().await;
     member_handle.await.unwrap();
 }

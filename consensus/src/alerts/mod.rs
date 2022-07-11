@@ -1,16 +1,12 @@
 use crate::{
-    member::{Terminator, TerminatorConnection},
-    units::UncheckedSignedUnit,
-    Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount, NodeIndex, PartialMultisignature,
-    Receiver, Recipient, Sender, SessionId, Signable, Signature, Signed, UncheckedSigned,
+    member::Terminator, units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain,
+    Multisigned, NodeCount, NodeIndex, PartialMultisignature, Receiver, Recipient, Sender,
+    SessionId, ShutdownConnection, Signable, Signature, Signed, UncheckedSigned,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use codec::{Decode, Encode};
 use derivative::Derivative;
-use futures::{
-    channel::{mpsc, oneshot},
-    FutureExt, StreamExt,
-};
+use futures::{channel::mpsc, FutureExt, StreamExt};
 use log::{debug, error, info, trace, warn};
 use parking_lot::RwLock;
 use std::{
@@ -412,11 +408,11 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
-    mut exit: oneshot::Receiver<()>,
-    parent_terminator_connection: Option<TerminatorConnection>,
+    shutdown_connection: ShutdownConnection,
 ) {
     use self::io::IO;
 
+    let (mut exit, parent_terminator_connection) = shutdown_connection;
     let n_members = config.n_members;
     let mut alerter = Alerter::new(&keychain, config);
     let (messages_for_rmc, messages_from_us) = mpsc::unbounded();
@@ -504,7 +500,7 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
         if alerter.exiting {
             info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", alerter.index());
             Terminator::new(parent_terminator_connection, "AlephBFT-alerter")
-                .clean_terminate()
+                .terminate_sync()
                 .await;
             break;
         }

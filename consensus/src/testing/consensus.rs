@@ -176,8 +176,7 @@ async fn agree_on_first_batch() {
                 batch_tx,
                 spawner.clone(),
                 starting_round,
-                exit_rx,
-                None,
+                (exit_rx, None),
             ),
         ));
     }
@@ -219,8 +218,7 @@ async fn catches_wrong_control_hash() {
             batch_tx,
             spawner.clone(),
             starting_round,
-            exit_rx,
-            None,
+            (exit_rx, None),
         ),
     );
     let control_hash = ControlHash::new(&(vec![None; n_nodes]).into());

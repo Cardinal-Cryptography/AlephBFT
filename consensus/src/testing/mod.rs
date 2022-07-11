@@ -85,8 +85,7 @@ pub fn spawn_honest_member(
             network,
             keybox,
             spawner_inner.clone(),
-            exit_rx,
-            None,
+            (exit_rx, None),
         )
         .await
     };

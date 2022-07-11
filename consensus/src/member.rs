@@ -30,6 +30,7 @@ use std::{
 };
 
 pub type TerminatorConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
+pub type ShutdownConnection = (oneshot::Receiver<()>, Option<TerminatorConnection>);
 
 /// Struct that holds connections to offspring and parent components/tasks
 /// and enables a clean/synchronized shutdown
@@ -41,7 +42,6 @@ pub struct Terminator {
 }
 
 impl Terminator {
-
     pub fn new(parent_connection: Option<TerminatorConnection>, component_name: &str) -> Self {
         Self {
             component_name: String::from(component_name),
@@ -65,7 +65,7 @@ impl Terminator {
     }
 
     /// Perform a synchronized shutdown
-    pub async fn clean_terminate(self) {
+    pub async fn terminate_sync(self) {
         let (offspring_senders, offspring_receivers): (Vec<_>, Vec<_>) =
             self.offspring_connections.into_iter().unzip();
         let offspring_senders: Vec<_> = offspring_senders
@@ -577,11 +577,8 @@ where
         info!(target: "AlephBFT-member", "{}", status);
     }
 
-    async fn run(
-        mut self,
-        mut exit: oneshot::Receiver<()>,
-        parent_terminator_connection: Option<TerminatorConnection>,
-    ) {
+    async fn run(mut self, shutdown_connection: ShutdownConnection) {
+        let (mut exit, parent_terminator_connection) = shutdown_connection;
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
         let status_ticker_delay = Duration::from_secs(10);
@@ -648,7 +645,7 @@ where
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
                 Terminator::new(parent_terminator_connection, "AlephBFT-member")
-                    .clean_terminate()
+                    .terminate_sync()
                     .await;
                 break;
             }
@@ -690,9 +687,10 @@ pub async fn run_session<
     network: N,
     keybox: MK,
     spawn_handle: SH,
-    mut exit: oneshot::Receiver<()>,
-    terminator_parent_connection: Option<TerminatorConnection>,
+    shutdown_connection: ShutdownConnection,
 ) {
+    let (mut exit, parent_terminator_connection) = shutdown_connection;
+
     let index = config.node_ix;
     info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", index);
 
@@ -706,7 +704,7 @@ pub async fn run_session<
 
     info!(target: "AlephBFT-member", "{:?} Spawning network.", index);
     let (network_exit, exit_stream) = oneshot::channel();
-    let mut terminator = Terminator::new(terminator_parent_connection, "AlephBFT-member");
+    let mut terminator = Terminator::new(parent_terminator_connection, "AlephBFT-member");
     let network_terminator_connection = terminator.add_offspring_connection("network");
 
     let network_handle = spawn_handle.spawn_essential("member/network", async move {
@@ -716,8 +714,7 @@ pub async fn run_session<
             unit_messages_for_units,
             alert_messages_from_alerter,
             alert_messages_for_alerter,
-            exit_stream,
-            Some(network_terminator_connection),
+            (exit_stream, Some(network_terminator_connection)),
         )
         .await
     });
@@ -748,8 +745,7 @@ pub async fn run_session<
         keybox.clone(),
         spawn_handle.clone(),
         network_io,
-        exit_stream,
-        Some(runway_terminator_connection),
+        (exit_stream, Some(runway_terminator_connection)),
     );
     let runway_handle = runway_handle.fuse();
     pin_mut!(runway_handle);
@@ -767,7 +763,7 @@ pub async fn run_session<
     let (member_exit, exit_stream) = oneshot::channel();
     let member_terminator_connection = terminator.add_offspring_connection("member");
     let member_handle = member
-        .run(exit_stream, Some(member_terminator_connection))
+        .run((exit_stream, Some(member_terminator_connection)))
         .fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);
@@ -803,7 +799,7 @@ pub async fn run_session<
         debug!(target: "AlephBFT-member", "{:?} Network-hub already stopped.", index);
     }
 
-    let terminator_handle = terminator.clean_terminate().fuse();
+    let terminator_handle = terminator.terminate_sync().fuse();
     pin_mut!(terminator_handle);
 
     loop {

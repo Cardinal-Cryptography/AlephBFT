@@ -1,9 +1,9 @@
 use crate::{
     config::{Config as GeneralConfig, DelaySchedule},
-    member::{Terminator, TerminatorConnection},
+    member::Terminator,
     runway::NotificationOut,
     units::{PreUnit, Unit},
-    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender,
+    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender, ShutdownConnection,
 };
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -93,8 +93,7 @@ pub async fn run<H: Hasher>(
     conf: Config,
     io: IO<H>,
     mut starting_round: oneshot::Receiver<Option<Round>>,
-    mut exit: oneshot::Receiver<()>,
-    parent_terminator_connection: Option<TerminatorConnection>,
+    shutdown_connection: ShutdownConnection,
 ) {
     let Config {
         node_id,
@@ -102,6 +101,7 @@ pub async fn run<H: Hasher>(
         create_lag,
         max_round,
     } = conf;
+    let (mut exit, parent_terminator_connection) = shutdown_connection;
     let mut creator = Creator::new(node_id, n_members);
     let IO {
         mut incoming_parents,
@@ -122,7 +122,7 @@ pub async fn run<H: Hasher>(
             }
         },
         _ = &mut exit => {
-            terminator.clean_terminate().await;
+            terminator.terminate_sync().await;
             return;
         },
     };
@@ -144,7 +144,7 @@ pub async fn run<H: Hasher>(
         {
             Ok((u, ph)) => (u, ph),
             Err(_) => {
-                terminator.clean_terminate().await;
+                terminator.terminate_sync().await;
                 return;
             }
         };
@@ -157,5 +157,5 @@ pub async fn run<H: Hasher>(
     }
 
     warn!(target: "AlephBFT-creator", "Maximum round reached. Not creating another unit.");
-    terminator.clean_terminate().await;
+    terminator.terminate_sync().await;
 }

@@ -1,12 +1,12 @@
-use futures::{channel::oneshot, StreamExt};
+use futures::StreamExt;
 use std::collections::{hash_map::Entry, HashMap, VecDeque};
 
 use crate::{
     extender::ExtenderUnit,
-    member::{Terminator, TerminatorConnection},
+    member::Terminator,
     runway::{NotificationIn, NotificationOut},
     units::{ControlHash, Unit, UnitCoord},
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, ShutdownConnection,
 };
 use log::{debug, info, trace, warn};
 
@@ -350,11 +350,8 @@ impl<H: Hasher> Terminal<H> {
         }
     }
 
-    pub(crate) async fn run(
-        &mut self,
-        mut exit: oneshot::Receiver<()>,
-        parent_terminator_connection: Option<TerminatorConnection>,
-    ) {
+    pub(crate) async fn run(&mut self, shutdown_connection: ShutdownConnection) {
+        let (mut exit, parent_terminator_connection) = shutdown_connection;
         loop {
             futures::select! {
                 n = self.ntfct_rx.next() => {
@@ -380,7 +377,7 @@ impl<H: Hasher> Terminal<H> {
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
                 Terminator::new(parent_terminator_connection, "AlephBFT-terminal")
-                    .clean_terminate()
+                    .terminate_sync()
                     .await;
                 break;
             }

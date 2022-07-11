@@ -104,7 +104,7 @@ async fn main() {
     let mut exiter = Terminator::new(None, "Blockchain example");
     let network_exiter_connection = exiter.add_offspring_connection("blockchain network");
     let network_handle =
-        tokio::spawn(async move { manager.run(exit, Some(network_exiter_connection)).await });
+        tokio::spawn(async move { manager.run((exit, Some(network_exiter_connection))).await });
 
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = ChainConfig::new(
@@ -124,8 +124,7 @@ async fn main() {
             block_from_network_rx,
             block_from_data_io_tx,
             message_from_network,
-            exit,
-            Some(chain_exiter_connection),
+            (exit, Some(chain_exiter_connection)),
         )
         .await
     });
@@ -149,8 +148,7 @@ async fn main() {
             network,
             keychain,
             Spawner {},
-            exit,
-            Some(member_exiter_connection),
+            (exit, Some(member_exiter_connection)),
         )
         .await
     });
@@ -181,7 +179,7 @@ async fn main() {
     close_chain.send(()).expect("should send");
     close_network.send(()).expect("should send");
 
-    exiter.clean_terminate().await;
+    exiter.terminate_sync().await;
 
     member_handle.await.unwrap();
     chain_handle.await.unwrap();

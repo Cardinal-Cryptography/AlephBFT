@@ -1,11 +1,11 @@
-use futures::{channel::oneshot, StreamExt};
+use futures::StreamExt;
 use std::collections::{HashMap, VecDeque};
 
 use log::{debug, info, warn};
 
 use crate::{
-    member::{Terminator, TerminatorConnection},
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
+    member::Terminator, Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender,
+    ShutdownConnection,
 };
 
 pub(crate) struct ExtenderUnit<H: Hasher> {
@@ -297,11 +297,8 @@ impl<H: Hasher> Extender<H> {
         }
     }
 
-    pub(crate) async fn extend(
-        &mut self,
-        mut exit: oneshot::Receiver<()>,
-        parent_terminator_connextion: Option<TerminatorConnection>,
-    ) {
+    pub(crate) async fn extend(&mut self, shutdown_connection: ShutdownConnection) {
+        let (mut exit, parent_terminator_connection) = shutdown_connection;
         loop {
             futures::select! {
                 v = self.electors.next() => {
@@ -318,8 +315,8 @@ impl<H: Hasher> Extender<H> {
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
-                Terminator::new(parent_terminator_connextion, "AlephBFT-extender")
-                    .clean_terminate()
+                Terminator::new(parent_terminator_connection, "AlephBFT-extender")
+                    .terminate_sync()
                     .await;
                 break;
             }
@@ -366,7 +363,7 @@ mod tests {
         let (electors_tx, electors_rx) = mpsc::unbounded();
         let mut extender = Extender::<Hasher64>::new(0.into(), n_members, electors_rx, batch_tx);
         let (exit_tx, exit_rx) = oneshot::channel();
-        let extender_handle = tokio::spawn(async move { extender.extend(exit_rx, None).await });
+        let extender_handle = tokio::spawn(async move { extender.extend((exit_rx, None)).await });
 
         for round in 0..rounds {
             for creator in n_members.into_iterator() {

@@ -1,11 +1,8 @@
 use crate::{network::NetworkData, DataStore};
-use aleph_bft::{NodeIndex, Terminator, TerminatorConnection};
+use aleph_bft::{NodeIndex, ShutdownConnection, Terminator};
 use codec::{Decode, Encode};
 use futures::{
-    channel::{
-        mpsc::{UnboundedReceiver, UnboundedSender},
-        oneshot,
-    },
+    channel::mpsc::{UnboundedReceiver, UnboundedSender},
     FutureExt, StreamExt,
 };
 use futures_timer::Delay;
@@ -94,9 +91,9 @@ pub async fn run_blockchain(
     mut blocks_from_network: UnboundedReceiver<Block>,
     blocks_for_network: UnboundedSender<Block>,
     mut messages_from_network: UnboundedReceiver<NetworkData>,
-    mut exit: oneshot::Receiver<()>,
-    parent_terminator_connection: Option<TerminatorConnection>,
+    shutdown_connection: ShutdownConnection,
 ) {
+    let (mut exit, parent_terminator_connection) = shutdown_connection;
     let start_time = time::Instant::now();
     for block_num in 1.. {
         while *current_block.lock() < block_num {
@@ -135,7 +132,7 @@ pub async fn run_blockchain(
                 _ = &mut exit => {
                     info!(target: "Blockchain-chain", "Received exit signal.");
                     Terminator::new(parent_terminator_connection, "Blockchain chain")
-                        .clean_terminate()
+                        .terminate_sync()
                         .await;
                     return;
                 },
