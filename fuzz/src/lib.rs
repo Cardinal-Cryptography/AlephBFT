@@ -224,7 +224,7 @@ pub fn spawn_honest_member_with_config(
             network,
             mk,
             spawner_inner.clone(),
-            exit_rx,
+            (exit_rx, None),
         )
         .await
     };
