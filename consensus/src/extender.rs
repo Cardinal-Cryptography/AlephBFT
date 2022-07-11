@@ -329,7 +329,7 @@ mod tests {
     use super::*;
     use crate::NodeCount;
     use aleph_bft_mock::Hasher64;
-    use futures::channel::mpsc;
+    use futures::channel::{mpsc, oneshot};
 
     fn coord_to_number(creator: NodeIndex, round: Round, n_members: NodeCount) -> u64 {
         (round as usize * n_members.0 + creator.0) as u64
