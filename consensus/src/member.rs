@@ -685,7 +685,7 @@ pub async fn run_session<
     config: Config,
     local_io: LocalIO<D, DP, FH, US, UL>,
     network: N,
-    keybox: MK,
+    keychain: MK,
     spawn_handle: SH,
     shutdown_connection: ShutdownConnection,
 ) {
@@ -742,7 +742,7 @@ pub async fn run_session<
     let runway_handle = runway::run(
         config.clone(),
         runway_io,
-        keybox.clone(),
+        keychain.clone(),
         spawn_handle.clone(),
         network_io,
         (exit_stream, Some(runway_terminator_connection)),
