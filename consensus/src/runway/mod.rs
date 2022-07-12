@@ -524,7 +524,7 @@ where
         }
     }
 
-    fn on_create(&mut self, signed_unit: SignedUnit<'a, H, D, MK>) {
+    fn on_packed(&mut self, signed_unit: SignedUnit<'a, H, D, MK>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         self.save_unit(signed_unit.clone().into());
         self.store.add_unit(signed_unit, false);
@@ -706,7 +706,7 @@ where
                 },
 
                 signed_unit = self.signed_units_from_packer.next() => match signed_unit {
-                    Some(signed_unit) => self.on_create(signed_unit),
+                    Some(signed_unit) => self.on_packed(signed_unit),
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Packer stream closed.", index);
                         break;

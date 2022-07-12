@@ -144,15 +144,17 @@ mod tests {
         let (preunits_channel, signed_units_channel, mut packer, _exit_tx, exit_rx, preunit) =
             prepare(&keychain);
         let packer_handle = packer.run(exit_rx).fuse();
-        preunits_channel.unbounded_send(preunit.clone()).unwrap();
+        preunits_channel
+            .unbounded_send(preunit.clone())
+            .expect("Packer PreUnit channel closed");
         pin_mut!(packer_handle);
         pin_mut!(signed_units_channel);
         let unit = futures::select! {
             unit = signed_units_channel.next() => match unit {
                 Some(unit) => unit,
-                None => panic!(),
+                None => panic!("Packer SignedUnit channel closed"),
             },
-            _ = packer_handle => panic!(),
+            _ = packer_handle => panic!("Packer terminated early"),
         }
         .into_unchecked()
         .into_signable();
@@ -167,13 +169,17 @@ mod tests {
             prepare(&keychain);
         let packer_handle = packer.run(exit_rx);
         for _ in 0..3 {
-            preunits_channel.unbounded_send(preunit.clone()).unwrap();
+            preunits_channel
+                .unbounded_send(preunit.clone())
+                .expect("Packer PreUnit channel closed");
         }
-        exit_tx.send(()).unwrap();
+        exit_tx.send(()).expect("Packer exit channel closed");
         for _ in 0..3 {
-            preunits_channel.unbounded_send(preunit.clone()).unwrap();
+            preunits_channel
+                .unbounded_send(preunit.clone())
+                .expect("Packer PreUnit channel closed");
         }
-        packer_handle.await.unwrap();
+        packer_handle.await.expect("Packer terminated early");
     }
 
     #[tokio::test]
@@ -187,7 +193,9 @@ mod tests {
     async fn signed_units_channel_closed() {
         let keychain = Keychain::new(N_MEMBERS, NODE_ID);
         let (preunits_channel, _, mut packer, _exit_tx, exit_rx, preunit) = prepare(&keychain);
-        preunits_channel.unbounded_send(preunit).unwrap();
+        preunits_channel
+            .unbounded_send(preunit)
+            .expect("Packer PreUnit channel closed");
         assert_eq!(packer.run(exit_rx).await, Err(()));
     }
 }
