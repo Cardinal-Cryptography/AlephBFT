@@ -8,7 +8,7 @@ use log::{error, info};
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
 type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;
 
-pub type Data = (NodeIndex, Option<u32>);
+pub type Data = (NodeIndex, u32);
 
 #[derive(Default)]
 pub struct DataProvider {
@@ -37,10 +37,10 @@ impl DataProviderT<Data> for DataProvider {
                 info!("Awaiting DataProvider::get_data forever");
                 pending::<()>().await;
             }
-            info!("Providing empty data");
-            Some((self.id, None))
+            info!("Providing None");
+            None
         } else {
-            let data = (self.id, Some(self.counter));
+            let data = (self.id, self.counter);
             info!("Providing data: {}", self.counter);
             self.counter += 1;
             self.n_data -= 1;
