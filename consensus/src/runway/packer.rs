@@ -93,7 +93,7 @@ mod tests {
         units::{ControlHash, PreUnit, SignedUnit},
         NodeCount, NodeIndex, Receiver, Sender, SessionId,
     };
-    use aleph_bft_mock::{Data, DataProvider, Hasher64, Keychain};
+    use aleph_bft_mock::{Data, DataProvider, Hasher64, Keychain, StalledDataProvider};
     use aleph_bft_types::NodeMap;
     use futures::{
         channel::{mpsc, oneshot},
@@ -163,28 +163,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handles_requests_concurrently() {
-        let keychain = Keychain::new(N_MEMBERS, NODE_ID);
-        let (preunits_channel, _signed_units_channel, mut packer, exit_tx, exit_rx, preunit) =
-            prepare(&keychain);
-        let packer_handle = packer.run(exit_rx);
-        for _ in 0..3 {
-            preunits_channel
-                .unbounded_send(preunit.clone())
-                .expect("Packer PreUnit channel closed");
-        }
-        exit_tx.send(()).expect("Packer exit channel closed");
-        for _ in 0..3 {
-            preunits_channel
-                .unbounded_send(preunit.clone())
-                .expect("Packer PreUnit channel closed");
-        }
-        packer_handle
-            .await
-            .expect("Packer terminated with an error");
-    }
-
-    #[tokio::test]
     async fn preunits_channel_closed() {
         let keychain = Keychain::new(N_MEMBERS, NODE_ID);
         let (_, _signed_units_channel, mut packer, _exit_tx, exit_rx, _) = prepare(&keychain);
@@ -199,5 +177,42 @@ mod tests {
             .unbounded_send(preunit)
             .expect("Packer PreUnit channel closed");
         assert_eq!(packer.run(exit_rx).await, Err(()));
+    }
+
+    #[tokio::test]
+    async fn handles_requests_concurrently() {
+        let keychain = Keychain::new(N_MEMBERS, NODE_ID);
+        let data_provider = StalledDataProvider::new();
+        let (preunits_channel, preunits_from_runway) = mpsc::unbounded::<PreUnit<Hasher64>>();
+        let (signed_units_for_runway, _signed_units_channel) = mpsc::unbounded();
+        let mut packer = Packer::new(
+            data_provider,
+            preunits_from_runway,
+            signed_units_for_runway,
+            &keychain,
+            SESSION_ID,
+        );
+        let (exit_tx, exit_rx) = oneshot::channel();
+        let parent_map = NodeMap::with_size(N_MEMBERS);
+        let control_hash = ControlHash::new(&parent_map);
+        let preunit = PreUnit::new(NODE_ID, 0, control_hash);
+        let packer_handle = packer.run(exit_rx);
+        for _ in 0..3 {
+            preunits_channel
+                .unbounded_send(preunit.clone())
+                .expect("Packer PreUnit channel closed");
+        }
+        // in spite of StalledDataProvider halting Provider's pack loop, we expect it
+        // to handle the exit request immediately
+        exit_tx.send(()).expect("Packer exit channel closed");
+        // let's send more PreUnits just to be sure that we can
+        for _ in 0..3 {
+            preunits_channel
+                .unbounded_send(preunit.clone())
+                .expect("Packer PreUnit channel closed");
+        }
+        packer_handle
+            .await
+            .expect("Packer terminated with an error");
     }
 }

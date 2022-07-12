@@ -1,6 +1,6 @@
 use aleph_bft_types::{DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT};
 use async_trait::async_trait;
-use futures::channel::mpsc::unbounded;
+use futures::{channel::mpsc::unbounded, future::pending};
 use log::error;
 use parking_lot::Mutex;
 use std::{
@@ -29,6 +29,22 @@ impl DataProviderT<Data> for DataProvider {
     async fn get_data(&mut self) -> Data {
         self.counter += 1;
         self.counter
+    }
+}
+
+#[derive(Default)]
+pub struct StalledDataProvider {}
+
+impl StalledDataProvider {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl DataProviderT<Data> for StalledDataProvider {
+    async fn get_data(&mut self) -> Data {
+        pending().await
     }
 }
 
