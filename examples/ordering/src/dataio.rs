@@ -31,20 +31,20 @@ impl DataProvider {
 
 #[async_trait]
 impl DataProviderT<Data> for DataProvider {
-    async fn get_data(&mut self) -> Data {
+    async fn get_data(&mut self) -> Option<Data> {
         if self.n_data == 0 {
             if self.stalled {
                 info!("Awaiting DataProvider::get_data forever");
                 pending::<()>().await;
             }
             info!("Providing empty data");
-            (self.id, None)
+            Some((self.id, None))
         } else {
             let data = (self.id, Some(self.counter));
             info!("Providing data: {}", self.counter);
             self.counter += 1;
             self.n_data -= 1;
-            data
+            Some(data)
         }
     }
 }

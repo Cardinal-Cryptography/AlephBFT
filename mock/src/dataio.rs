@@ -21,11 +21,17 @@ pub struct DataProvider {
 
 impl DataProvider {
     pub fn new() -> Self {
-        Self { counter: 0, n_data: None }
+        Self {
+            counter: 0,
+            n_data: None,
+        }
     }
 
     pub fn new_finite(n_data: usize) -> Self {
-        Self { counter: 0, n_data: Some(n_data) }
+        Self {
+            counter: 0,
+            n_data: Some(n_data),
+        }
     }
 }
 
@@ -35,7 +41,7 @@ impl DataProviderT<Data> for DataProvider {
         self.counter += 1;
         if let Some(n_data) = self.n_data {
             if n_data < self.counter {
-                return None
+                return None;
             }
         }
         Some(self.counter as u32)
@@ -53,7 +59,7 @@ impl StalledDataProvider {
 
 #[async_trait]
 impl DataProviderT<Data> for StalledDataProvider {
-    async fn get_data(&mut self) -> Data {
+    async fn get_data(&mut self) -> Option<Data> {
         pending().await
     }
 }
