@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn closed() {
+    async fn handles_requests_concurrently() {
         let keychain = Keychain::new(N_MEMBERS, NODE_ID);
         let (preunits_channel, _signed_units_channel, mut packer, exit_tx, exit_rx, preunit) =
             prepare(&keychain);
@@ -179,7 +179,9 @@ mod tests {
                 .unbounded_send(preunit.clone())
                 .expect("Packer PreUnit channel closed");
         }
-        packer_handle.await.expect("Packer terminated early");
+        packer_handle
+            .await
+            .expect("Packer terminated with an error");
     }
 
     #[tokio::test]
