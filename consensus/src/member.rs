@@ -6,7 +6,7 @@ use crate::{
     },
     units::{UncheckedSignedUnit, UnitCoord},
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
-    NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
+    NodeIndex, Receiver, Recipient, Round, Sender, Signature, SpawnHandle, UncheckedSigned,
 };
 use aleph_bft_types::NodeMap;
 use codec::{Decode, Encode};
@@ -67,26 +67,26 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
 }
 
 #[derive(Eq, PartialEq, Debug)]
-enum Task<H: Hasher> {
+enum Task<H: Hasher, D: Data, S: Signature> {
     // Request the unit with the given (creator, round) coordinates.
     CoordRequest(UnitCoord),
     // Request parents of the unit with the given hash and Recipient.
     ParentsRequest(H::Hash, Recipient),
     // Broadcast the top known unit for a given node.
-    UnitRebroadcast(NodeIndex),
+    UnitBroadcast(UncheckedSignedUnit<H, D, S>),
     // Request the newest unit created by node itself.
     RequestNewest(u64),
 }
 
 #[derive(Eq, PartialEq, Debug)]
-struct ScheduledTask<H: Hasher> {
-    task: Task<H>,
+struct ScheduledTask<H: Hasher, D: Data, S: Signature> {
+    task: Task<H, D, S>,
     scheduled_time: time::Instant,
     // The number of times the task was performed so far.
     counter: usize,
 }
 
-impl<H: Hasher> fmt::Display for ScheduledTask<H> {
+impl<H: Hasher, D: Data, S: Signature> fmt::Display for ScheduledTask<H, D, S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -96,8 +96,8 @@ impl<H: Hasher> fmt::Display for ScheduledTask<H> {
     }
 }
 
-impl<H: Hasher> ScheduledTask<H> {
-    fn new(task: Task<H>, scheduled_time: time::Instant) -> Self {
+impl<H: Hasher, D: Data, S: Signature> ScheduledTask<H, D, S> {
+    fn new(task: Task<H, D, S>, scheduled_time: time::Instant) -> Self {
         ScheduledTask {
             task,
             scheduled_time,
@@ -106,14 +106,14 @@ impl<H: Hasher> ScheduledTask<H> {
     }
 }
 
-impl<H: Hasher> Ord for ScheduledTask<H> {
+impl<H: Hasher, D: Data, S: Signature> Ord for ScheduledTask<H, D, S> {
     fn cmp(&self, other: &Self) -> Ordering {
         // we want earlier times to come first when used in max-heap, hence the below:
         other.scheduled_time.cmp(&self.scheduled_time)
     }
 }
 
-impl<H: Hasher> PartialOrd for ScheduledTask<H> {
+impl<H: Hasher, D: Data, S: Signature> PartialOrd for ScheduledTask<H, D, S> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
@@ -121,7 +121,6 @@ impl<H: Hasher> PartialOrd for ScheduledTask<H> {
 
 enum TaskDetails<H: Hasher, D: Data, S: Signature> {
     Cancel,
-    Delay(Duration),
     Perform {
         message: UnitMessage<H, D, S>,
         recipient: Recipient,
@@ -136,12 +135,6 @@ pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US:
     unit_saver: US,
     unit_loader: UL,
     _phantom: PhantomData<D>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TopUnit<H: Hasher, D: Data, S: Signature> {
-    unit: UncheckedSignedUnit<H, D, S>,
-    discovered: time::Instant,
 }
 
 impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Read>
@@ -163,21 +156,25 @@ impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Re
     }
 }
 
-struct MemberStatus<'a, H>
+struct MemberStatus<'a, H, D, S>
 where
     H: Hasher,
+    D: Data,
+    S: Signature,
 {
-    task_queue: &'a BinaryHeap<ScheduledTask<H>>,
+    task_queue: &'a BinaryHeap<ScheduledTask<H, D, S>>,
     not_resolved_parents: &'a HashSet<H::Hash>,
     not_resolved_coords: &'a HashSet<UnitCoord>,
 }
 
-impl<'a, H> MemberStatus<'a, H>
+impl<'a, H, D, S> MemberStatus<'a, H, D, S>
 where
     H: Hasher,
+    D: Data,
+    S: Signature,
 {
     fn new(
-        task_queue: &'a BinaryHeap<ScheduledTask<H>>,
+        task_queue: &'a BinaryHeap<ScheduledTask<H, D, S>>,
         not_resolved_parents: &'a HashSet<H::Hash>,
         not_resolved_coords: &'a HashSet<UnitCoord>,
     ) -> Self {
@@ -189,9 +186,11 @@ where
     }
 }
 
-impl<'a, H> fmt::Display for MemberStatus<'a, H>
+impl<'a, H, D, S> fmt::Display for MemberStatus<'a, H, D, S>
 where
     H: Hasher,
+    D: Data,
+    S: Signature,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut count_coord_request: usize = 0;
@@ -203,22 +202,19 @@ where
                 Task::CoordRequest(_) => count_coord_request += 1,
                 Task::ParentsRequest(_, _) => count_parents_request += 1,
                 Task::RequestNewest(_) => count_request_newest += 1,
-                Task::UnitRebroadcast(_) => count_rebroadcast += 1,
+                Task::UnitBroadcast(_) => count_rebroadcast += 1,
             }
         }
         let long_time_pending_tasks: Vec<_> = self
             .task_queue
             .iter()
-            .filter(|st| match st.task {
-                Task::UnitRebroadcast(_) => false,
-                _ => st.counter >= 5,
-            })
+            .filter(|st| st.counter >= 5)
             .collect();
         write!(f, "Member status report: ")?;
         write!(f, "task queue content: ")?;
         write!(
             f,
-            "CoordRequest - {}, ParentsRequest - {}, UnitRebroadcast - {}, RequestNewest - {}",
+            "CoordRequest - {}, ParentsRequest - {}, UnitBroadcast - {}, RequestNewest - {}",
             count_coord_request, count_parents_request, count_rebroadcast, count_request_newest,
         )?;
         if !self.not_resolved_coords.is_empty() {
@@ -253,7 +249,7 @@ where
     S: Signature,
 {
     config: Config,
-    task_queue: BinaryHeap<ScheduledTask<H>>,
+    task_queue: BinaryHeap<ScheduledTask<H, D, S>>,
     not_resolved_parents: HashSet<H::Hash>,
     not_resolved_coords: HashSet<UnitCoord>,
     newest_unit_resolved: bool,
@@ -264,7 +260,7 @@ where
     notifications_from_runway: Receiver<RunwayNotificationOut<H, D, S>>,
     resolved_requests: Receiver<Request<H>>,
     exiting: bool,
-    top_units: NodeMap<TopUnit<H, D, S>>,
+    top_units: NodeMap<Round>,
 }
 
 impl<H, D, S> Member<H, D, S>
@@ -283,13 +279,9 @@ where
     ) -> Self {
         let n_members = config.n_members;
 
-        let tasks = (0usize..n_members.into()).map(|node| {
-            ScheduledTask::new(Task::UnitRebroadcast(node.into()), time::Instant::now())
-        });
-
         Self {
             config,
-            task_queue: BinaryHeap::from_iter(tasks),
+            task_queue: BinaryHeap::new(),
             not_resolved_parents: HashSet::new(),
             not_resolved_coords: HashSet::new(),
             newest_unit_resolved: false,
@@ -309,16 +301,20 @@ where
     }
 
     fn on_unit_discovered(&mut self, new_unit: UncheckedSignedUnit<H, D, S>) {
-        match self.top_units.get(new_unit.as_signable().creator()) {
-            Some(u) if u.unit.as_signable().round() >= new_unit.as_signable().round() => (),
-            _ => self.top_units.insert(
-                new_unit.as_signable().creator(),
-                TopUnit {
-                    unit: new_unit,
-                    discovered: time::Instant::now(),
-                },
-            ),
-        };
+        let unit_creator = new_unit.as_signable().creator();
+        let unit_round = new_unit.as_signable().round();
+        if self
+            .top_units
+            .get(unit_creator)
+            .map(|round| round < &unit_round)
+            .unwrap_or(true)
+        {
+            self.top_units.insert(unit_creator, unit_round);
+            let task = Task::UnitBroadcast(new_unit);
+            let scheduled_time = time::Instant::now() + self.delay(&task);
+            self.task_queue
+                .push(ScheduledTask::new(task, scheduled_time));
+        }
     }
 
     fn on_request_coord(&mut self, coord: UnitCoord) {
@@ -352,21 +348,15 @@ where
     // Pulls tasks from the priority queue (sorted by scheduled time) and sends them to random peers
     // as long as they are scheduled at time <= curr_time
     fn trigger_tasks(&mut self) {
-        while let Some(request) = self.task_queue.peek() {
+        while let Some(mut request) = self.task_queue.pop() {
             let curr_time = time::Instant::now();
             if request.scheduled_time > curr_time {
+                self.task_queue.push(request);
                 break;
             }
-            let mut request = self.task_queue.pop().expect("The element was peeked");
 
             match self.task_details(&request.task, request.counter) {
                 TaskDetails::Cancel => (),
-
-                TaskDetails::Delay(delay) => {
-                    request.scheduled_time += delay;
-                    self.task_queue.push(request);
-                }
-
                 TaskDetails::Perform {
                     message,
                     recipient,
@@ -406,44 +396,27 @@ where
     /// `Delay(Duration)` if the task is active, but cannot be performed right now, and
     /// `Perform { message, recipient, reschedule }` if the task is to send `message` to `recipient` and it should
     /// be rescheduled after `reschedule`.
-    fn task_details(&mut self, task: &Task<H>, counter: usize) -> TaskDetails<H, D, S> {
-        if !self.still_valid(task) {
-            TaskDetails::Cancel
-        } else {
-            match self.message(task) {
-                None => TaskDetails::Delay(self.delay(task)),
-                Some(message) => TaskDetails::Perform {
-                    message,
-                    recipient: self.recipient(task, counter),
-                    reschedule: self.delay(task),
-                },
-            }
+    fn task_details(&mut self, task: &Task<H, D, S>, counter: usize) -> TaskDetails<H, D, S> {
+        match self.still_valid(task) {
+            false => TaskDetails::Cancel,
+            true => TaskDetails::Perform {
+                message: self.message(task),
+                recipient: self.recipient(task, counter),
+                reschedule: self.delay(task),
+            },
         }
     }
 
-    fn message(&self, task: &Task<H>) -> Option<UnitMessage<H, D, S>> {
+    fn message(&self, task: &Task<H, D, S>) -> UnitMessage<H, D, S> {
         match task {
-            Task::CoordRequest(coord) => Some(UnitMessage::RequestCoord(self.index(), *coord)),
-            Task::ParentsRequest(hash, _) => Some(UnitMessage::RequestParents(self.index(), *hash)),
-            Task::UnitRebroadcast(node) => self
-                .top_units
-                .get(*node)
-                .and_then(|u| self.rebroadcast_if_old(u)),
-            Task::RequestNewest(salt) => Some(UnitMessage::RequestNewest(self.index(), *salt)),
+            Task::CoordRequest(coord) => UnitMessage::RequestCoord(self.index(), *coord),
+            Task::ParentsRequest(hash, _) => UnitMessage::RequestParents(self.index(), *hash),
+            Task::UnitBroadcast(unit) => UnitMessage::NewUnit(unit.clone()),
+            Task::RequestNewest(salt) => UnitMessage::RequestNewest(self.index(), *salt),
         }
     }
 
-    fn rebroadcast_if_old(&self, top_unit: &TopUnit<H, D, S>) -> Option<UnitMessage<H, D, S>> {
-        if time::Instant::now().saturating_duration_since(top_unit.discovered)
-            > self.config.delay_config.unit_rebroadcast_interval_min
-        {
-            Some(UnitMessage::NewUnit(top_unit.unit.clone()))
-        } else {
-            None
-        }
-    }
-
-    fn recipient(&self, task: &Task<H>, counter: usize) -> Recipient {
+    fn recipient(&self, task: &Task<H, D, S>, counter: usize) -> Recipient {
         match (self.preferred_recipient(task), counter) {
             (Recipient::Everyone, _) => Recipient::Everyone,
             (recipient, 0) => recipient,
@@ -451,28 +424,31 @@ where
         }
     }
 
-    fn preferred_recipient(&self, task: &Task<H>) -> Recipient {
+    fn preferred_recipient(&self, task: &Task<H, D, S>) -> Recipient {
         match task {
             Task::CoordRequest(coord) => Recipient::Node(coord.creator()),
             Task::ParentsRequest(_, preferred_recipient) => preferred_recipient.clone(),
-            Task::UnitRebroadcast(_) => Recipient::Everyone,
+            Task::UnitBroadcast(_) => Recipient::Everyone,
             Task::RequestNewest(_) => Recipient::Everyone,
         }
     }
 
-    fn still_valid(&self, task: &Task<H>) -> bool {
+    fn still_valid(&self, task: &Task<H, D, S>) -> bool {
         match task {
             Task::CoordRequest(coord) => self.not_resolved_coords.contains(coord),
             Task::ParentsRequest(hash, _preferred_recipient) => {
                 self.not_resolved_parents.contains(hash)
             }
             Task::RequestNewest(_) => !self.newest_unit_resolved,
-            Task::UnitRebroadcast(_) => true,
+            Task::UnitBroadcast(unit) => {
+                Some(&unit.as_signable().round())
+                    == self.top_units.get(unit.as_signable().creator())
+            }
         }
     }
 
     /// Most tasks use `requests_interval` (see [crate::DelayConfig]) as their delay.
-    /// The exception is [Task::UnitRebroadcast] - this one picks a random delay between
+    /// The exception is [Task::UnitBroadcast] - this one picks a random delay between
     /// `unit_rebroadcast_interval_min` and `unit_rebroadcast_interval_max`.
     ///
     /// The properties of this scheme are:
@@ -483,9 +459,9 @@ where
     ///    have been barely not old enough after the task triggered `unit_rebroadcast_interval_min`
     ///    since discovery and the next task run after that is randomly selected to happen after
     ///    `unit_rebroadcast_interval_max`.
-    fn delay(&self, task: &Task<H>) -> Duration {
+    fn delay(&self, task: &Task<H, D, S>) -> Duration {
         match task {
-            Task::UnitRebroadcast(_) => {
+            Task::UnitBroadcast(_) => {
                 let low = self.config.delay_config.unit_rebroadcast_interval_min;
                 let high = self.config.delay_config.unit_rebroadcast_interval_max;
                 let millis = rand::thread_rng().gen_range(low.as_millis()..high.as_millis());
