@@ -7,7 +7,7 @@ use std::{
 };
 
 use clap::Parser;
-use futures::StreamExt;
+use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info};
 use parking_lot::Mutex;
 use time::{macros::format_description, OffsetDateTime};
@@ -100,10 +100,10 @@ async fn main() {
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
     let data_store = DataStore::new(current_block.clone(), message_for_network);
 
-    let mut exiter = Terminator::new(None, "Blockchain example");
-    let network_shutdown_connection = exiter.add_offspring_connection("blockchain network");
-    let network_handle =
-        tokio::spawn(async move { manager.run(network_shutdown_connection).await });
+    let (_terminator_tx, terminator_rx) = oneshot::channel();
+    let mut terminator = Terminator::create_root_terminator(terminator_rx, "Blockchain example");
+    let network_terminator = terminator.add_offspring_connection("blockchain network");
+    let network_handle = tokio::spawn(async move { manager.run(network_terminator).await });
 
     let data_size: usize = TXS_PER_BLOCK * TX_SIZE;
     let chain_config = ChainConfig::new(
@@ -113,7 +113,7 @@ async fn main() {
         BLOCK_TIME,
         INITIAL_DELAY,
     );
-    let chain_shutdown_connection = exiter.add_offspring_connection("chain");
+    let chain_terminator = terminator.add_offspring_connection("chain");
     let chain_handle = tokio::spawn(async move {
         run_blockchain(
             chain_config,
@@ -122,12 +122,12 @@ async fn main() {
             block_from_network_rx,
             block_from_data_io_tx,
             message_from_network,
-            chain_shutdown_connection,
+            chain_terminator,
         )
         .await
     });
 
-    let member_shutdown_connection = exiter.add_offspring_connection("member");
+    let member_terminator = terminator.add_offspring_connection("AlephBFT-member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
         let config = aleph_bft::default_config(args.n_members.into(), args.my_id.into(), 0);
@@ -145,7 +145,7 @@ async fn main() {
             network,
             keychain,
             Spawner {},
-            member_shutdown_connection,
+            member_terminator,
         )
         .await
     });
@@ -173,7 +173,7 @@ async fn main() {
     let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
 
-    exiter.terminate_sync().await;
+    terminator.terminate_sync().await;
 
     member_handle.await.unwrap();
     chain_handle.await.unwrap();

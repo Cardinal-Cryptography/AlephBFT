@@ -46,13 +46,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     };
     let mut creator_handle = spawn_handle
         .spawn_essential("consensus/creation", async move {
-            creation::run(
-                conf.clone().into(),
-                io,
-                starting_round,
-                creator_terminator,
-            )
-            .await;
+            creation::run(conf.clone().into(), io, starting_round, creator_terminator).await;
         })
         .fuse();
 

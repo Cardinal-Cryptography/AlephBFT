@@ -3,9 +3,7 @@ use std::collections::{HashMap, VecDeque};
 
 use log::{debug, info, warn};
 
-use crate::{
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Terminator,
-};
+use crate::{Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Terminator};
 
 pub(crate) struct ExtenderUnit<H: Hasher> {
     creator: NodeIndex,
@@ -359,7 +357,14 @@ mod tests {
         let (electors_tx, electors_rx) = mpsc::unbounded();
         let mut extender = Extender::<Hasher64>::new(0.into(), n_members, electors_rx, batch_tx);
         let (exit_tx, exit_rx) = oneshot::channel();
-        let extender_handle = tokio::spawn(async move { extender.extend((exit_rx, None)).await });
+        let extender_handle = tokio::spawn(async move {
+            extender
+                .extend(Terminator::create_root_terminator(
+                    exit_rx,
+                    "AlephBFT-extender",
+                ))
+                .await
+        });
 
         for round in 0..rounds {
             for creator in n_members.into_iterator() {

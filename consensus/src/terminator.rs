@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use futures::channel::oneshot::{Receiver, Sender, channel};
+use futures::channel::oneshot::{channel, Receiver, Sender};
 use log::debug;
 
-pub type TerminatorConnection = (Sender<()>, Receiver<()>);
-pub type ShutdownConnection = (Receiver<()>, Option<TerminatorConnection>);
+type TerminatorConnection = (Sender<()>, Receiver<()>);
+type ShutdownConnection = (Receiver<()>, Option<TerminatorConnection>);
 
 /// Struct that holds connections to offspring and parent components/tasks
 /// and enables a clean/synchronized shutdown
@@ -28,6 +28,11 @@ impl Terminator {
             offspring_exits: HashMap::<_, _>::new(),
             offspring_connections: HashMap::<_, _>::new(),
         }
+    }
+
+    /// Creates a terminator for the root component
+    pub fn create_root_terminator(exit: Receiver<()>, name: &'static str) -> Self {
+        Self::new((exit, None), name)
     }
 
     /// Get exit channel for current component

@@ -6,8 +6,7 @@ use crate::{
     },
     units::{UncheckedSignedUnit, UnitCoord},
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
-    NodeIndex, Receiver, Recipient, Sender, ShutdownConnection, Signature, SpawnHandle, Terminator,
-    UncheckedSigned,
+    NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, future::FusedFuture, pin_mut, FutureExt, StreamExt};
@@ -562,7 +561,7 @@ pub async fn run_session<
     network: N,
     keychain: MK,
     spawn_handle: SH,
-    shutdown_connection: ShutdownConnection,
+    mut terminator: Terminator,
 ) {
     let index = config.node_ix;
     info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", index);
@@ -576,7 +575,6 @@ pub async fn run_session<
     let (resolved_requests_tx, resolved_requests_rx) = mpsc::unbounded();
 
     info!(target: "AlephBFT-member", "{:?} Spawning network.", index);
-    let mut terminator = Terminator::new(shutdown_connection, "AlephBFT-member");
     let network_terminator = terminator.add_offspring_connection("AlephBFT-network");
 
     let network_handle = spawn_handle.spawn_essential("member/network", async move {

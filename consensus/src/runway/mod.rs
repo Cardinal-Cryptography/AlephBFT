@@ -7,8 +7,8 @@ use crate::{
         UnitStore, UnitStoreStatus, Validator,
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
-    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId,
-    Signature, Signed, SpawnHandle, Terminator, UncheckedSigned,
+    NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, SessionId, Signature, Signed,
+    SpawnHandle, Terminator, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -986,9 +986,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     };
     let runway_terminator = terminator.add_offspring_connection("runway");
     let runway = Runway::new(runway_config, &keychain, &validator);
-    let runway_handle = runway
-        .run(loaded_units_rx, runway_terminator)
-        .fuse();
+    let runway_handle = runway.run(loaded_units_rx, runway_terminator).fuse();
     pin_mut!(runway_handle);
 
     loop {
