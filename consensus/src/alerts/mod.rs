@@ -1,6 +1,6 @@
 use crate::{
     units::UncheckedSignedUnit, Data, Hasher, Index, MultiKeychain, Multisigned, NodeCount,
-    NodeIndex, PartialMultisignature, Receiver, Recipient, Sender, SessionId, ShutdownConnection,
+    NodeIndex, PartialMultisignature, Receiver, Recipient, Sender, SessionId,
     Signable, Signature, Signed, Terminator, UncheckedSigned,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
@@ -408,11 +408,10 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
-    shutdown_connection: ShutdownConnection,
+    mut terminator: Terminator,
 ) {
     use self::io::IO;
 
-    let (mut exit, parent_terminator_connection) = shutdown_connection;
     let n_members = config.n_members;
     let mut alerter = Alerter::new(&keychain, config);
     let (messages_for_rmc, messages_from_us) = mpsc::unbounded();
@@ -492,16 +491,14 @@ pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
                     io.send_notification_for_units(notification, &mut alerter.exiting);
                 }
             },
-            _ = &mut exit => {
+            _ = &mut terminator.get_exit() => {
                 info!(target: "AlephBFT-alerter", "{:?} received exit signal", alerter.index());
                 alerter.exiting = true;
             },
         }
         if alerter.exiting {
             info!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", alerter.index());
-            Terminator::new(parent_terminator_connection, "AlephBFT-alerter")
-                .terminate_sync()
-                .await;
+            terminator.terminate_sync().await;
             break;
         }
     }

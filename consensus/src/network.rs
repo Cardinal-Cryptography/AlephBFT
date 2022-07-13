@@ -1,6 +1,6 @@
 use crate::{
     alerts::AlertMessage, member::UnitMessage, Data, Hasher, Network, PartialMultisignature,
-    Receiver, Recipient, Sender, ShutdownConnection, Signature, Terminator,
+    Receiver, Recipient, Sender, Signature, Terminator,
 };
 use codec::{Decode, Encode};
 use futures::{FutureExt, StreamExt};
@@ -126,8 +126,7 @@ impl<
         }
     }
 
-    async fn run(mut self, shutdown_connection: ShutdownConnection) {
-        let (mut exit, parent_terminator_connection) = shutdown_connection;
+    async fn run(mut self, mut terminator: Terminator) {
         loop {
             use NetworkDataInner::*;
             futures::select! {
@@ -152,8 +151,8 @@ impl<
                         break;
                     }
                 },
-                _ = &mut exit => {
-                    Terminator::new(parent_terminator_connection, "AlephBFT-network-hub").terminate_sync().await;
+                _ = &mut terminator.get_exit() => {
+                    terminator.terminate_sync().await;
                     break;
                 }
             }
@@ -175,7 +174,7 @@ pub(crate) async fn run<
     units_received: Sender<UnitMessage<H, D, S>>,
     alerts_to_send: Receiver<(AlertMessage<H, D, S, MS>, Recipient)>,
     alerts_received: Sender<AlertMessage<H, D, S, MS>>,
-    shutdown_connection: ShutdownConnection,
+    terminator: Terminator,
 ) {
     NetworkHub::new(
         network,
@@ -184,7 +183,7 @@ pub(crate) async fn run<
         alerts_to_send,
         alerts_received,
     )
-    .run(shutdown_connection)
+    .run(terminator)
     .await
 }
 

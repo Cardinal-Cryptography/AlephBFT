@@ -5,7 +5,7 @@ use crate::{
     extender::ExtenderUnit,
     runway::{NotificationIn, NotificationOut},
     units::{ControlHash, Unit, UnitCoord},
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, ShutdownConnection, Terminator,
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Terminator,
 };
 use log::{debug, info, trace, warn};
 
@@ -348,8 +348,7 @@ impl<H: Hasher> Terminal<H> {
         }
     }
 
-    pub(crate) async fn run(&mut self, shutdown_connection: ShutdownConnection) {
-        let (mut exit, parent_terminator_connection) = shutdown_connection;
+    pub(crate) async fn run(&mut self, mut terminator: Terminator) {
         loop {
             futures::select! {
                 n = self.ntfct_rx.next() => {
@@ -367,16 +366,14 @@ impl<H: Hasher> Terminal<H> {
                         _ => {}
                     }
                 }
-                _ = &mut exit => {
+                _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-terminal", "{:?} received exit signal", self.node_id);
                     self.exiting = true;
                 }
             }
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
-                Terminator::new(parent_terminator_connection, "AlephBFT-terminal")
-                    .terminate_sync()
-                    .await;
+                terminator.terminate_sync().await;
                 break;
             }
         }

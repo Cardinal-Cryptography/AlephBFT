@@ -2,7 +2,7 @@ use crate::{
     config::{Config as GeneralConfig, DelaySchedule},
     runway::NotificationOut,
     units::{PreUnit, Unit},
-    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender, ShutdownConnection, Terminator,
+    Hasher, NodeCount, NodeIndex, Receiver, Round, Sender, Terminator,
 };
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -92,7 +92,7 @@ pub async fn run<H: Hasher>(
     conf: Config,
     io: IO<H>,
     mut starting_round: oneshot::Receiver<Option<Round>>,
-    shutdown_connection: ShutdownConnection,
+    mut terminator: Terminator,
 ) {
     let Config {
         node_id,
@@ -100,14 +100,12 @@ pub async fn run<H: Hasher>(
         create_lag,
         max_round,
     } = conf;
-    let (mut exit, parent_terminator_connection) = shutdown_connection;
     let mut creator = Creator::new(node_id, n_members);
     let IO {
         mut incoming_parents,
         outgoing_units,
     } = io;
 
-    let terminator = Terminator::new(parent_terminator_connection, "AlephBFT-creator");
     let starting_round = futures::select! {
         maybe_round =  starting_round => match maybe_round {
             Ok(Some(round)) => round,
@@ -120,7 +118,7 @@ pub async fn run<H: Hasher>(
                 return;
             }
         },
-        _ = &mut exit => {
+        _ = &mut terminator.get_exit() => {
             terminator.terminate_sync().await;
             return;
         },
@@ -137,7 +135,7 @@ pub async fn run<H: Hasher>(
             &create_lag,
             ignore_delay,
             &mut incoming_parents,
-            &mut exit,
+            &mut terminator.get_exit(),
         )
         .await
         {

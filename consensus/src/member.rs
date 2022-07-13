@@ -455,8 +455,7 @@ where
         info!(target: "AlephBFT-member", "{}", status);
     }
 
-    async fn run(mut self, shutdown_connection: ShutdownConnection) {
-        let (mut exit, parent_terminator_connection) = shutdown_connection;
+    async fn run(mut self, mut terminator: Terminator) {
         let ticker_delay = self.config.delay_config.tick_interval;
         let mut ticker = Delay::new(ticker_delay).fuse();
         let status_ticker_delay = Duration::from_secs(10);
@@ -515,16 +514,14 @@ where
                     status_ticker = Delay::new(status_ticker_delay).fuse();
                 },
 
-                _ = &mut exit => {
+                _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-member", "{:?} received exit signal", self.index());
                     self.exiting = true;
                 },
             }
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
-                Terminator::new(parent_terminator_connection, "AlephBFT-member")
-                    .terminate_sync()
-                    .await;
+                terminator.terminate_sync().await;
                 break;
             }
         }
@@ -567,8 +564,6 @@ pub async fn run_session<
     spawn_handle: SH,
     shutdown_connection: ShutdownConnection,
 ) {
-    let (mut exit, parent_terminator_connection) = shutdown_connection;
-
     let index = config.node_ix;
     info!(target: "AlephBFT-member", "{:?} Spawning party for a session.", index);
 
@@ -581,8 +576,8 @@ pub async fn run_session<
     let (resolved_requests_tx, resolved_requests_rx) = mpsc::unbounded();
 
     info!(target: "AlephBFT-member", "{:?} Spawning network.", index);
-    let mut terminator = Terminator::new(parent_terminator_connection, "AlephBFT-member");
-    let network_shutdown_connection = terminator.add_offspring_connection("network");
+    let mut terminator = Terminator::new(shutdown_connection, "AlephBFT-member");
+    let network_terminator = terminator.add_offspring_connection("AlephBFT-network");
 
     let network_handle = spawn_handle.spawn_essential("member/network", async move {
         network::run(
@@ -591,7 +586,7 @@ pub async fn run_session<
             unit_messages_for_units,
             alert_messages_from_alerter,
             alert_messages_for_alerter,
-            network_shutdown_connection,
+            network_terminator,
         )
         .await
     });
@@ -600,7 +595,7 @@ pub async fn run_session<
     info!(target: "AlephBFT-member", "{:?} Network spawned.", index);
 
     info!(target: "AlephBFT-member", "{:?} Initializing Runway.", index);
-    let runway_shutdown_connection = terminator.add_offspring_connection("runway");
+    let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
     let network_io = NetworkIO {
         alert_messages_for_network,
         alert_messages_from_network,
@@ -620,7 +615,7 @@ pub async fn run_session<
         keychain.clone(),
         spawn_handle.clone(),
         network_io,
-        runway_shutdown_connection,
+        runway_terminator,
     );
     let runway_handle = runway_handle.fuse();
     pin_mut!(runway_handle);
@@ -635,8 +630,8 @@ pub async fn run_session<
         runway_messages_from_runway,
         resolved_requests_rx,
     );
-    let member_shutdown_connection = terminator.add_offspring_connection("member");
-    let member_handle = member.run(member_shutdown_connection).fuse();
+    let member_terminator = terminator.add_offspring_connection("member");
+    let member_handle = member.run(member_terminator).fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);
 
@@ -653,7 +648,7 @@ pub async fn run_session<
             error!(target: "AlephBFT-member", "{:?} Member terminated early.", index);
         },
 
-        _ = &mut exit => {
+        _ = &mut terminator.get_exit() => {
             info!(target: "AlephBFT-member", "{:?} exit channel was called.", index);
         },
     }

@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
-use futures::channel::oneshot::{self, Sender};
+use futures::channel::oneshot::{Receiver, Sender, channel};
 use log::debug;
 
-pub type TerminatorConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
-pub type ShutdownConnection = (oneshot::Receiver<()>, Option<TerminatorConnection>);
+pub type TerminatorConnection = (Sender<()>, Receiver<()>);
+pub type ShutdownConnection = (Receiver<()>, Option<TerminatorConnection>);
 
 /// Struct that holds connections to offspring and parent components/tasks
 /// and enables a clean/synchronized shutdown
 pub struct Terminator {
     component_name: &'static str,
+    parent_exit: Receiver<()>,
     parent_connection: Option<TerminatorConnection>,
     offspring_exits: HashMap<&'static str, Sender<()>>,
     offspring_connections: HashMap<&'static str, TerminatorConnection>,
@@ -17,30 +18,36 @@ pub struct Terminator {
 
 impl Terminator {
     pub fn new(
-        parent_connection: Option<TerminatorConnection>,
+        parent_shutdown_connection: ShutdownConnection,
         component_name: &'static str,
     ) -> Self {
         Self {
             component_name,
-            parent_connection,
+            parent_exit: parent_shutdown_connection.0,
+            parent_connection: parent_shutdown_connection.1,
             offspring_exits: HashMap::<_, _>::new(),
             offspring_connections: HashMap::<_, _>::new(),
         }
     }
 
+    /// Get exit channel for current component
+    pub fn get_exit(&mut self) -> &mut Receiver<()> {
+        &mut self.parent_exit
+    }
+
     /// Add a connection to an offspring component/task
-    pub fn add_offspring_connection(&mut self, name: &'static str) -> ShutdownConnection {
-        let (exit_send, exit_recv) = oneshot::channel();
+    pub fn add_offspring_connection(&mut self, name: &'static str) -> Terminator {
+        let (exit_send, exit_recv) = channel();
         self.offspring_exits.insert(name, exit_send);
 
-        let (sender, offspring_recv) = oneshot::channel();
-        let (offspring_sender, recv) = oneshot::channel();
+        let (sender, offspring_recv) = channel();
+        let (offspring_sender, recv) = channel();
 
         let endpoint = (sender, recv);
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
         self.offspring_connections.insert(name, endpoint);
-        (exit_recv, Some(offspring_endpoint))
+        Terminator::new((exit_recv, Some(offspring_endpoint)), name)
     }
 
     /// Perform a synchronized shutdown

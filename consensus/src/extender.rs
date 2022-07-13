@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use log::{debug, info, warn};
 
 use crate::{
-    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, ShutdownConnection, Terminator,
+    Hasher, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Terminator,
 };
 
 pub(crate) struct ExtenderUnit<H: Hasher> {
@@ -296,8 +296,7 @@ impl<H: Hasher> Extender<H> {
         }
     }
 
-    pub(crate) async fn extend(&mut self, shutdown_connection: ShutdownConnection) {
-        let (mut exit, parent_terminator_connection) = shutdown_connection;
+    pub(crate) async fn extend(&mut self, mut terminator: Terminator) {
         loop {
             futures::select! {
                 v = self.electors.next() => {
@@ -307,16 +306,14 @@ impl<H: Hasher> Extender<H> {
                         self.progress(v_hash)
                     }
                 }
-                _ = &mut exit => {
+                _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-extender", "{:?} received exit signal.", self.node_id);
                     self.exiting = true;
                 }
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
-                Terminator::new(parent_terminator_connection, "AlephBFT-extender")
-                    .terminate_sync()
-                    .await;
+                terminator.terminate_sync().await;
                 break;
             }
         }
