@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures::channel::oneshot;
 use log::debug;
 
@@ -7,47 +9,44 @@ pub type ShutdownConnection = (oneshot::Receiver<()>, Option<TerminatorConnectio
 /// Struct that holds connections to offspring and parent components/tasks
 /// and enables a clean/synchronized shutdown
 pub struct Terminator {
-    component_name: String,
+    component_name: &'static str,
     parent_connection: Option<TerminatorConnection>,
-    offspring_connections: Vec<TerminatorConnection>,
-    offspring_names: Vec<String>,
+    offspring_connections: HashMap<&'static str, TerminatorConnection>,
 }
 
 impl Terminator {
-    pub fn new(parent_connection: Option<TerminatorConnection>, component_name: &str) -> Self {
+    pub fn new(
+        parent_connection: Option<TerminatorConnection>,
+        component_name: &'static str,
+    ) -> Self {
         Self {
-            component_name: String::from(component_name),
+            component_name,
             parent_connection,
-            offspring_connections: Vec::<_>::new(),
-            offspring_names: Vec::<_>::new(),
+            offspring_connections: HashMap::<_, _>::new(),
         }
     }
 
     /// Add a connection to an offspring component/task
-    pub fn add_offspring_connection(&mut self, name: &str) -> TerminatorConnection {
+    pub fn add_offspring_connection(&mut self, name: &'static str) -> TerminatorConnection {
         let (sender, offspring_recv) = oneshot::channel();
         let (offspring_sender, recv) = oneshot::channel();
 
         let endpoint = (sender, recv);
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
-        self.offspring_connections.push(endpoint);
-        self.offspring_names.push(name.to_string());
+        self.offspring_connections.insert(name, endpoint);
         offspring_endpoint
     }
 
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
-        let (offspring_senders, offspring_receivers): (Vec<_>, Vec<_>) =
-            self.offspring_connections.into_iter().unzip();
-        let offspring_senders: Vec<_> = offspring_senders
-            .into_iter()
-            .zip(self.offspring_names.clone().into_iter())
-            .collect();
-        let offspring_receivers: Vec<_> = offspring_receivers
-            .into_iter()
-            .zip(self.offspring_names.clone().into_iter())
-            .collect();
+        let mut offspring_senders = Vec::<_>::new();
+        let mut offspring_receivers = Vec::<_>::new();
+        for (name, connection) in self.offspring_connections {
+            let (sender, receiver) = connection;
+            offspring_senders.push((sender, name));
+            offspring_receivers.push((receiver, name));
+        }
 
         debug!(
             target: &self.component_name,
@@ -59,10 +58,9 @@ impl Terminator {
             if receiver.await.is_err() {
                 debug!(
                     target: &self.component_name,
-                    "Terminator failed to receive from {}. Clean shutdown unsuccessful.",
+                    "Terminator failed to receive from {}.",
                     name,
                 );
-                return;
             }
         }
 
@@ -78,27 +76,26 @@ impl Terminator {
             if sender.send(()).is_err() {
                 debug!(
                     target: &self.component_name,
-                    "Terminator failed to notify parent component. Clean shutdown unsuccessful.",
+                    "Terminator failed to notify parent component.",
+                );
+            } else {
+                debug!(
+                    target: &self.component_name,
+                    "Terminator notified parent component.",
                 );
             }
-
-            debug!(
-                target: &self.component_name,
-                "Terminator notified parent component.",
-            );
 
             if receiver.await.is_err() {
                 debug!(
                     target: &self.component_name,
-                    "Terminator failed to receive from parent component. Clean shutdown unsuccessful."
+                    "Terminator failed to receive from parent component."
                 );
-                return;
+            } else {
+                debug!(
+                    target: &self.component_name,
+                    "Terminator recieved shutdown permission from parent component."
+                );
             }
-
-            debug!(
-                target: &self.component_name,
-                "Terminator recieved shutdown permission from parent component."
-            );
         }
 
         // Notify descendants that exiting is now safe
@@ -106,10 +103,9 @@ impl Terminator {
             if sender.send(()).is_err() {
                 debug!(
                     target: &self.component_name,
-                    "Terminator failed to notify {}. Clean exit unsuccessful.",
+                    "Terminator failed to notify {}.",
                     name,
                 );
-                return;
             }
         }
 

@@ -85,7 +85,6 @@ type SyncClosure<X, Y> = Box<dyn Fn(X) -> Y + Sync + Send + 'static>;
 /// 3) For each parent coord (r, ix) that is missing in the store, we request this unit by sending a
 ///    suitable NotificationOut. Subsequently we wait for these units, whenever a unit of one of the
 ///    missing coords is received, the parents field of the TerminalUnit object of u is updated.
-///    missing coords is received, the parents field of the TerminalUnit object of u is updated.
 /// 4) At the moment when all parents have been reconstructed (which happens right away for round-0 units
 ///    that have no parents) an appropriate Event is generated and we check whether the reconstructed parents
 ///    list after hashing agrees with the control_hash in the unit.
