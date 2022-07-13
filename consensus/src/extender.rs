@@ -359,10 +359,7 @@ mod tests {
         let (exit_tx, exit_rx) = oneshot::channel();
         let extender_handle = tokio::spawn(async move {
             extender
-                .extend(Terminator::create_root(
-                    exit_rx,
-                    "AlephBFT-extender",
-                ))
+                .extend(Terminator::create_root(exit_rx, "AlephBFT-extender"))
                 .await
         });
 
