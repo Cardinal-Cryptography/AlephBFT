@@ -101,7 +101,7 @@ fn setup_test(
                 config.into(),
                 io,
                 starting_round,
-                Terminator::create_root_terminator(exit, "AlephBFT-creator"),
+                Terminator::create_root(exit, "AlephBFT-creator"),
             )
             .await
         });

@@ -628,7 +628,7 @@ pub async fn run_session<
         runway_messages_from_runway,
         resolved_requests_rx,
     );
-    let member_terminator = terminator.add_offspring_connection("member");
+    let member_terminator = terminator.add_offspring_connection("AlephBFT-member");
     let member_handle = member.run(member_terminator).fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);

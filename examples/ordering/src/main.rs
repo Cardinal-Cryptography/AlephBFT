@@ -107,7 +107,7 @@ async fn main() {
     );
 
     let (exit_tx, exit_rx) = oneshot::channel();
-    let member_terminator = Terminator::create_root_terminator(exit_rx, "AlephBFT-member");
+    let member_terminator = Terminator::create_root(exit_rx, "AlephBFT-member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
         let config = aleph_bft::default_config(n_members, id, 0);

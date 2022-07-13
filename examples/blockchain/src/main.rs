@@ -101,7 +101,7 @@ async fn main() {
     let data_store = DataStore::new(current_block.clone(), message_for_network);
 
     let (_terminator_tx, terminator_rx) = oneshot::channel();
-    let mut terminator = Terminator::create_root_terminator(terminator_rx, "Blockchain example");
+    let mut terminator = Terminator::create_root(terminator_rx, "Blockchain example");
     let network_terminator = terminator.add_offspring_connection("blockchain network");
     let network_handle = tokio::spawn(async move { manager.run(network_terminator).await });
 

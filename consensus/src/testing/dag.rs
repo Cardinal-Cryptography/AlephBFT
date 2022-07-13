@@ -139,7 +139,7 @@ async fn run_consensus_on_dag(
             batch_tx,
             spawner.clone(),
             starting_round,
-            Terminator::create_root_terminator(exit_rx, "consensus"),
+            Terminator::create_root(exit_rx, "consensus"),
         ),
     );
     spawner.spawn("feeder", feeder.run());

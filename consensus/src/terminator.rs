@@ -4,7 +4,6 @@ use futures::channel::oneshot::{channel, Receiver, Sender};
 use log::debug;
 
 type TerminatorConnection = (Sender<()>, Receiver<()>);
-type ShutdownConnection = (Receiver<()>, Option<TerminatorConnection>);
 
 /// Struct that holds connections to offspring and parent components/tasks
 /// and enables a clean/synchronized shutdown
@@ -12,27 +11,26 @@ pub struct Terminator {
     component_name: &'static str,
     parent_exit: Receiver<()>,
     parent_connection: Option<TerminatorConnection>,
-    offspring_exits: HashMap<&'static str, Sender<()>>,
-    offspring_connections: HashMap<&'static str, TerminatorConnection>,
+    offspring_connections: HashMap<&'static str, (Sender<()>, TerminatorConnection)>,
 }
 
 impl Terminator {
-    pub fn new(
-        parent_shutdown_connection: ShutdownConnection,
+    fn new(
+        parent_exit: Receiver<()>,
+        parent_connection: Option<TerminatorConnection>,
         component_name: &'static str,
     ) -> Self {
         Self {
             component_name,
-            parent_exit: parent_shutdown_connection.0,
-            parent_connection: parent_shutdown_connection.1,
-            offspring_exits: HashMap::<_, _>::new(),
-            offspring_connections: HashMap::<_, _>::new(),
+            parent_exit,
+            parent_connection,
+            offspring_connections: HashMap::new(),
         }
     }
 
     /// Creates a terminator for the root component
-    pub fn create_root_terminator(exit: Receiver<()>, name: &'static str) -> Self {
-        Self::new((exit, None), name)
+    pub fn create_root(exit: Receiver<()>, name: &'static str) -> Self {
+        Self::new(exit, None, name)
     }
 
     /// Get exit channel for current component
@@ -43,16 +41,15 @@ impl Terminator {
     /// Add a connection to an offspring component/task
     pub fn add_offspring_connection(&mut self, name: &'static str) -> Terminator {
         let (exit_send, exit_recv) = channel();
-        self.offspring_exits.insert(name, exit_send);
-
         let (sender, offspring_recv) = channel();
         let (offspring_sender, recv) = channel();
 
         let endpoint = (sender, recv);
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
-        self.offspring_connections.insert(name, endpoint);
-        Terminator::new((exit_recv, Some(offspring_endpoint)), name)
+        self.offspring_connections
+            .insert(name, (exit_send, endpoint));
+        Terminator::new(exit_recv, Some(offspring_endpoint), name)
     }
 
     /// Perform a synchronized shutdown
@@ -62,16 +59,15 @@ impl Terminator {
             "Terminator preparing for shutdown.",
         );
 
+        let mut offspring_senders = Vec::<_>::new();
+        let mut offspring_receivers = Vec::<_>::new();
+
         // First send exits to descendants
-        for (name, exit) in self.offspring_exits {
+        for (name, (exit, connection)) in self.offspring_connections {
             if exit.send(()).is_err() {
                 debug!(target: self.component_name, "{} already stopped.", name);
             }
-        }
 
-        let mut offspring_senders = Vec::<_>::new();
-        let mut offspring_receivers = Vec::<_>::new();
-        for (name, connection) in self.offspring_connections {
             let (sender, receiver) = connection;
             offspring_senders.push((sender, name));
             offspring_receivers.push((receiver, name));

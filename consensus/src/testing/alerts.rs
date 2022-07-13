@@ -228,7 +228,7 @@ impl TestCase {
                 n_members,
                 session_id: 0,
             },
-            Terminator::create_root_terminator(exit, "AlephBFT-alerter"),
+            Terminator::create_root(exit, "AlephBFT-alerter"),
         ));
 
         use Input::*;

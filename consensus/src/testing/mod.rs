@@ -85,7 +85,7 @@ pub fn spawn_honest_member(
             network,
             keychain,
             spawner_inner.clone(),
-            Terminator::create_root_terminator(exit_rx, "AlephBFT-member"),
+            Terminator::create_root(exit_rx, "AlephBFT-member"),
         )
         .await
     };
