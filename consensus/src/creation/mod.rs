@@ -135,7 +135,7 @@ pub async fn run<H: Hasher>(
             &create_lag,
             ignore_delay,
             &mut incoming_parents,
-            &mut terminator.get_exit(),
+            terminator.get_exit(),
         )
         .await
         {

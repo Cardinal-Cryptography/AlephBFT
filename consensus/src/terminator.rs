@@ -58,7 +58,7 @@ impl Terminator {
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
         debug!(
-            target: &self.component_name,
+            target: self.component_name,
             "Terminator preparing for shutdown.",
         );
 
@@ -81,7 +81,7 @@ impl Terminator {
         for (receiver, name) in offspring_receivers {
             if receiver.await.is_err() {
                 debug!(
-                    target: &self.component_name,
+                    target: self.component_name,
                     "Terminator failed to receive from {}.",
                     name,
                 );
@@ -89,7 +89,7 @@ impl Terminator {
         }
 
         debug!(
-            target: &self.component_name,
+            target: self.component_name,
             "Terminator gathered notifications from descendants.",
         );
 
@@ -99,24 +99,24 @@ impl Terminator {
             let (sender, receiver) = self.parent_connection.unwrap();
             if sender.send(()).is_err() {
                 debug!(
-                    target: &self.component_name,
+                    target: self.component_name,
                     "Terminator failed to notify parent component.",
                 );
             } else {
                 debug!(
-                    target: &self.component_name,
+                    target: self.component_name,
                     "Terminator notified parent component.",
                 );
             }
 
             if receiver.await.is_err() {
                 debug!(
-                    target: &self.component_name,
+                    target: self.component_name,
                     "Terminator failed to receive from parent component."
                 );
             } else {
                 debug!(
-                    target: &self.component_name,
+                    target: self.component_name,
                     "Terminator recieved shutdown permission from parent component."
                 );
             }
@@ -126,7 +126,7 @@ impl Terminator {
         for (sender, name) in offspring_senders {
             if sender.send(()).is_err() {
                 debug!(
-                    target: &self.component_name,
+                    target: self.component_name,
                     "Terminator failed to notify {}.",
                     name,
                 );
@@ -134,7 +134,7 @@ impl Terminator {
         }
 
         debug!(
-            target: &self.component_name,
+            target: self.component_name,
             "Terminator sent permits to descendants: ready to exit.",
         );
     }
