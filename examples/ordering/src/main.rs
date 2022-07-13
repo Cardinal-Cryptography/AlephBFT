@@ -5,7 +5,7 @@ use aleph_bft::{run_session, NodeIndex, Terminator};
 use aleph_bft_mock::{Keychain, Spawner};
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};
-use futures::{channel::oneshot, StreamExt};
+use futures::StreamExt;
 use log::{debug, error, info};
 use network::Network;
 use std::{collections::HashMap, fs, fs::File, io, io::Write, path::Path};
@@ -106,9 +106,8 @@ async fn main() {
         backup_loader,
     );
 
-    let (close_member, exit) = oneshot::channel();
     let mut exiter = Terminator::new(None, "Ordering example");
-    let member_exiter_connection = exiter.add_offspring_connection("member");
+    let member_shutdown_connection = exiter.add_offspring_connection("member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
         let config = aleph_bft::default_config(n_members, id, 0);
@@ -118,7 +117,7 @@ async fn main() {
             network,
             keychain,
             Spawner {},
-            (exit, Some(member_exiter_connection)),
+            member_shutdown_connection,
         )
         .await
     });
@@ -161,7 +160,6 @@ async fn main() {
         }
     }
 
-    close_member.send(()).expect("should send");
     exiter.terminate_sync().await;
     member_handle.await.unwrap();
 }

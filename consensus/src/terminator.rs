@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use futures::channel::oneshot;
+use futures::channel::oneshot::{self, Sender};
 use log::debug;
 
 pub type TerminatorConnection = (oneshot::Sender<()>, oneshot::Receiver<()>);
@@ -11,6 +11,7 @@ pub type ShutdownConnection = (oneshot::Receiver<()>, Option<TerminatorConnectio
 pub struct Terminator {
     component_name: &'static str,
     parent_connection: Option<TerminatorConnection>,
+    offspring_exits: HashMap<&'static str, Sender<()>>,
     offspring_connections: HashMap<&'static str, TerminatorConnection>,
 }
 
@@ -22,12 +23,16 @@ impl Terminator {
         Self {
             component_name,
             parent_connection,
+            offspring_exits: HashMap::<_, _>::new(),
             offspring_connections: HashMap::<_, _>::new(),
         }
     }
 
     /// Add a connection to an offspring component/task
-    pub fn add_offspring_connection(&mut self, name: &'static str) -> TerminatorConnection {
+    pub fn add_offspring_connection(&mut self, name: &'static str) -> ShutdownConnection {
+        let (exit_send, exit_recv) = oneshot::channel();
+        self.offspring_exits.insert(name, exit_send);
+
         let (sender, offspring_recv) = oneshot::channel();
         let (offspring_sender, recv) = oneshot::channel();
 
@@ -35,11 +40,23 @@ impl Terminator {
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
         self.offspring_connections.insert(name, endpoint);
-        offspring_endpoint
+        (exit_recv, Some(offspring_endpoint))
     }
 
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
+        debug!(
+            target: &self.component_name,
+            "Terminator preparing for shutdown.",
+        );
+
+        // First send exits to descendants
+        for (name, exit) in self.offspring_exits {
+            if exit.send(()).is_err() {
+                debug!(target: self.component_name, "{} already stopped.", name);
+            }
+        }
+
         let mut offspring_senders = Vec::<_>::new();
         let mut offspring_receivers = Vec::<_>::new();
         for (name, connection) in self.offspring_connections {
@@ -47,11 +64,6 @@ impl Terminator {
             offspring_senders.push((sender, name));
             offspring_receivers.push((receiver, name));
         }
-
-        debug!(
-            target: &self.component_name,
-            "Terminator preparing for shutdown.",
-        );
 
         // Make sure that all descendants recieved exit and won't be communicating with other components
         for (receiver, name) in offspring_receivers {

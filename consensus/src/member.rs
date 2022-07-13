@@ -10,11 +10,7 @@ use crate::{
     UncheckedSigned,
 };
 use codec::{Decode, Encode};
-use futures::{
-    channel::{mpsc, oneshot},
-    future::FusedFuture,
-    pin_mut, FutureExt, StreamExt,
-};
+use futures::{channel::mpsc, future::FusedFuture, pin_mut, FutureExt, StreamExt};
 use futures_timer::Delay;
 use log::{debug, error, info, trace, warn};
 use network::NetworkData;
@@ -585,9 +581,8 @@ pub async fn run_session<
     let (resolved_requests_tx, resolved_requests_rx) = mpsc::unbounded();
 
     info!(target: "AlephBFT-member", "{:?} Spawning network.", index);
-    let (network_exit, exit_stream) = oneshot::channel();
     let mut terminator = Terminator::new(parent_terminator_connection, "AlephBFT-member");
-    let network_terminator_connection = terminator.add_offspring_connection("network");
+    let network_shutdown_connection = terminator.add_offspring_connection("network");
 
     let network_handle = spawn_handle.spawn_essential("member/network", async move {
         network::run(
@@ -596,7 +591,7 @@ pub async fn run_session<
             unit_messages_for_units,
             alert_messages_from_alerter,
             alert_messages_for_alerter,
-            (exit_stream, Some(network_terminator_connection)),
+            network_shutdown_connection,
         )
         .await
     });
@@ -605,9 +600,7 @@ pub async fn run_session<
     info!(target: "AlephBFT-member", "{:?} Network spawned.", index);
 
     info!(target: "AlephBFT-member", "{:?} Initializing Runway.", index);
-    let (runway_exit, exit_stream) = oneshot::channel();
-
-    let runway_terminator_connection = terminator.add_offspring_connection("runway");
+    let runway_shutdown_connection = terminator.add_offspring_connection("runway");
     let network_io = NetworkIO {
         alert_messages_for_network,
         alert_messages_from_network,
@@ -627,7 +620,7 @@ pub async fn run_session<
         keychain.clone(),
         spawn_handle.clone(),
         network_io,
-        (exit_stream, Some(runway_terminator_connection)),
+        runway_shutdown_connection,
     );
     let runway_handle = runway_handle.fuse();
     pin_mut!(runway_handle);
@@ -642,11 +635,8 @@ pub async fn run_session<
         runway_messages_from_runway,
         resolved_requests_rx,
     );
-    let (member_exit, exit_stream) = oneshot::channel();
-    let member_terminator_connection = terminator.add_offspring_connection("member");
-    let member_handle = member
-        .run((exit_stream, Some(member_terminator_connection)))
-        .fuse();
+    let member_shutdown_connection = terminator.add_offspring_connection("member");
+    let member_handle = member.run(member_shutdown_connection).fuse();
     pin_mut!(member_handle);
     info!(target: "AlephBFT-member", "{:?} Member initialized.", index);
 
@@ -669,17 +659,6 @@ pub async fn run_session<
     }
 
     info!(target: "AlephBFT-member", "{:?} Run ending.", index);
-    if runway_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-member", "{:?} Runway already stopped.", index);
-    }
-
-    if member_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-member", "{:?} Member already stopped.", index);
-    }
-
-    if network_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-member", "{:?} Network-hub already stopped.", index);
-    }
 
     let terminator_handle = terminator.terminate_sync().fuse();
     pin_mut!(terminator_handle);

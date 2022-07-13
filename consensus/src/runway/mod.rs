@@ -891,9 +891,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         session_id: config.session_id,
         n_members: config.n_members,
     };
-    let (alerter_exit, exit_stream) = oneshot::channel();
     let mut terminator = Terminator::new(parent_terminator_connection, "AlephBFT-runway");
-    let alerter_terminator_connection = terminator.add_offspring_connection("alerter");
+    let alerter_shutdown_connection = terminator.add_offspring_connection("alerter");
     let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
@@ -905,14 +904,13 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             alert_notifications_for_units,
             alerts_from_units,
             alert_config,
-            (exit_stream, Some(alerter_terminator_connection)),
+            alerter_shutdown_connection,
         )
         .await;
     });
     let mut alerter_handle = alerter_handle.fuse();
 
-    let (consensus_exit, exit_stream) = oneshot::channel();
-    let consensus_terminator_connection = terminator.add_offspring_connection("consensus");
+    let consensus_shutdown_connection = terminator.add_offspring_connection("consensus");
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
     let (starting_round_sender, starting_round) = oneshot::channel();
@@ -925,7 +923,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             ordered_batch_tx,
             consensus_spawner,
             starting_round,
-            (exit_stream, Some(consensus_terminator_connection)),
+            consensus_shutdown_connection,
         )
         .await
     });
@@ -992,14 +990,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         session_id: config.session_id,
         max_round: config.max_round,
     };
-    let (runway_exit, exit_stream) = oneshot::channel();
-    let runway_terminator_connection = terminator.add_offspring_connection("runway");
+    let runway_shutdown_connection = terminator.add_offspring_connection("runway");
     let runway = Runway::new(runway_config, &keychain, &validator);
     let runway_handle = runway
-        .run(
-            loaded_units_rx,
-            (exit_stream, Some(runway_terminator_connection)),
-        )
+        .run(loaded_units_rx, runway_shutdown_connection)
         .fuse();
     pin_mut!(runway_handle);
 
@@ -1030,19 +1024,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     }
 
     info!(target: "AlephBFT-runway", "{:?} Ending run.", index);
-
-    if consensus_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Consensus already stopped.", index);
-    }
-
-    if runway_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Runway already stopped.", index);
-    }
-
-    if alerter_exit.send(()).is_err() {
-        debug!(target: "AlephBFT-runway", "{:?} Alerter already stopped.", index);
-    }
-
     let terminator_handle = terminator.terminate_sync().fuse();
     pin_mut!(terminator_handle);
 
