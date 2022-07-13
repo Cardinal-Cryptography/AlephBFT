@@ -2,7 +2,7 @@ use aleph_bft_types::{
     DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT, NodeIndex,
 };
 use async_trait::async_trait;
-use futures::channel::mpsc::unbounded;
+use futures::{channel::mpsc::unbounded, future::pending};
 use log::{error, info};
 
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
@@ -35,7 +35,7 @@ impl DataProviderT<Data> for DataProvider {
         if self.n_data == 0 {
             if self.stalled {
                 info!("Awaiting DataProvider::get_data forever");
-                std::future::pending::<()>().await;
+                pending::<()>().await;
             }
             info!("Providing empty data");
             (self.id, None)

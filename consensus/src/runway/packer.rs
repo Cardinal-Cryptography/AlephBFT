@@ -6,6 +6,8 @@ use futures::{channel::oneshot, pin_mut, FutureExt, StreamExt};
 use log::{debug, error, info};
 use std::marker::PhantomData;
 
+/// The component responsible for packing Data from DataProvider into received PreUnits,
+/// and signing the outcome, thus creating SignedUnits that are sent back to Runway.
 pub struct Packer<'a, H, D, DP, MK>
 where
     H: Hasher,
@@ -49,6 +51,7 @@ where
         self.keychain.index()
     }
 
+    /// The main loop.
     async fn pack(&mut self) {
         loop {
             // the order is important: first wait for a PreUnit, then ask for fresh Data
@@ -75,6 +78,7 @@ where
         }
     }
 
+    /// Run the main loop until receiving a signal to exit.
     pub async fn run(&mut self, mut exit: oneshot::Receiver<()>) -> Result<(), ()> {
         info!(target: "AlephBFT-packer", "{:?} Packer started.", self.index());
         let pack = self.pack().fuse();
@@ -202,8 +206,8 @@ mod tests {
                 .unbounded_send(preunit.clone())
                 .expect("Packer PreUnit channel closed");
         }
-        // in spite of StalledDataProvider halting Provider's pack loop, we expect it
-        // to handle the exit request immediately
+        // in spite of StalledDataProvider halting Provider's pack loop,
+        // we expect the component to handle the exit request immediately
         exit_tx.send(()).expect("Packer exit channel closed");
         // let's send more PreUnits just to be sure that we can
         for _ in 0..3 {
