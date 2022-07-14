@@ -59,8 +59,8 @@ impl Terminator {
             "Terminator preparing for shutdown.",
         );
 
-        let mut offspring_senders = Vec::<_>::new();
-        let mut offspring_receivers = Vec::<_>::new();
+        let mut offspring_senders = Vec::new();
+        let mut offspring_receivers = Vec::new();
 
         // First send exits to descendants
         for (name, (exit, connection)) in self.offspring_connections {

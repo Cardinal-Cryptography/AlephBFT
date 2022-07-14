@@ -904,7 +904,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     });
     let mut alerter_handle = alerter_handle.fuse();
 
-    let consensus_terminator = terminator.add_offspring_connection("consensus");
+    let consensus_terminator = terminator.add_offspring_connection("AlephBFT-consensus");
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
     let (starting_round_sender, starting_round) = oneshot::channel();

@@ -176,7 +176,7 @@ async fn agree_on_first_batch() {
                 batch_tx,
                 spawner.clone(),
                 starting_round,
-                Terminator::create_root(exit_rx, "consensus"),
+                Terminator::create_root(exit_rx, "AlephBFT-consensus"),
             ),
         ));
     }
@@ -218,7 +218,7 @@ async fn catches_wrong_control_hash() {
             batch_tx,
             spawner.clone(),
             starting_round,
-            Terminator::create_root(exit_rx, "consensus"),
+            Terminator::create_root(exit_rx, "AlephBFT-consensus"),
         ),
     );
     let control_hash = ControlHash::new(&(vec![None; n_nodes]).into());

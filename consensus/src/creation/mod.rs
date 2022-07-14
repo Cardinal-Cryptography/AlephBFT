@@ -44,12 +44,12 @@ async fn create_unit<H: Hasher>(
     mut can_create: bool,
     incoming_parents: &mut Receiver<Unit<H>>,
     mut exit: &mut oneshot::Receiver<()>,
-) -> Result<(PreUnit<H>, Vec<H::Hash>), ()> {
+) -> Result<Option<(PreUnit<H>, Vec<H::Hash>)>, ()> {
     let mut delay = Delay::new(create_lag(round.into())).fuse();
     loop {
         if can_create {
             if let Some(result) = creator.create_unit(round) {
-                return Ok(result);
+                return Ok(Some(result));
             }
         }
         futures::select! {
@@ -69,7 +69,7 @@ async fn create_unit<H: Hasher>(
             },
             _ = exit => {
                 info!(target: "AlephBFT-creator", "Received exit signal.");
-                return Err(());
+                return Ok(None);
             },
         }
     }
@@ -139,11 +139,12 @@ pub async fn run<H: Hasher>(
         )
         .await
         {
-            Ok((u, ph)) => (u, ph),
-            Err(_) => {
+            Ok(Some((u, ph))) => (u, ph),
+            Ok(None) => {
                 terminator.terminate_sync().await;
                 return;
             }
+            Err(_) => return,
         };
         if let Err(e) =
             outgoing_units.unbounded_send(NotificationOut::CreatedPreUnit(unit, parent_hashes))
@@ -154,5 +155,4 @@ pub async fn run<H: Hasher>(
     }
 
     warn!(target: "AlephBFT-creator", "Maximum round reached. Not creating another unit.");
-    terminator.terminate_sync().await;
 }
