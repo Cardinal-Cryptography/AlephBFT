@@ -695,6 +695,7 @@ where
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
         info!(target: "AlephBFT-runway", "{:?} Runway started.", index);
+        let mut received_exit = false;
         loop {
             futures::select! {
                 notification = self.rx_consensus.next() => match notification {
@@ -750,6 +751,7 @@ where
 
                 _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-runway", "{:?} received exit signal", index);
+                    received_exit = true;
                     self.exiting = true;
                 }
             };
@@ -757,7 +759,9 @@ where
 
             if self.exiting {
                 info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
-                terminator.terminate_sync().await;
+                if received_exit {
+                    terminator.terminate_sync().await;
+                }
                 break;
             }
         }
