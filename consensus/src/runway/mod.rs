@@ -998,12 +998,12 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         preunits_for_packer,
         signed_units_from_packer,
     };
-    let runway_terminator = terminator.add_offspring_connection("runway");
+    let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
     let runway = Runway::new(runway_config, &keychain, &validator);
     let runway_handle = runway.run(loaded_units_rx, runway_terminator).fuse();
     pin_mut!(runway_handle);
 
-    let (packer_exit, exit_stream) = oneshot::channel();
+    let packer_terminator = terminator.add_offspring_connection("AlephBFT-packer");
     let mut packer = Packer::new(
         data_provider,
         preunits_from_runway,
@@ -1011,7 +1011,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         &keychain,
         config.session_id,
     );
-    let packer_handle = packer.run(exit_stream).fuse();
+    let packer_handle = packer.run(packer_terminator).fuse();
     pin_mut!(packer_handle);
 
     loop {
@@ -1054,6 +1054,13 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
                 debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
             },
 
+            result = packer_handle => {
+                match result {
+                    Err(()) => warn!(target: "AlephBFT-runway", "{:?} Packer finished with an error", index),
+                    _ => debug!(target: "AlephBFT-runway", "{:?} Packer stopped.", index),
+                }
+            },
+
             _ = terminator_handle => {},
 
             complete => break,
@@ -1067,13 +1074,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Consensus stopped.", index);
     }
 
-    if !packer_handle.is_terminated() {
-        if let Err(()) = packer_handle.await {
-            warn!(target: "AlephBFT-runway", "{:?} Packer finished with an error", index);
-        }
-        debug!(target: "AlephBFT-runway", "{:?} Packer stopped.", index);
-    }
-    
     if !alerter_handle.is_terminated() {
         if let Err(()) = alerter_handle.await {
             warn!(target: "AlephBFT-runway", "{:?} Alerter finished with an error", index);

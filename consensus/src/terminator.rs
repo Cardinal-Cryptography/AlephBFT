@@ -91,8 +91,7 @@ impl Terminator {
 
         // Notify parent that our subtree is ready for graceful exit
         // and wait for signal that all other components are ready
-        if self.parent_connection.is_some() {
-            let (sender, receiver) = self.parent_connection.unwrap();
+        if let Some((sender, receiver)) = self.parent_connection {
             if sender.send(()).is_err() {
                 debug!(
                     target: self.component_name,
