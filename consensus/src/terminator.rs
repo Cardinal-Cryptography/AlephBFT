@@ -148,8 +148,7 @@ impl Terminator {
 
 #[cfg(test)]
 mod tests {
-    use futures::{FutureExt, pin_mut, select};
-    use futures::channel::oneshot;
+    use futures::{channel::oneshot, pin_mut, select, FutureExt};
 
     use crate::Terminator;
 
@@ -179,7 +178,8 @@ mod tests {
     async fn internal_2(mut terminator: Terminator, with_crash: bool) {
         let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf")).fuse();
         let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf")).fuse();
-        let internal_handle = internal_1(terminator.add_offspring_connection("internal1"), with_crash).fuse();
+        let internal_handle =
+            internal_1(terminator.add_offspring_connection("internal1"), with_crash).fuse();
 
         pin_mut!(leaf_handle_1);
         pin_mut!(leaf_handle_2);
@@ -208,7 +208,8 @@ mod tests {
 
     async fn root_component(mut terminator: Terminator, with_crash: bool) {
         let leaf_handle = leaf(terminator.add_offspring_connection("leaf")).fuse();
-        let internal_handle = internal_2(terminator.add_offspring_connection("internal2"), with_crash).fuse();
+        let internal_handle =
+            internal_2(terminator.add_offspring_connection("internal2"), with_crash).fuse();
 
         pin_mut!(leaf_handle);
         pin_mut!(internal_handle);
