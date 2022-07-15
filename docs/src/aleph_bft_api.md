@@ -22,7 +22,7 @@ pub trait FinalizationHandler<Data> {
 }
 ```
 
-Calls to function `data_finalized` represent the order of the units that AlephBFT produced and that hold `Some(data)`.
+Calls to function `data_finalized` represent the order of the units that AlephBFT produced and that hold some data.
 
 
 #### 3.1.2 Network.

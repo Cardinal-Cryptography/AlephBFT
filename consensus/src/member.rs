@@ -57,7 +57,7 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
             Self::RequestParents(_, _) => Vec::new(),
             Self::ResponseParents(_, units) => units
                 .iter()
-                .filter_map(|uu| uu.as_signable().data().clone())
+                .flat_map(|uu| uu.as_signable().included_data())
                 .collect(),
             UnitMessage::RequestNewest(_, _) => Vec::new(),
             UnitMessage::ResponseNewest(response) => response.as_signable().included_data(),
