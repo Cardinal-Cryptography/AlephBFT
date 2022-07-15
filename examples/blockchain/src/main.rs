@@ -100,7 +100,7 @@ async fn main() {
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
     let data_store = DataStore::new(current_block.clone(), message_for_network);
 
-    let (_terminator_tx, terminator_rx) = oneshot::channel();
+    let (terminator_tx, terminator_rx) = oneshot::channel();
     let mut terminator = Terminator::create_root(terminator_rx, "Blockchain example");
     let network_terminator = terminator.add_offspring_connection("blockchain network");
     let network_handle = tokio::spawn(async move { manager.run(network_terminator).await });
@@ -173,6 +173,8 @@ async fn main() {
     let tps = (args.n_finalized as f64) * (TXS_PER_BLOCK as f64) / (0.001 * (tot_millis as f64));
     info!(target: "Blockchain-main", "Achieved {:?} tps.", tps);
 
+    terminator_tx.send(()).expect("should send");
+    terminator.get_exit().await.expect("should receive");
     terminator.terminate_sync().await;
 
     member_handle.await.unwrap();

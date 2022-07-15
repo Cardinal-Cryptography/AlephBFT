@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use futures::channel::oneshot::{channel, Receiver, Sender};
+use futures::{channel::oneshot::{channel, Receiver, Sender}, future::FusedFuture};
 use log::debug;
 
 type TerminatorConnection = (Sender<()>, Receiver<()>);
@@ -54,6 +54,14 @@ impl Terminator {
 
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
+        if !self.parent_exit.is_terminated() {
+            debug!(
+                target: self.component_name,
+                "Terminator has not recieved exit from parent: synchronization canceled.",
+            );
+            return;
+        }
+
         debug!(
             target: self.component_name,
             "Terminator preparing for shutdown.",

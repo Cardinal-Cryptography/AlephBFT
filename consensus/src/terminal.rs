@@ -350,7 +350,6 @@ impl<H: Hasher> Terminal<H> {
 
     pub(crate) async fn run(&mut self, mut terminator: Terminator) {
         loop {
-            let mut received_exit = false;
             futures::select! {
                 n = self.ntfct_rx.next() => {
                     match n {
@@ -369,15 +368,12 @@ impl<H: Hasher> Terminal<H> {
                 }
                 _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-terminal", "{:?} received exit signal", self.node_id);
-                    received_exit = true;
                     self.exiting = true;
                 }
             }
             if self.exiting {
                 info!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
-                if received_exit {
-                    terminator.terminate_sync().await;
-                }
+                terminator.terminate_sync().await;
                 break;
             }
         }

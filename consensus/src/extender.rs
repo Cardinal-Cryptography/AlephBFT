@@ -295,7 +295,6 @@ impl<H: Hasher> Extender<H> {
     }
 
     pub(crate) async fn extend(&mut self, mut terminator: Terminator) {
-        let mut received_exit = false;
         loop {
             futures::select! {
                 v = self.electors.next() => {
@@ -307,15 +306,12 @@ impl<H: Hasher> Extender<H> {
                 }
                 _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-extender", "{:?} received exit signal.", self.node_id);
-                    received_exit = true;
                     self.exiting = true;
                 }
             }
             if self.exiting {
                 info!(target: "AlephBFT-extender", "{:?} Extender decided to exit.", self.node_id);
-                if received_exit {
-                    terminator.terminate_sync().await;
-                }
+                terminator.terminate_sync().await;
                 break;
             }
         }

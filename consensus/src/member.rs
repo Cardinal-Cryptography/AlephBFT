@@ -460,7 +460,6 @@ where
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
-        let mut received_exit = false;
         loop {
             futures::select! {
                 event = self.notifications_from_runway.next() => match event {
@@ -516,15 +515,12 @@ where
 
                 _ = &mut terminator.get_exit() => {
                     info!(target: "AlephBFT-member", "{:?} received exit signal", self.index());
-                    received_exit = true;
                     self.exiting = true;
                 },
             }
             if self.exiting {
                 info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
-                if received_exit {
-                    terminator.terminate_sync().await;
-                }
+                terminator.terminate_sync().await;
                 break;
             }
         }
