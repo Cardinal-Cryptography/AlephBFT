@@ -72,7 +72,7 @@ enum Task<H: Hasher, D: Data, S: Signature> {
     CoordRequest(UnitCoord),
     // Request parents of the unit with the given hash and Recipient.
     ParentsRequest(H::Hash, Recipient),
-    // Broadcast the top known unit for a given node.
+    // Rebroadcast a given unit periodically (cancelled after a more recent unit by the same creator is received)
     UnitBroadcast(UncheckedSignedUnit<H, D, S>),
     // Request the newest unit created by node itself.
     RequestNewest(u64),
@@ -450,15 +450,6 @@ where
     /// Most tasks use `requests_interval` (see [crate::DelayConfig]) as their delay.
     /// The exception is [Task::UnitBroadcast] - this one picks a random delay between
     /// `unit_rebroadcast_interval_min` and `unit_rebroadcast_interval_max`.
-    ///
-    /// The properties of this scheme are:
-    /// 1. A unit is broadcast after `unit_rebroadcast_interval_min` since first learning about the
-    ///    unit at the earliest (see check in [Self::message]).
-    /// 2. A unit is broadcast after `unit_rebroadcast_interval_min + unit_rebroadcast_interval_max`
-    ///    since first learning about the unit at the latest. This happens because the unit might
-    ///    have been barely not old enough after the task triggered `unit_rebroadcast_interval_min`
-    ///    since discovery and the next task run after that is randomly selected to happen after
-    ///    `unit_rebroadcast_interval_max`.
     fn delay(&self, task: &Task<H, D, S>) -> Duration {
         match task {
             Task::UnitBroadcast(_) => {
