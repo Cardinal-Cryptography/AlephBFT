@@ -144,7 +144,7 @@ pub async fn run<H: Hasher>(
             Err(_) => {
                 terminator.terminate_sync().await;
                 return;
-            },
+            }
         };
         if let Err(e) =
             outgoing_units.unbounded_send(NotificationOut::CreatedPreUnit(unit, parent_hashes))

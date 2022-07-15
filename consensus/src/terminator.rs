@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use futures::{channel::oneshot::{channel, Receiver, Sender}, future::FusedFuture};
+use futures::{
+    channel::oneshot::{channel, Receiver, Sender},
+    future::FusedFuture,
+};
 use log::debug;
 
 type TerminatorConnection = (Sender<()>, Receiver<()>);
