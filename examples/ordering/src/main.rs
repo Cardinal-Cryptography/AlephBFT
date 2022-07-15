@@ -133,7 +133,7 @@ async fn main() {
 
     loop {
         match finalized_rx.next().await {
-            Some((id, Some(number))) => {
+            Some((id, number)) => {
                 *count_finalized.get_mut(&id).unwrap() += 1;
                 debug!(
                     "Finalized new item: node {:?}, number {:?}; total: {:?}",
@@ -142,7 +142,6 @@ async fn main() {
                     finalized_counts(&count_finalized)
                 );
             }
-            Some((_, None)) => (),
             None => {
                 error!(
                     "Finalization stream finished too soon. Got {:?} items, wanted {:?} items",
