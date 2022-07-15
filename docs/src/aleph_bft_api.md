@@ -8,21 +8,21 @@ The DataProvider trait is an abstraction for a component that provides data item
 
 ```rust
 pub trait DataProvider<Data> {
-    async fn get_data(&mut self) -> Data;
+    async fn get_data(&mut self) -> Option<Data>;
 }
 ```
 
-AlephBFT internally calls `get_data()` whenever a new unit is created and data needs to be placed inside.
+AlephBFT internally calls `get_data()` whenever a new unit is created and data needs to be placed inside. If no data is currently available, the method should return `None` immediately to prevent halting unit creation.
 
 The FinalizationHandler trait is an abstraction for a component that should handle finalized items. Same as `DataProvider` is parametrized with a `Data` generic type.
 
 ```rust
 pub trait FinalizationHandler<Data> {
-    async fn data_finalized(&mut self, data: Data);
+    fn data_finalized(&mut self, data: Data);
 }
 ```
 
-Calls to function `data_finalized` represent the order of the units that AlephBft produced.
+Calls to function `data_finalized` represent the order of the units that AlephBFT produced and that hold some data.
 
 
 #### 3.1.2 Network.
@@ -53,19 +53,19 @@ The `send` method has straightforward semantics: sending a message to a single o
 
 **Note on Network Reliability**: it is not assumed that each message that AlephBFT orders to send reaches its intended recipient, there are some built-in reliability mechanisms within AlephBFT that will automatically detect certain failures and resend messages as needed. Clearly, the less reliable the network is, the worse the performarmence of AlephBFT will be (generally slower to produce output). Also, not surprisingly if the percentage of dropped messages is too high AlephBFT might stop making progress, but from what we observe in tests, this happens only when the reliability is extremely bad, i.e., drops below 50% (which means there is some significant issue with the network).
 
-#### 3.1.3 KeyBox.
+#### 3.1.3 Keychain.
 
-The `KeyBox` trait is an abstraction for digitally signing arbitrary data and verifying signatures created by other nodes.
+The `Keychain` trait is an abstraction for digitally signing arbitrary data and verifying signatures created by other nodes.
 
 ```rust
-pub trait KeyBox: Index + Clone + Send {
+pub trait Keychain: Index + Clone + Send + Sync + 'static {
     type Signature: Signature;
-    fn sign(&self, msg: &[u8]) -> Self::Signature;
+    async fn sign(&self, msg: &[u8]) -> Self::Signature;
     fn verify(&self, msg: &[u8], sgn: &Self::Signature, index: NodeIndex) -> bool;
 }
 ```
 
-A typical implementation of KeyBox would be a collection of `N` public keys, an index `i` and a single private key corresponding to the public key number `i`. The meaning of `sign` is then to produce a signature using the given private key, and `verify(msg, s, j)` is to verify whether the signature `s` under the message `msg` is correct with respect to the public key of the `j`th node.
+A typical implementation of Keychain would be a collection of `N` public keys, an index `i` and a single private key corresponding to the public key number `i`. The meaning of `sign` is then to produce a signature using the given private key, and `verify(msg, s, j)` is to verify whether the signature `s` under the message `msg` is correct with respect to the public key of the `j`th node.
 
 #### 3.1.4 Read & Write – recovering mid session crashes
 
@@ -79,7 +79,7 @@ These traits are optional. If you do not want to recover crashes mid session or 
 
 ### 3.2 Examples
 
-While the implementations of `KeyBox`, `std::io::Write`, `std::io::Read` and `Network` are pretty much universal, the implementation of `DataProvider` and `FinalizationHandler` depends on the specific application. We consider two examples here.
+While the implementations of `Keychain`, `std::io::Write`, `std::io::Read` and `Network` are pretty much universal, the implementation of `DataProvider` and `FinalizationHandler` depends on the specific application. We consider two examples here.
 
 #### 3.2.1 Blockchain Finality Gadget.
 
@@ -92,7 +92,7 @@ We start by defining the `Data` type: this will be simply `Hash` representing th
 ```
 def get_data():
 	let B be the tip of the longest chain extending from the most recently finalized block
-	return hash(B)
+	return Some(hash(B))
 ```
 
 This is simply the hash of the block the node thinks is the current "tip".
@@ -153,7 +153,7 @@ def get_data():
 	while tx_pool.not_empty() and tx_list.len() < 100:
 		tx = tx_pool.pop()
 		tx_list.append(tx)
-	return tx_list
+	return Some(tx_list)
 ```
 
 We simply fetch at most 100 transactions from the local pool and return such a list of transactions.

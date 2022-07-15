@@ -52,13 +52,13 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
     pub(crate) fn included_data(&self) -> Vec<D> {
         match self {
-            Self::NewUnit(uu) => vec![uu.as_signable().data().clone()],
+            Self::NewUnit(uu) => uu.as_signable().included_data(),
             Self::RequestCoord(_, _) => Vec::new(),
-            Self::ResponseCoord(uu) => vec![uu.as_signable().data().clone()],
+            Self::ResponseCoord(uu) => uu.as_signable().included_data(),
             Self::RequestParents(_, _) => Vec::new(),
             Self::ResponseParents(_, units) => units
                 .iter()
-                .map(|uu| uu.as_signable().data().clone())
+                .flat_map(|uu| uu.as_signable().included_data())
                 .collect(),
             UnitMessage::RequestNewest(_, _) => Vec::new(),
             UnitMessage::ResponseNewest(response) => response.as_signable().included_data(),
@@ -604,7 +604,7 @@ pub async fn run_session<
     config: Config,
     local_io: LocalIO<D, DP, FH, US, UL>,
     network: N,
-    keybox: MK,
+    keychain: MK,
     spawn_handle: SH,
     mut exit: oneshot::Receiver<()>,
 ) {
@@ -655,7 +655,7 @@ pub async fn run_session<
     let runway_handle = runway::run(
         config.clone(),
         runway_io,
-        keybox.clone(),
+        keychain.clone(),
         spawn_handle.clone(),
         network_io,
         exit_stream,

@@ -9,16 +9,15 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait DataProvider<Data> {
     /// Outputs a new data item to be ordered
-    async fn get_data(&mut self) -> Data;
+    async fn get_data(&mut self) -> Option<Data>;
 }
 
 /// The source of finalization of the units that consensus produces.
 ///
 /// The [`FinalizationHandler::data_finalized`] method is called whenever a piece of data input to the algorithm
 /// using [`DataProvider::get_data`] has been finalized, in order of finalization.
-#[async_trait]
 pub trait FinalizationHandler<Data> {
     /// Data, provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
-    async fn data_finalized(&mut self, data: Data);
+    fn data_finalized(&mut self, data: Data);
 }
