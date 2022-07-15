@@ -145,3 +145,105 @@ impl Terminator {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use futures::{FutureExt, pin_mut, select};
+    use futures::channel::oneshot;
+
+    use crate::Terminator;
+
+    async fn leaf(mut terminator: Terminator) {
+        let _ = terminator.get_exit().await;
+        terminator.terminate_sync().await;
+    }
+
+    async fn internal_1(mut terminator: Terminator, with_crash: bool) {
+        let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf")).fuse();
+        let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf")).fuse();
+
+        let leaf_handle_1 = tokio::spawn(leaf_handle_1);
+        let leaf_handle_2 = tokio::spawn(leaf_handle_2);
+
+        if with_crash {
+            return;
+        }
+
+        _ = terminator.get_exit().await;
+        terminator.terminate_sync().await;
+
+        let _ = leaf_handle_1.await;
+        let _ = leaf_handle_2.await;
+    }
+
+    async fn internal_2(mut terminator: Terminator, with_crash: bool) {
+        let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf")).fuse();
+        let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf")).fuse();
+        let internal_handle = internal_1(terminator.add_offspring_connection("internal1"), with_crash).fuse();
+
+        pin_mut!(leaf_handle_1);
+        pin_mut!(leaf_handle_2);
+        pin_mut!(internal_handle);
+
+        select! {
+            _ = leaf_handle_1 => {},
+            _ = leaf_handle_2 => {},
+            _ = internal_handle => {},
+            _ = terminator.get_exit() => {}
+        }
+
+        let terminator_handle = terminator.terminate_sync().fuse();
+        pin_mut!(terminator_handle);
+
+        loop {
+            select! {
+                _ = leaf_handle_1 => {},
+                _ = leaf_handle_2 => {},
+                _ = internal_handle => {},
+                _ = terminator_handle => {},
+                complete => break,
+            }
+        }
+    }
+
+    async fn root_component(mut terminator: Terminator, with_crash: bool) {
+        let leaf_handle = leaf(terminator.add_offspring_connection("leaf")).fuse();
+        let internal_handle = internal_2(terminator.add_offspring_connection("internal2"), with_crash).fuse();
+
+        pin_mut!(leaf_handle);
+        pin_mut!(internal_handle);
+
+        select! {
+            _ = leaf_handle => {},
+            _ = internal_handle => {},
+            _ = terminator.get_exit() => {}
+        }
+
+        let terminator_handle = terminator.terminate_sync().fuse();
+        pin_mut!(terminator_handle);
+
+        loop {
+            select! {
+                _ = leaf_handle => {},
+                _ = internal_handle => {},
+                _ = terminator_handle => {},
+                complete => break,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn simple_exit() {
+        let (exit_tx, exit_rx) = oneshot::channel();
+        let terminator = Terminator::create_root(exit_rx, "root");
+        exit_tx.send(()).expect("should send");
+        root_component(terminator, false).await;
+    }
+
+    #[tokio::test]
+    async fn component_crash() {
+        let (_exit_tx, exit_rx) = oneshot::channel();
+        let terminator = Terminator::create_root(exit_rx, "root");
+        root_component(terminator, true).await;
+    }
+}
