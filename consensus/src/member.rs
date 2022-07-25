@@ -237,12 +237,12 @@ where
 
         if !long_time_pending_tasks.is_empty() {
             write!(f, "; pending tasks with counter >= 5 -")?;
-            let first_tasks = long_time_pending_tasks
-                .iter()
-                .take(ITEMS_PRINT_LIMIT)
-                .map(ToString::to_string)
-                .join(", ");
-            write!(f, " {first_tasks}")?;
+            write!(f, " {}", {
+                long_time_pending_tasks
+                    .iter()
+                    .take(ITEMS_PRINT_LIMIT)
+                    .join(", ")
+            })?;
 
             if let Some(remaining) = long_time_pending_tasks.len().checked_sub(ITEMS_PRINT_LIMIT) {
                 write!(f, " and {remaining} more")?
