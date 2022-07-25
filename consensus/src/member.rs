@@ -6,7 +6,8 @@ use crate::{
     },
     units::{UncheckedSignedUnit, UnitCoord},
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
-    NodeIndex, Receiver, Recipient, Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
+    NodeIndex, Receiver, Recipient, Round, Sender, Signature, SpawnHandle, Terminator,
+    UncheckedSigned,
 };
 use aleph_bft_types::NodeMap;
 use codec::{Decode, Encode};
