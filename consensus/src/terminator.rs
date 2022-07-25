@@ -153,7 +153,7 @@ mod tests {
     use crate::Terminator;
 
     async fn leaf(mut terminator: Terminator) {
-        let _ = terminator.get_exit().await;
+        let _ = terminator.get_exit().await.unwrap();
         terminator.terminate_sync().await;
     }
 
@@ -186,10 +186,10 @@ mod tests {
         pin_mut!(internal_handle);
 
         select! {
-            _ = leaf_handle_1 => {},
-            _ = leaf_handle_2 => {},
-            _ = internal_handle => {},
-            _ = terminator.get_exit() => {}
+            _ = leaf_handle_1 => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
+            _ = leaf_handle_2 => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
+            _ = internal_handle => assert!(with_crash, "internal_1 crashed when it wasn't supposed to"),
+            _ = terminator.get_exit() => assert!(!with_crash, "exited when we expected internal crash"),
         }
 
         let terminator_handle = terminator.terminate_sync().fuse();
@@ -215,9 +215,9 @@ mod tests {
         pin_mut!(internal_handle);
 
         select! {
-            _ = leaf_handle => {},
-            _ = internal_handle => {},
-            _ = terminator.get_exit() => {}
+            _ = leaf_handle => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
+            _ = internal_handle => assert!(with_crash, "internal_2 crashed when it wasn't supposed to"),
+            _ = terminator.get_exit() => assert!(!with_crash, "exited when we expected internal crash"),
         }
 
         let terminator_handle = terminator.terminate_sync().fuse();
