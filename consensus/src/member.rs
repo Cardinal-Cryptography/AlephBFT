@@ -13,6 +13,7 @@ use aleph_bft_types::NodeMap;
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, future::FusedFuture, pin_mut, FutureExt, StreamExt};
 use futures_timer::Delay;
+use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use network::NetworkData;
 use rand::Rng;
@@ -228,10 +229,20 @@ where
                 self.not_resolved_parents.len()
             )?;
         }
+
+        static ITEMS_PRINT_LIMIT: usize = 10;
+
         if !long_time_pending_tasks.is_empty() {
             write!(f, "; pending tasks with counter >= 5 -")?;
-            for task in long_time_pending_tasks.iter() {
-                write!(f, " {},", task)?;
+            write!(f, " {}", {
+                long_time_pending_tasks
+                    .iter()
+                    .take(ITEMS_PRINT_LIMIT)
+                    .join(", ")
+            })?;
+
+            if let Some(remaining) = long_time_pending_tasks.len().checked_sub(ITEMS_PRINT_LIMIT) {
+                write!(f, " and {remaining} more")?
             }
         }
         write!(f, ".")?;
