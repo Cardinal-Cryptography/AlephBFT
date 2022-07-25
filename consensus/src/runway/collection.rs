@@ -1,7 +1,7 @@
 use crate::{
     runway::Request,
     units::{UncheckedSignedUnit, ValidationError, Validator},
-    Data, Hasher, KeyBox, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Signable,
+    Data, Hasher, Keychain, NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Signable,
     Signature, SignatureError, UncheckedSigned,
 };
 use codec::{Decode, Encode};
@@ -67,7 +67,7 @@ impl<H: Hasher, D: Data, S: Signature> NewestUnitResponse<H, D, S> {
     /// The data included in this message, i.e. contents of the unit if any.
     pub fn included_data(&self) -> Vec<D> {
         match &self.unit {
-            Some(u) => vec![u.as_signable().data().clone()],
+            Some(u) => u.as_signable().included_data(),
             None => Vec::new(),
         }
     }
@@ -128,7 +128,7 @@ pub enum Status {
 
 /// Initial unit collection to figure out at which round we should start unit production.
 /// Unfortunately this isn't quite BFT, but it's good enough in many situations.
-pub struct Collection<'a, MK: KeyBox> {
+pub struct Collection<'a, MK: Keychain> {
     keychain: &'a MK,
     validator: &'a Validator<'a, MK>,
     collected_starting_rounds: NodeMap<Round>,
@@ -136,7 +136,7 @@ pub struct Collection<'a, MK: KeyBox> {
     salt: Salt,
 }
 
-impl<'a, MK: KeyBox> Collection<'a, MK> {
+impl<'a, MK: Keychain> Collection<'a, MK> {
     /// Create a new collection instance ready to collect responses.
     /// The returned salt should be used to initiate newest unit requests.
     pub fn new(
@@ -212,7 +212,7 @@ impl<'a, MK: KeyBox> Collection<'a, MK> {
 }
 
 /// A runnable wrapper around initial unit collection.
-pub struct IO<'a, H: Hasher, D: Data, MK: KeyBox> {
+pub struct IO<'a, H: Hasher, D: Data, MK: Keychain> {
     round_for_creator: oneshot::Sender<Round>,
     responses_from_network:
         Receiver<UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>>,
@@ -220,7 +220,7 @@ pub struct IO<'a, H: Hasher, D: Data, MK: KeyBox> {
     collection: Collection<'a, MK>,
 }
 
-impl<'a, H: Hasher, D: Data, MK: KeyBox> IO<'a, H, D, MK> {
+impl<'a, H: Hasher, D: Data, MK: Keychain> IO<'a, H, D, MK> {
     /// Create the IO instance for the specified collection and channels associated with it.
     pub fn new(
         round_for_creator: oneshot::Sender<Round>,
@@ -363,7 +363,7 @@ mod tests {
         session_id: SessionId,
         keychain: &Keychain,
     ) -> UncheckedSignedUnit {
-        let full_unit = FullUnit::new(pu, 0, session_id);
+        let full_unit = FullUnit::new(pu, Some(0), session_id);
         let signed_unit = Signed::sign(full_unit, keychain).await;
         signed_unit.into()
     }

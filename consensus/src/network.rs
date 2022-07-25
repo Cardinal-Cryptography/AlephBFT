@@ -23,38 +23,10 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> NetworkDataInn
 }
 
 /// NetworkData is the opaque format for all data that a committee member needs to send to other nodes.
-#[derive(Clone, Debug)]
+#[derive(Encode, Decode, Clone, Debug)]
 pub struct NetworkData<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature>(
     pub(crate) NetworkDataInner<H, D, S, MS>,
 );
-
-impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> Encode
-    for NetworkData<H, D, S, MS>
-{
-    fn size_hint(&self) -> usize {
-        self.0.size_hint()
-    }
-
-    fn encode_to<T: codec::Output + ?Sized>(&self, dest: &mut T) {
-        self.0.encode_to(dest)
-    }
-
-    fn encode(&self) -> Vec<u8> {
-        self.0.encode()
-    }
-
-    fn using_encoded<R, F: FnOnce(&[u8]) -> R>(&self, f: F) -> R {
-        self.0.using_encoded(f)
-    }
-}
-
-impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> Decode
-    for NetworkData<H, D, S, MS>
-{
-    fn decode<I: codec::Input>(input: &mut I) -> Result<Self, codec::Error> {
-        Ok(Self(NetworkDataInner::decode(input)?))
-    }
-}
 
 impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> NetworkData<H, D, S, MS> {
     /// Returns all the Data in the network message that might end up in the ordering as a result
@@ -205,7 +177,7 @@ mod tests {
             combined_hash: 0.using_encoded(Hasher64::hash),
         };
         let pu = PreUnit::new(creator, round, control_hash);
-        let signable = FullUnit::new(pu, data, 0);
+        let signable = FullUnit::new(pu, Some(data), 0);
         Signed::sign(signable, &Keychain::new(0.into(), creator))
             .await
             .into_unchecked()
@@ -225,7 +197,7 @@ mod tests {
         use UnitMessage::NewUnit;
 
         let uu = test_unchecked_unit(5.into(), 43, 1729).await;
-        let included_data = vec![*uu.as_signable().data()];
+        let included_data = uu.as_signable().included_data();
         let nd = TestNetworkData::new(Units(NewUnit(uu.clone())));
         let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for NewUnit");
@@ -272,7 +244,7 @@ mod tests {
         use UnitMessage::ResponseCoord;
 
         let uu = test_unchecked_unit(5.into(), 43, 1729).await;
-        let included_data = vec![*uu.as_signable().data()];
+        let included_data = uu.as_signable().included_data();
         let nd = TestNetworkData::new(Units(ResponseCoord(uu.clone())));
         let decoded = TestNetworkData::decode(&mut &nd.encode()[..]);
         assert!(decoded.is_ok(), "Bug in encode/decode for ResponseCoord");
@@ -322,11 +294,13 @@ mod tests {
         let p1 = test_unchecked_unit(5.into(), 43, 1729).await;
         let p2 = test_unchecked_unit(13.into(), 43, 1729).await;
         let p3 = test_unchecked_unit(17.into(), 43, 1729).await;
-        let included_data = vec![
-            *p1.as_signable().data(),
-            *p2.as_signable().data(),
-            *p3.as_signable().data(),
-        ];
+        let included_data: Vec<Data> = p1
+            .as_signable()
+            .included_data()
+            .into_iter()
+            .chain(p2.as_signable().included_data().into_iter())
+            .chain(p3.as_signable().included_data().into_iter())
+            .collect();
         let parents = vec![p1, p2, p3];
 
         let nd = TestNetworkData::new(Units(ResponseParents(h, parents.clone())));
@@ -366,7 +340,8 @@ mod tests {
         let f2 = test_unchecked_unit(forker, 10, 1).await;
         let lu1 = test_unchecked_unit(forker, 11, 0).await;
         let lu2 = test_unchecked_unit(forker, 12, 0).await;
-        let included_data = vec![*lu1.as_signable().data(), *lu2.as_signable().data()];
+        let mut included_data = lu1.as_signable().included_data();
+        included_data.extend(lu2.as_signable().included_data());
         let sender: NodeIndex = 7.into();
         let alert = crate::alerts::Alert::new(sender, (f1, f2), vec![lu1, lu2]);
 

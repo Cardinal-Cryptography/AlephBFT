@@ -2,43 +2,49 @@ use aleph_bft_types::{
     DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT, NodeIndex,
 };
 use async_trait::async_trait;
-use futures::channel::mpsc::unbounded;
+use futures::{channel::mpsc::unbounded, future::pending};
 use log::{error, info};
 
 type Receiver<T> = futures::channel::mpsc::UnboundedReceiver<T>;
 type Sender<T> = futures::channel::mpsc::UnboundedSender<T>;
 
-pub type Data = (NodeIndex, Option<u32>);
+pub type Data = (NodeIndex, u32);
 
 #[derive(Default)]
 pub struct DataProvider {
     id: NodeIndex,
     counter: u32,
     n_data: u32,
+    stalled: bool,
 }
 
 impl DataProvider {
-    pub fn new(id: NodeIndex, counter: u32, n_data: u32) -> Self {
+    pub fn new(id: NodeIndex, counter: u32, n_data: u32, stalled: bool) -> Self {
         Self {
             id,
             counter,
             n_data,
+            stalled,
         }
     }
 }
 
 #[async_trait]
 impl DataProviderT<Data> for DataProvider {
-    async fn get_data(&mut self) -> Data {
+    async fn get_data(&mut self) -> Option<Data> {
         if self.n_data == 0 {
-            info!("Providing empty data");
-            (self.id, None)
+            if self.stalled {
+                info!("Awaiting DataProvider::get_data forever");
+                pending::<()>().await;
+            }
+            info!("Providing None");
+            None
         } else {
-            let data = (self.id, Some(self.counter));
+            let data = (self.id, self.counter);
             info!("Providing data: {}", self.counter);
             self.counter += 1;
             self.n_data -= 1;
-            data
+            Some(data)
         }
     }
 }
@@ -47,9 +53,8 @@ pub struct FinalizationHandler {
     tx: Sender<Data>,
 }
 
-#[async_trait]
 impl FinalizationHandlerT<Data> for FinalizationHandler {
-    async fn data_finalized(&mut self, d: Data) {
+    fn data_finalized(&mut self, d: Data) {
         if let Err(e) = self.tx.unbounded_send(d) {
             error!(target: "finalization-handler", "Error when sending data from FinalizationHandler {:?}.", e);
         }

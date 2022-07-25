@@ -1,5 +1,5 @@
 use crate::{
-    member::Task::{CoordRequest, ParentsRequest, RequestNewest, UnitRebroadcast},
+    member::Task::{CoordRequest, ParentsRequest, RequestNewest, UnitBroadcast},
     network,
     runway::{
         self, NetworkIO, NewestUnitResponse, Request, Response, RunwayIO, RunwayNotificationIn,
@@ -8,7 +8,7 @@ use crate::{
     task_queue::TaskQueue,
     units::{UncheckedSignedUnit, UnitCoord},
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
-    NodeIndex, Receiver, Recipient, Sender, Signature, SpawnHandle, UncheckedSigned,
+    NodeIndex, Receiver, Recipient, Round, Sender, Signature, SpawnHandle, UncheckedSigned,
 };
 use aleph_bft_types::NodeMap;
 use codec::{Decode, Encode};
@@ -18,6 +18,7 @@ use futures::{
     pin_mut, FutureExt, StreamExt,
 };
 use futures_timer::Delay;
+use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use network::NetworkData;
 use rand::Rng;
@@ -27,7 +28,6 @@ use std::{
     fmt::{self, Debug},
     io::{Read, Write},
     marker::PhantomData,
-    time,
     time::Duration,
 };
 
@@ -53,13 +53,13 @@ pub(crate) enum UnitMessage<H: Hasher, D: Data, S: Signature> {
 impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
     pub(crate) fn included_data(&self) -> Vec<D> {
         match self {
-            Self::NewUnit(uu) => vec![uu.as_signable().data().clone()],
+            Self::NewUnit(uu) => uu.as_signable().included_data(),
             Self::RequestCoord(_, _) => Vec::new(),
-            Self::ResponseCoord(uu) => vec![uu.as_signable().data().clone()],
+            Self::ResponseCoord(uu) => uu.as_signable().included_data(),
             Self::RequestParents(_, _) => Vec::new(),
             Self::ResponseParents(_, units) => units
                 .iter()
-                .map(|uu| uu.as_signable().data().clone())
+                .flat_map(|uu| uu.as_signable().included_data())
                 .collect(),
             UnitMessage::RequestNewest(_, _) => Vec::new(),
             UnitMessage::ResponseNewest(response) => response.as_signable().included_data(),
@@ -68,24 +68,24 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
 }
 
 #[derive(Eq, PartialEq, Debug)]
-enum Task<H: Hasher> {
+enum Task<H: Hasher, D: Data, S: Signature> {
     // Request the unit with the given (creator, round) coordinates.
     CoordRequest(UnitCoord),
     // Request parents of the unit with the given hash and Recipient.
     ParentsRequest(H::Hash, Recipient),
-    // Broadcast the top known unit for a given node.
-    UnitRebroadcast(NodeIndex),
+    // Rebroadcast a given unit periodically (cancelled after a more recent unit by the same creator is received)
+    UnitBroadcast(UncheckedSignedUnit<H, D, S>),
     // Request the newest unit created by node itself.
     RequestNewest(u64),
 }
 
 #[derive(Eq, PartialEq, Debug)]
-struct RepeatableTask<H: Hasher> {
-    task: Task<H>,
+struct RepeatableTask<H: Hasher, D: Data, S: Signature> {
+    task: Task<H, D, S>,
     counter: usize,
 }
 
-impl<H: Hasher> fmt::Display for RepeatableTask<H> {
+impl<H: Hasher, D: Data, S: Signature> fmt::Display for RepeatableTask<H, D, S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -95,15 +95,14 @@ impl<H: Hasher> fmt::Display for RepeatableTask<H> {
     }
 }
 
-impl<H: Hasher> RepeatableTask<H> {
-    fn new(task: Task<H>) -> Self {
+impl<H: Hasher, D: Data, S: Signature> RepeatableTask<H, D, S> {
+    fn new(task: Task<H, D, S>) -> Self {
         Self { task, counter: 0 }
     }
 }
 
 enum TaskDetails<H: Hasher, D: Data, S: Signature> {
     Cancel,
-    Delay(Duration),
     Perform {
         message: UnitMessage<H, D, S>,
         recipient: Recipient,
@@ -118,12 +117,6 @@ pub struct LocalIO<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US:
     unit_saver: US,
     unit_loader: UL,
     _phantom: PhantomData<D>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TopUnit<H: Hasher, D: Data, S: Signature> {
-    unit: UncheckedSignedUnit<H, D, S>,
-    discovered: time::Instant,
 }
 
 impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Read>
@@ -145,21 +138,15 @@ impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: Write, UL: Re
     }
 }
 
-struct MemberStatus<'a, H>
-where
-    H: Hasher,
-{
-    task_queue: &'a TaskQueue<RepeatableTask<H>>,
+struct MemberStatus<'a, H: Hasher, D: Data, S: Signature> {
+    task_queue: &'a TaskQueue<RepeatableTask<H, D, S>>,
     not_resolved_parents: &'a HashSet<H::Hash>,
     not_resolved_coords: &'a HashSet<UnitCoord>,
 }
 
-impl<'a, H> MemberStatus<'a, H>
-where
-    H: Hasher,
-{
+impl<'a, H: Hasher, D: Data, S: Signature> MemberStatus<'a, H, D, S> {
     fn new(
-        task_queue: &'a TaskQueue<RepeatableTask<H>>,
+        task_queue: &'a TaskQueue<RepeatableTask<H, D, S>>,
         not_resolved_parents: &'a HashSet<H::Hash>,
         not_resolved_coords: &'a HashSet<UnitCoord>,
     ) -> Self {
@@ -171,7 +158,7 @@ where
     }
 }
 
-impl<'a, H> fmt::Display for MemberStatus<'a, H>
+impl<'a, H: Hasher, D: Data, S: Signature> fmt::Display for MemberStatus<'a, H, D, S>
 where
     H: Hasher,
 {
@@ -185,22 +172,19 @@ where
                 CoordRequest(_) => count_coord_request += 1,
                 ParentsRequest(_, _) => count_parents_request += 1,
                 RequestNewest(_) => count_request_newest += 1,
-                UnitRebroadcast(_) => count_rebroadcast += 1,
+                UnitBroadcast(_) => count_rebroadcast += 1,
             }
         }
         let long_time_pending_tasks: Vec<_> = self
             .task_queue
             .iter()
-            .filter(|st| match st.task {
-                UnitRebroadcast(_) => false,
-                _ => st.counter >= 5,
-            })
+            .filter(|st| st.counter >= 5)
             .collect();
         write!(f, "Member status report: ")?;
         write!(f, "task queue content: ")?;
         write!(
             f,
-            "CoordRequest - {}, ParentsRequest - {}, UnitRebroadcast - {}, RequestNewest - {}",
+            "CoordRequest - {}, ParentsRequest - {}, UnitBroadcast - {}, RequestNewest - {}",
             count_coord_request, count_parents_request, count_rebroadcast, count_request_newest,
         )?;
         if !self.not_resolved_coords.is_empty() {
@@ -217,10 +201,20 @@ where
                 self.not_resolved_parents.len()
             )?;
         }
+
+        static ITEMS_PRINT_LIMIT: usize = 10;
+
         if !long_time_pending_tasks.is_empty() {
             write!(f, "; pending tasks with counter >= 5 -")?;
-            for task in long_time_pending_tasks.iter() {
-                write!(f, " {},", task)?;
+            write!(f, " {}", {
+                long_time_pending_tasks
+                    .iter()
+                    .take(ITEMS_PRINT_LIMIT)
+                    .join(", ")
+            })?;
+
+            if let Some(remaining) = long_time_pending_tasks.len().checked_sub(ITEMS_PRINT_LIMIT) {
+                write!(f, " and {remaining} more")?
             }
         }
         write!(f, ".")?;
@@ -235,7 +229,7 @@ where
     S: Signature,
 {
     config: Config,
-    task_queue: TaskQueue<RepeatableTask<H>>,
+    task_queue: TaskQueue<RepeatableTask<H, D, S>>,
     not_resolved_parents: HashSet<H::Hash>,
     not_resolved_coords: HashSet<UnitCoord>,
     newest_unit_resolved: bool,
@@ -246,7 +240,7 @@ where
     notifications_from_runway: Receiver<RunwayNotificationOut<H, D, S>>,
     resolved_requests: Receiver<Request<H>>,
     exiting: bool,
-    top_units: NodeMap<TopUnit<H, D, S>>,
+    top_units: NodeMap<Round>,
 }
 
 impl<H, D, S> Member<H, D, S>
@@ -265,17 +259,9 @@ where
     ) -> Self {
         let n_members = config.n_members;
 
-        let mut task_queue = TaskQueue::new();
-        for node in 0..n_members.into() {
-            task_queue.schedule(
-                RepeatableTask::new(UnitRebroadcast(node.into())),
-                time::Instant::now(),
-            );
-        }
-
         Self {
             config,
-            task_queue,
+            task_queue: TaskQueue::new(),
             not_resolved_parents: HashSet::new(),
             not_resolved_coords: HashSet::new(),
             newest_unit_resolved: false,
@@ -295,16 +281,19 @@ where
     }
 
     fn on_unit_discovered(&mut self, new_unit: UncheckedSignedUnit<H, D, S>) {
-        match self.top_units.get(new_unit.as_signable().creator()) {
-            Some(u) if u.unit.as_signable().round() >= new_unit.as_signable().round() => (),
-            _ => self.top_units.insert(
-                new_unit.as_signable().creator(),
-                TopUnit {
-                    unit: new_unit,
-                    discovered: time::Instant::now(),
-                },
-            ),
-        };
+        let unit_creator = new_unit.as_signable().creator();
+        let unit_round = new_unit.as_signable().round();
+        if self
+            .top_units
+            .get(unit_creator)
+            .map(|round| round < &unit_round)
+            .unwrap_or(true)
+        {
+            self.top_units.insert(unit_creator, unit_round);
+            let task = RepeatableTask::new(UnitBroadcast(new_unit));
+            let delay = self.delay(&task.task);
+            self.task_queue.schedule_in(task, delay)
+        }
     }
 
     fn on_request_coord(&mut self, coord: UnitCoord) {
@@ -338,7 +327,6 @@ where
         while let Some(mut task) = self.task_queue.pop_due_task() {
             match self.task_details(&task.task, task.counter) {
                 TaskDetails::Cancel => (),
-                TaskDetails::Delay(delay) => self.task_queue.schedule_in(task, delay),
                 TaskDetails::Perform {
                     message,
                     recipient,
@@ -378,79 +366,61 @@ where
     /// `Delay(Duration)` if the task is active, but cannot be performed right now, and
     /// `Perform { message, recipient, reschedule }` if the task is to send `message` to `recipient` and it should
     /// be rescheduled after `reschedule`.
-    fn task_details(&self, task: &Task<H>, counter: usize) -> TaskDetails<H, D, S> {
-        if !self.still_valid(task) {
-            TaskDetails::Cancel
-        } else {
-            match self.message(task) {
-                None => TaskDetails::Delay(self.delay(task)),
-                Some(message) => TaskDetails::Perform {
-                    message,
-                    recipient: self.recipient(task, counter),
-                    reschedule: self.delay(task),
-                },
+    fn task_details(&mut self, task: &Task<H, D, S>, counter: usize) -> TaskDetails<H, D, S> {
+        match self.still_valid(task) {
+            false => TaskDetails::Cancel,
+            true => TaskDetails::Perform {
+                message: self.message(task),
+                recipient: self.recipient(task, counter),
+                reschedule: self.delay(task),
+            },
+        }
+    }
+
+    fn message(&self, task: &Task<H, D, S>) -> UnitMessage<H, D, S> {
+        match task {
+            CoordRequest(coord) => UnitMessage::RequestCoord(self.index(), *coord),
+            ParentsRequest(hash, _) => UnitMessage::RequestParents(self.index(), *hash),
+            UnitBroadcast(unit) => UnitMessage::NewUnit(unit.clone()),
+            RequestNewest(salt) => UnitMessage::RequestNewest(self.index(), *salt),
+        }
+    }
+
+    fn recipient(&self, task: &Task<H, D, S>, counter: usize) -> Recipient {
+        match (self.preferred_recipient(task), counter) {
+            (Recipient::Everyone, _) => Recipient::Everyone,
+            (recipient, 0) => recipient,
+            (_, _) => self.random_peer(),
+        }
+    }
+
+    fn preferred_recipient(&self, task: &Task<H, D, S>) -> Recipient {
+        match task {
+            CoordRequest(coord) => Recipient::Node(coord.creator()),
+            ParentsRequest(_, preferred_recipient) => preferred_recipient.clone(),
+            UnitBroadcast(_) => Recipient::Everyone,
+            RequestNewest(_) => Recipient::Everyone,
+        }
+    }
+
+    fn still_valid(&self, task: &Task<H, D, S>) -> bool {
+        match task {
+            CoordRequest(coord) => self.not_resolved_coords.contains(coord),
+            ParentsRequest(hash, _preferred_recipient) => self.not_resolved_parents.contains(hash),
+            RequestNewest(_) => !self.newest_unit_resolved,
+            UnitBroadcast(unit) => {
+                Some(&unit.as_signable().round())
+                    == self.top_units.get(unit.as_signable().creator())
             }
         }
     }
 
-    fn message(&self, task: &Task<H>) -> Option<UnitMessage<H, D, S>> {
-        match task {
-            CoordRequest(coord) => Some(UnitMessage::RequestCoord(self.index(), *coord)),
-            ParentsRequest(hash, _) => Some(UnitMessage::RequestParents(self.index(), *hash)),
-            UnitRebroadcast(node) => self
-                .top_units
-                .get(*node)
-                .and_then(|u| self.rebroadcast_if_old(u)),
-            RequestNewest(salt) => Some(UnitMessage::RequestNewest(self.index(), *salt)),
-        }
-    }
-
-    fn rebroadcast_if_old(&self, top_unit: &TopUnit<H, D, S>) -> Option<UnitMessage<H, D, S>> {
-        if time::Instant::now().saturating_duration_since(top_unit.discovered)
-            > self.config.delay_config.unit_rebroadcast_interval_min
-        {
-            Some(UnitMessage::NewUnit(top_unit.unit.clone()))
-        } else {
-            None
-        }
-    }
-
-    fn recipient(&self, task: &Task<H>, counter: usize) -> Recipient {
-        match (task, counter) {
-            (CoordRequest(coord), 0) => Recipient::Node(coord.creator()),
-            (CoordRequest(_), _) => self.random_peer(),
-
-            (ParentsRequest(_, recipient), 0) => recipient.clone(),
-            (ParentsRequest(_, _), _) => self.random_peer(),
-
-            _ => Recipient::Everyone,
-        }
-    }
-
-    fn still_valid(&self, task: &Task<H>) -> bool {
-        match task {
-            CoordRequest(coord) => self.not_resolved_coords.contains(coord),
-            ParentsRequest(hash, _) => self.not_resolved_parents.contains(hash),
-            RequestNewest(_) => !self.newest_unit_resolved,
-            UnitRebroadcast(_) => true,
-        }
-    }
-
     /// Most tasks use `requests_interval` (see [crate::DelayConfig]) as their delay.
-    /// The exception is [Task::UnitRebroadcast] - this one picks a random delay between
+    /// The exception is [Task::UnitBroadcast] - this one picks a random delay between
     /// `unit_rebroadcast_interval_min` and `unit_rebroadcast_interval_max`.
-    ///
-    /// The properties of this scheme are:
-    /// 1. A unit is broadcast after `unit_rebroadcast_interval_min` since first learning about the
-    ///    unit at the earliest (see check in [Self::message]).
-    /// 2. A unit is broadcast after `unit_rebroadcast_interval_min + unit_rebroadcast_interval_max`
-    ///    since first learning about the unit at the latest. This happens because the unit might
-    ///    have been barely not old enough after the task triggered `unit_rebroadcast_interval_min`
-    ///    since discovery and the next task run after that is randomly selected to happen after
-    ///    `unit_rebroadcast_interval_max`.
-    fn delay(&self, task: &Task<H>) -> Duration {
+    fn delay(&self, task: &Task<H, D, S>) -> Duration {
         match task {
-            UnitRebroadcast(_) => {
+            UnitBroadcast(_) => {
                 let low = self.config.delay_config.unit_rebroadcast_interval_min;
                 let high = self.config.delay_config.unit_rebroadcast_interval_max;
                 let millis = rand::thread_rng().gen_range(low.as_millis()..high.as_millis());
@@ -593,7 +563,7 @@ pub async fn run_session<
     config: Config,
     local_io: LocalIO<D, DP, FH, US, UL>,
     network: N,
-    keybox: MK,
+    keychain: MK,
     spawn_handle: SH,
     mut exit: oneshot::Receiver<()>,
 ) {
@@ -644,7 +614,7 @@ pub async fn run_session<
     let runway_handle = runway::run(
         config.clone(),
         runway_io,
-        keybox.clone(),
+        keychain.clone(),
         spawn_handle.clone(),
         network_io,
         exit_stream,

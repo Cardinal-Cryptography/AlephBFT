@@ -1,8 +1,8 @@
 use crate::{
     alerts::{run, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
     units::{ControlHash, FullUnit, PreUnit},
-    Index, Indexed, KeyBox as _, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable, Signed,
-    UncheckedSigned,
+    Index, Indexed, Keychain as _, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable,
+    Signed, UncheckedSigned,
 };
 use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
 use aleph_bft_rmc::Message as RmcMessage;
@@ -114,7 +114,7 @@ impl TestCase {
                     self.keychain(NodeIndex(0)).node_count(),
                 )),
             ),
-            variant,
+            Some(variant),
             0,
         )
     }
