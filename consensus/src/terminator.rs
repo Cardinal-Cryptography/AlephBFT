@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use futures::{
     channel::oneshot::{channel, Receiver, Sender},
     future::FusedFuture,
@@ -14,7 +12,7 @@ pub struct Terminator {
     component_name: &'static str,
     parent_exit: Receiver<()>,
     parent_connection: Option<TerminatorConnection>,
-    offspring_connections: HashMap<&'static str, (Sender<()>, TerminatorConnection)>,
+    offspring_connections: Vec<(&'static str, (Sender<()>, TerminatorConnection))>,
 }
 
 impl Terminator {
@@ -27,7 +25,7 @@ impl Terminator {
             component_name,
             parent_exit,
             parent_connection,
-            offspring_connections: HashMap::new(),
+            offspring_connections: Vec::new(),
         }
     }
 
@@ -42,7 +40,6 @@ impl Terminator {
     }
 
     /// Add a connection to an offspring component/task
-    /// Components should have distinct names
     pub fn add_offspring_connection(&mut self, name: &'static str) -> Terminator {
         let (exit_send, exit_recv) = channel();
         let (sender, offspring_recv) = channel();
@@ -52,7 +49,7 @@ impl Terminator {
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
         self.offspring_connections
-            .insert(name, (exit_send, endpoint));
+            .push((name, (exit_send, endpoint)));
         Terminator::new(exit_recv, Some(offspring_endpoint), name)
     }
 
@@ -159,8 +156,8 @@ mod tests {
     }
 
     async fn internal_1(mut terminator: Terminator, with_crash: bool) {
-        let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf_1")).fuse();
-        let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf_2")).fuse();
+        let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf")).fuse();
+        let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf")).fuse();
 
         let leaf_handle_1 = tokio::spawn(leaf_handle_1);
         let leaf_handle_2 = tokio::spawn(leaf_handle_2);
@@ -177,8 +174,8 @@ mod tests {
     }
 
     async fn internal_2(mut terminator: Terminator, with_crash: bool) {
-        let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf_1")).fuse();
-        let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf_2")).fuse();
+        let leaf_handle_1 = leaf(terminator.add_offspring_connection("leaf")).fuse();
+        let leaf_handle_2 = leaf(terminator.add_offspring_connection("leaf")).fuse();
         let internal_handle = internal_1(
             terminator.add_offspring_connection("internal_1"),
             with_crash,
@@ -190,8 +187,8 @@ mod tests {
         pin_mut!(internal_handle);
 
         select! {
-            _ = leaf_handle_1 => assert!(with_crash, "leaf_1 crashed when it wasn't supposed to"),
-            _ = leaf_handle_2 => assert!(with_crash, "leaf_2 crashed when it wasn't supposed to"),
+            _ = leaf_handle_1 => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
+            _ = leaf_handle_2 => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
             _ = internal_handle => assert!(with_crash, "internal_1 crashed when it wasn't supposed to"),
             _ = terminator.get_exit() => assert!(!with_crash, "exited when we expected internal crash"),
         }
