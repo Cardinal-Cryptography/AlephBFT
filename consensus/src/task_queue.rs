@@ -1,4 +1,9 @@
-use std::{cmp::Ordering, collections::BinaryHeap, time, time::Duration};
+use std::{
+    cmp::Ordering,
+    collections::{binary_heap::PeekMut, BinaryHeap},
+    time,
+    time::Duration,
+};
 
 #[derive(Eq, PartialEq)]
 struct ScheduledTask<T: Eq> {
@@ -55,14 +60,13 @@ impl<T: Eq> TaskQueue<T> {
     /// Returns `Some(task)` if `task` is the most overdue task, and `None` if there are no overdue
     /// tasks.
     pub fn pop_due_task(&mut self) -> Option<T> {
-        if let Some(task) = self.queue.peek() {
-            if task.scheduled_time <= time::Instant::now() {
-                let task = self.queue.pop().expect("The element was peeked");
-                return Some(task.task);
-            }
-        }
+        let scheduled_task = self.queue.peek_mut()?;
 
-        None
+        if scheduled_task.scheduled_time <= time::Instant::now() {
+            Some(PeekMut::pop(scheduled_task).task)
+        } else {
+            None
+        }
     }
 
     /// Returns an iterator over all pending tasks.
