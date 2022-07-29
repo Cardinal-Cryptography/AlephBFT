@@ -18,6 +18,9 @@ pub struct Network {
     my_id: usize,
     addresses: Vec<SocketAddr>,
     socket: UdpSocket,
+    /// Buffer for incoming data.
+    ///
+    /// It's allocated on the heap, because otherwise it overflows the stack when used inside a future.
     buffer: Box<[u8; MAX_UDP_DATAGRAM_BYTES]>,
 }
 
