@@ -128,7 +128,7 @@ where
 {
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
-    store: UnitStore<'a, H, D, MK>,
+    store: UnitStore<H, D, MK>,
     keychain: &'a MK,
     validator: &'a Validator<'a, MK>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
@@ -144,7 +144,7 @@ where
     finalization_handler: FH,
     unit_saver: UnitSaver<US, H, D, MK::Signature>,
     preunits_for_packer: Sender<PreUnit<H>>,
-    signed_units_from_packer: Receiver<SignedUnit<'a, H, D, MK>>,
+    signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
     exiting: bool,
 }
 
@@ -189,14 +189,7 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
     }
 }
 
-struct RunwayConfig<
-    'a,
-    H: Hasher,
-    D: Data,
-    US: Write,
-    FH: FinalizationHandler<D>,
-    MK: MultiKeychain,
-> {
+struct RunwayConfig<H: Hasher, D: Data, US: Write, FH: FinalizationHandler<D>, MK: MultiKeychain> {
     max_round: Round,
     finalization_handler: FH,
     unit_saver: UnitSaver<US, H, D, MK::Signature>,
@@ -211,7 +204,7 @@ struct RunwayConfig<
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     resolved_requests: Sender<Request<H>>,
     preunits_for_packer: Sender<PreUnit<H>>,
-    signed_units_from_packer: Receiver<SignedUnit<'a, H, D, MK>>,
+    signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
 }
 
 impl<'a, H, D, US, FH, MK> Runway<'a, H, D, US, FH, MK>
@@ -223,7 +216,7 @@ where
     MK: MultiKeychain,
 {
     fn new(
-        config: RunwayConfig<'a, H, D, US, FH, MK>,
+        config: RunwayConfig<H, D, US, FH, MK>,
         keychain: &'a MK,
         validator: &'a Validator<'a, MK>,
     ) -> Self {
@@ -340,7 +333,7 @@ where
         }
     }
 
-    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<'a, H, D, MK>) {
+    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<H, D, MK>) {
         let full_unit = su.as_signable();
         trace!(target: "AlephBFT-member", "{:?} Adding member unit to store {:?}", self.index(), full_unit);
         if self.store.is_forker(full_unit.creator()) {
@@ -528,7 +521,7 @@ where
         }
     }
 
-    fn on_packed(&mut self, signed_unit: SignedUnit<'a, H, D, MK>) {
+    fn on_packed(&mut self, signed_unit: SignedUnit<H, D, MK>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         self.save_unit(signed_unit.clone().into());
         self.store.add_unit(signed_unit, false);

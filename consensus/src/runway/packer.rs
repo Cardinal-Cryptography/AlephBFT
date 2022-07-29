@@ -18,7 +18,7 @@ where
 {
     data_provider: DP,
     preunits_from_runway: Receiver<PreUnit<H>>,
-    signed_units_for_runway: Sender<SignedUnit<'a, H, D, MK>>,
+    signed_units_for_runway: Sender<SignedUnit<H, D, MK>>,
     keychain: &'a MK,
     session_id: SessionId,
     _phantom: PhantomData<D>,
@@ -34,7 +34,7 @@ where
     pub fn new(
         data_provider: DP,
         preunits_from_runway: Receiver<PreUnit<H>>,
-        signed_units_for_runway: Sender<SignedUnit<'a, H, D, MK>>,
+        signed_units_for_runway: Sender<SignedUnit<H, D, MK>>,
         keychain: &'a MK,
         session_id: SessionId,
     ) -> Self {
