@@ -118,7 +118,7 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-struct Runway<'a, H, D, US, FH, MK>
+struct Runway<H, D, US, FH, MK>
 where
     H: Hasher,
     D: Data,
@@ -129,8 +129,8 @@ where
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
     store: UnitStore<H, D, MK>,
-    keychain: &'a MK,
-    validator: &'a Validator<'a, MK>,
+    keychain: MK,
+    validator: Validator<MK>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
@@ -207,7 +207,7 @@ struct RunwayConfig<H: Hasher, D: Data, US: Write, FH: FinalizationHandler<D>, M
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
 }
 
-impl<'a, H, D, US, FH, MK> Runway<'a, H, D, US, FH, MK>
+impl<H, D, US, FH, MK> Runway<H, D, US, FH, MK>
 where
     H: Hasher,
     D: Data,
@@ -215,11 +215,7 @@ where
     FH: FinalizationHandler<D>,
     MK: MultiKeychain,
 {
-    fn new(
-        config: RunwayConfig<H, D, US, FH, MK>,
-        keychain: &'a MK,
-        validator: &'a Validator<'a, MK>,
-    ) -> Self {
+    fn new(config: RunwayConfig<H, D, US, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
         let n_members = keychain.node_count();
         let RunwayConfig {
             max_round,
@@ -425,7 +421,9 @@ where
         let unit = self.store.newest_unit(requester);
         let response = NewestUnitResponse::new(requester, self.index(), unit, salt);
 
-        let signed_response = Signed::sign(response, self.keychain).await.into_unchecked();
+        let signed_response = Signed::sign(response, &self.keychain)
+            .await
+            .into_unchecked();
 
         if let Err(e) =
             self.unit_messages_for_network
@@ -793,7 +791,7 @@ pub(crate) struct NetworkIO<H: Hasher, D: Data, MK: MultiKeychain> {
 #[cfg(feature = "initial_unit_collection")]
 fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
     keychain: &'a MK,
-    validator: &'a Validator<'a, MK>,
+    validator: &'a Validator<MK>,
     threshold: NodeCount,
     unit_messages_for_network: &Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     unit_collection_sender: oneshot::Sender<Round>,
@@ -937,7 +935,12 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let index = keychain.index();
     let threshold = (keychain.node_count() * 2) / 3 + NodeCount(1);
-    let validator = Validator::new(config.session_id, keychain, config.max_round, threshold);
+    let validator = Validator::new(
+        config.session_id,
+        keychain.clone(),
+        config.max_round,
+        threshold,
+    );
     let (responses_for_collection, responses_from_runway) = mpsc::unbounded();
     let (unit_collections_sender, unit_collection_result) = oneshot::channel();
     let (loaded_units_tx, loaded_units_rx) = oneshot::channel();
@@ -986,36 +989,55 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let (preunits_for_packer, preunits_from_runway) = mpsc::unbounded();
     let (signed_units_for_runway, signed_units_from_packer) = mpsc::unbounded();
 
-    let runway_config = RunwayConfig {
-        finalization_handler,
-        unit_saver,
-        alerts_for_alerter,
-        notifications_from_alerter,
-        tx_consensus,
-        rx_consensus,
-        unit_messages_from_network: network_io.unit_messages_from_network,
-        unit_messages_for_network: network_io.unit_messages_for_network,
-        ordered_batch_rx,
-        responses_for_collection,
-        resolved_requests: network_io.resolved_requests,
-        max_round: config.max_round,
-        preunits_for_packer,
-        signed_units_from_packer,
-    };
-    let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
-    let runway = Runway::new(runway_config, keychain, &validator);
-    let runway_handle = runway.run(loaded_units_rx, runway_terminator).fuse();
+    let runway_handle = spawn_handle
+        .spawn_essential("runway", {
+            let runway_config = RunwayConfig {
+                finalization_handler,
+                unit_saver,
+                alerts_for_alerter,
+                notifications_from_alerter,
+                tx_consensus,
+                rx_consensus,
+                unit_messages_from_network: network_io.unit_messages_from_network,
+                unit_messages_for_network: network_io.unit_messages_for_network,
+                ordered_batch_rx,
+                responses_for_collection,
+                resolved_requests: network_io.resolved_requests,
+                max_round: config.max_round,
+                preunits_for_packer,
+                signed_units_from_packer,
+            };
+            let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
+            let validator = validator.clone();
+            let keychain = keychain.clone();
+            let runway = Runway::new(runway_config, keychain, validator);
+
+            async move { runway.run(loaded_units_rx, runway_terminator).await }
+        })
+        .fuse();
     pin_mut!(runway_handle);
 
-    let packer_terminator = terminator.add_offspring_connection("AlephBFT-packer");
-    let mut packer = Packer::new(
-        data_provider,
-        preunits_from_runway,
-        signed_units_for_runway,
-        &keychain,
-        config.session_id,
-    );
-    let packer_handle = packer.run(packer_terminator).fuse();
+    let packer_handle = spawn_handle
+        .spawn_essential("runway/packer", {
+            let packer_terminator = terminator.add_offspring_connection("AlephBFT-packer");
+            let mut packer = Packer::new(
+                data_provider,
+                preunits_from_runway,
+                signed_units_for_runway,
+                keychain.clone(),
+                config.session_id,
+            );
+
+            async move {
+                match packer.run(packer_terminator).await {
+                    Ok(()) => (),
+                    Err(()) => {
+                        debug!(target: "AlephBFT-runway", "{:?} Packer task terminated abnormally", index)
+                    }
+                }
+            }
+        })
+        .fuse();
     pin_mut!(packer_handle);
 
     loop {

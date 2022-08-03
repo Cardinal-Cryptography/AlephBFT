@@ -56,9 +56,10 @@ impl<H: Hasher, D: Data, S: Signature> From<SignatureError<FullUnit<H, D>, S>>
     }
 }
 
-pub struct Validator<'a, K: Keychain> {
+#[derive(Clone)]
+pub struct Validator<K: Keychain> {
     session_id: SessionId,
-    keychain: &'a K,
+    keychain: K,
     max_round: Round,
     threshold: NodeCount,
 }
@@ -66,13 +67,8 @@ pub struct Validator<'a, K: Keychain> {
 type Result<H, D, K> =
     StdResult<SignedUnit<H, D, K>, ValidationError<H, D, <K as Keychain>::Signature>>;
 
-impl<'a, K: Keychain> Validator<'a, K> {
-    pub fn new(
-        session_id: SessionId,
-        keychain: &'a K,
-        max_round: Round,
-        threshold: NodeCount,
-    ) -> Self {
+impl<K: Keychain> Validator<K> {
+    pub fn new(session_id: SessionId, keychain: K, max_round: Round, threshold: NodeCount) -> Self {
         Validator {
             session_id,
             keychain,
@@ -85,7 +81,7 @@ impl<'a, K: Keychain> Validator<'a, K> {
         &self,
         uu: UncheckedSignedUnit<H, D, K::Signature>,
     ) -> Result<H, D, K> {
-        let su = uu.check(self.keychain)?;
+        let su = uu.check(&self.keychain)?;
         let full_unit = su.as_signable();
         if full_unit.session_id() != self.session_id {
             // NOTE: this implies malicious behavior as the unit's session_id
@@ -137,7 +133,7 @@ mod tests {
     };
     use aleph_bft_mock::{Hasher64, Keychain};
 
-    type Validator<'a> = GenericValidator<'a, Keychain>;
+    type Validator = GenericValidator<Keychain>;
     type Creator = GenericCreator<Hasher64>;
 
     #[tokio::test]
@@ -150,7 +146,7 @@ mod tests {
         let max_round = 2;
         let creator = Creator::new(creator_id, n_members);
         let keychain = Keychain::new(n_members, creator_id);
-        let validator = Validator::new(session_id, &keychain, max_round, threshold);
+        let validator = Validator::new(session_id, keychain.clone(), max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
             .expect("Creation should succeed.");
@@ -172,7 +168,7 @@ mod tests {
         let max_round = 2;
         let creator = Creator::new(creator_id, n_members);
         let keychain = Keychain::new(n_members, creator_id);
-        let validator = Validator::new(session_id, &keychain, max_round, threshold);
+        let validator = Validator::new(session_id, keychain.clone(), max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
             .expect("Creation should succeed.");
@@ -197,7 +193,7 @@ mod tests {
         let max_round = 2;
         let creator = Creator::new(creator_id, n_members);
         let keychain = Keychain::new(n_plus_one_members, creator_id);
-        let validator = Validator::new(session_id, &keychain, max_round, threshold);
+        let validator = Validator::new(session_id, keychain.clone(), max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
             .expect("Creation should succeed.");
@@ -230,7 +226,7 @@ mod tests {
         let creator = &mut creators[0];
         creator.add_units(&round_0_units);
         let keychain = Keychain::new(n_members, creator_id);
-        let validator = Validator::new(session_id, &keychain, max_round, threshold);
+        let validator = Validator::new(session_id, keychain.clone(), max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
             .expect("Creation should succeed.");
@@ -264,7 +260,7 @@ mod tests {
         }
         let creator = &creators[0];
         let keychain = Keychain::new(n_members, creator_id);
-        let validator = Validator::new(session_id, &keychain, max_round, threshold);
+        let validator = Validator::new(session_id, keychain.clone(), max_round, threshold);
         let (preunit, _) = creator
             .create_unit(round)
             .expect("Creation should succeed.");
