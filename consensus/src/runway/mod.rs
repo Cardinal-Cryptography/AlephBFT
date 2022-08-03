@@ -833,8 +833,8 @@ pub struct RunwayIO<
     H: Hasher,
     D: Data,
     S: Signature,
-    US: Write,
-    UL: Read,
+    US: Write + Send + Sync + 'static,
+    UL: Read + Send + Sync + 'static,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
 > {
@@ -849,8 +849,8 @@ impl<
         H: Hasher,
         D: Data,
         S: Signature,
-        US: Write,
-        UL: Read,
+        US: Write + Send + Sync + 'static,
+        UL: Read + Send + Sync + 'static,
         DP: DataProvider<D>,
         FH: FinalizationHandler<D>,
     > RunwayIO<H, D, S, US, UL, DP, FH>
@@ -874,15 +874,15 @@ impl<
 pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     config: Config,
     runway_io: RunwayIO<H, D, MK::Signature, US, UL, DP, FH>,
-    keychain: MK,
+    keychain: &MK,
     spawn_handle: SH,
     network_io: NetworkIO<H, D, MK>,
     mut terminator: Terminator,
 ) where
     H: Hasher,
     D: Data,
-    US: Write,
-    UL: Read,
+    US: Write + Send + Sync + 'static,
+    UL: Read + Send + Sync + 'static,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
     MK: MultiKeychain,
@@ -937,25 +937,29 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let index = keychain.index();
     let threshold = (keychain.node_count() * 2) / 3 + NodeCount(1);
-    let validator = Validator::new(config.session_id, &keychain, config.max_round, threshold);
+    let validator = Validator::new(config.session_id, keychain, config.max_round, threshold);
     let (responses_for_collection, responses_from_runway) = mpsc::unbounded();
     let (unit_collections_sender, unit_collection_result) = oneshot::channel();
     let (loaded_units_tx, loaded_units_rx) = oneshot::channel();
 
-    let backup_loading_handle = backup::run_loading_mechanism(
-        runway_io.unit_loader,
-        index,
-        config.session_id,
-        loaded_units_tx,
-        starting_round_sender,
-        unit_collection_result,
-    )
-    .fuse();
+    let backup_loading_handle = spawn_handle
+        .spawn_essential("runway/loading", async move {
+            backup::run_loading_mechanism(
+                runway_io.unit_loader,
+                index,
+                config.session_id,
+                loaded_units_tx,
+                starting_round_sender,
+                unit_collection_result,
+            )
+            .await
+        })
+        .fuse();
     pin_mut!(backup_loading_handle);
 
     #[cfg(feature = "initial_unit_collection")]
     let starting_round_handle = match initial_unit_collection(
-        &keychain,
+        keychain,
         &validator,
         threshold,
         &network_io.unit_messages_for_network,
@@ -999,7 +1003,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         signed_units_from_packer,
     };
     let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
-    let runway = Runway::new(runway_config, &keychain, &validator);
+    let runway = Runway::new(runway_config, keychain, &validator);
     let runway_handle = runway.run(loaded_units_rx, runway_terminator).fuse();
     pin_mut!(runway_handle);
 
