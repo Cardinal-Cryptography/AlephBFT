@@ -95,7 +95,7 @@ impl<T: AsRef<[u8]> + Clone> Signable for T {
 /// A pair consisting of an instance of the `Signable` trait and an (arbitrary) signature.
 ///
 /// The method `[UncheckedSigned::check]` can be used to upgrade this `struct` to
-/// `[Signed<'a, T, K>]` which ensures that the signature matches the signed object.
+/// `[Signed<T, K>]` which ensures that the signature matches the signed object.
 #[derive(Clone, Debug, Decode, Encode, PartialEq, Eq, Hash)]
 pub struct UncheckedSigned<T: Signable, S: Signature> {
     signable: T,
@@ -185,7 +185,7 @@ pub struct Signed<T: Signable + Index, K: Keychain> {
     unchecked: UncheckedSigned<T, K::Signature>,
 }
 
-impl<'a, T: Signable + Clone + Index, K: Keychain> Clone for Signed<T, K> {
+impl<T: Signable + Clone + Index, K: Keychain> Clone for Signed<T, K> {
     fn clone(&self) -> Self {
         Signed {
             unchecked: self.unchecked.clone(),
@@ -220,9 +220,9 @@ impl<T: Signable + Index, K: Keychain> Signed<T, K> {
     }
 }
 
-impl<'a, T: Signable, K: Keychain> Signed<Indexed<T>, K> {
+impl<T: Signable, K: Keychain> Signed<Indexed<T>, K> {
     /// Create a signed object from a signable. The index is added based on the index of the `keychain`.
-    pub async fn sign_with_index(signable: T, keychain: &'a K) -> Signed<Indexed<T>, K> {
+    pub async fn sign_with_index(signable: T, keychain: &K) -> Signed<Indexed<T>, K> {
         Signed::sign(Indexed::new(signable, keychain.index()), keychain).await
     }
 }
@@ -247,7 +247,7 @@ impl<T: Signable, MK: MultiKeychain> Signed<Indexed<T>, MK> {
     }
 }
 
-impl<'a, T: Signable + Index, K: Keychain> From<Signed<T, K>> for UncheckedSigned<T, K::Signature> {
+impl<T: Signable + Index, K: Keychain> From<Signed<T, K>> for UncheckedSigned<T, K::Signature> {
     fn from(signed: Signed<T, K>) -> Self {
         signed.into_unchecked()
     }
