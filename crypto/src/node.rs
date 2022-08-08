@@ -47,12 +47,12 @@ pub trait Index {
     Debug,
     Default,
     Add,
-    Sub,
     AddAssign,
-    SubAssign,
-    Sum,
     From,
     Into,
+    Sub,
+    SubAssign,
+    Sum,
 )]
 pub struct NodeCount(pub usize);
 
