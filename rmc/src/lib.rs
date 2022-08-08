@@ -15,6 +15,7 @@ use log::{debug, warn};
 use std::{
     cmp::Reverse,
     collections::{BinaryHeap, HashMap},
+    fmt::Formatter,
     hash::Hash,
     time,
     time::Duration,
@@ -91,6 +92,18 @@ pub struct DoublingDelayScheduler<T> {
     scheduled_tasks: Vec<ScheduledTask<T>>,
     on_new_task_tx: UnboundedSender<T>,
     on_new_task_rx: UnboundedReceiver<T>,
+}
+
+impl<T> Debug for DoublingDelayScheduler<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "initial delay: {:?}, ", self.initial_delay)?;
+        write!(
+            f,
+            "#scheduled instants: {}, ",
+            self.scheduled_instants.len()
+        )?;
+        write!(f, "#scheduled tasks: {}, ", self.scheduled_tasks.len())
+    }
 }
 
 impl<T> DoublingDelayScheduler<T> {
