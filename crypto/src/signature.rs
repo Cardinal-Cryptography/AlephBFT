@@ -2,7 +2,7 @@ use crate::{Index, NodeCount, NodeIndex, NodeMap};
 use async_trait::async_trait;
 use codec::{Codec, Decode, Encode};
 use log::warn;
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, hash::Hash, marker::PhantomData};
 
 /// The type used as a signature.
 ///
@@ -96,7 +96,7 @@ impl<T: AsRef<[u8]> + Clone> Signable for T {
 ///
 /// The method `[UncheckedSigned::check]` can be used to upgrade this `struct` to
 /// `[Signed<'a, T, K>]` which ensures that the signature matches the signed object.
-#[derive(Clone, Debug, Decode, Encode, PartialEq, Eq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct UncheckedSigned<T: Signable, S: Signature> {
     signable: T,
     signature: S,
@@ -123,7 +123,7 @@ impl<T: Signable, S: Signature> UncheckedSigned<Indexed<T>, S> {
 }
 
 /// Error type returned when a verification of a signature fails.
-#[derive(Clone, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct SignatureError<T: Signable, S: Signature> {
     pub unchecked: UncheckedSigned<T, S>,
 }
@@ -186,7 +186,7 @@ impl<T: Signable, S: Signature> From<UncheckedSigned<Indexed<T>, S>> for Uncheck
 ///
 /// The correctness is guaranteed by storing a (phantom) reference to the `Keychain` that verified
 /// the signature.
-#[derive(Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct Signed<'a, T: Signable + Index, K: Keychain> {
     unchecked: UncheckedSigned<T, K::Signature>,
     marker: PhantomData<&'a K>,
@@ -275,7 +275,7 @@ impl<'a, T: Signable + Index, K: Keychain> From<Signed<'a, T, K>>
 /// use this wrapper transparently. Note that in the implementation of `Signable` for `Indexed<T>`,
 /// the hash is the hash of the underlying data `T`. Therefore, instances of the type
 /// [`Signed<'a, Indexed<T>, MK>`] can be aggregated into `Multisigned<'a, T, MK>`
-#[derive(Clone, Debug, Decode, Encode, PartialEq, Eq, Hash)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct Indexed<T: Signable> {
     signable: T,
     index: NodeIndex,
@@ -311,7 +311,7 @@ impl<T: Signable> Index for Indexed<T> {
 /// together with a multisignature which is valid and complete according to a multikeychain
 /// reference `&'a MK`. The lifetime parameter ensures that the data with a multisignature do not
 /// outlive the session.
-#[derive(Debug)]
+#[derive(Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct Multisigned<'a, T: Signable, MK: MultiKeychain> {
     unchecked: UncheckedSigned<T, MK::PartialMultisignature>,
     marker: PhantomData<&'a MK>,
@@ -345,9 +345,27 @@ impl<'a, T: Signable + Clone, MK: MultiKeychain> Clone for Multisigned<'a, T, MK
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct IncompleteMultisignatureError<'a, T: Signable, MK: MultiKeychain> {
     pub partial: PartiallyMultisigned<'a, T, MK>,
+    /// `PartiallyMultisigned` only conditionally implements `Hash`:
+    /// ```rust
+    /// # use std::hash::Hasher;
+    /// # use aleph_bft_crypto::{MultiKeychain, PartiallyMultisigned, Signable};
+    /// # trait Hash {};
+    /// impl<'a, T: Hash + Signable, MK: Hash + MultiKeychain>
+    ///    Hash for PartiallyMultisigned<'a, T, MK>
+    /// where MK::PartialMultisignature: Hash {}
+    /// ```
+    /// i.e. Rust automatically adds `where MK::PartialMultisignature: Hash`.
+    ///
+    /// This is a problem, since such `where` guard cannot be inferred for
+    /// `IncompleteMultisignatureError` (because we do not use the associate type
+    /// `MK::PartialMultisignature` of `MK` explicitly here).
+    ///
+    /// The alternative solution could be to make `Signature: Hash` or give up `Hash` for
+    /// `IncompleteMultisignatureError`.
+    _phantom: PhantomData<MK::PartialMultisignature>,
 }
 
 /// Signable data together with a valid partial multisignature.
@@ -355,7 +373,12 @@ pub struct IncompleteMultisignatureError<'a, T: Signable, MK: MultiKeychain> {
 /// Instances of this type keep track whether the partial multisignautre is complete or not.
 /// If the multisignature is complete, you can get [`Multisigned`] by pattern matching
 /// against the variant [`PartiallyMultisigned::Complete`].
-#[derive(Debug)]
+///
+/// We can derive neither `codec::Encode` nor `codec::Decode`, because the generated implementation
+/// for enum passes template arguments incorrectly (against `E0109`), i.e.
+/// `PartiallyMultisigned::<'a, T, MK>::Complete` instead of
+/// `PartiallyMultisigned::Complete::<'a, T, MK>`.
+#[derive(Clone, Eq, PartialEq, Hash, Debug)]
 pub enum PartiallyMultisigned<'a, T: Signable, MK: MultiKeychain> {
     Incomplete {
         unchecked: UncheckedSigned<T, MK::PartialMultisignature>,
