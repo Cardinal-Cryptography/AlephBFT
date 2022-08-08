@@ -460,7 +460,7 @@ where
             &self.not_resolved_parents,
             &self.not_resolved_coords,
         );
-        info!(target: "AlephBFT-member", "{}", status);
+        debug!(target: "AlephBFT-member", "{}", status);
     }
 
     async fn run(mut self, mut terminator: Terminator) {
@@ -523,12 +523,12 @@ where
                 },
 
                 _ = &mut terminator.get_exit() => {
-                    info!(target: "AlephBFT-member", "{:?} received exit signal", self.index());
+                    debug!(target: "AlephBFT-member", "{:?} received exit signal", self.index());
                     self.exiting = true;
                 },
             }
             if self.exiting {
-                info!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
+                debug!(target: "AlephBFT-member", "{:?} Member decided to exit.", self.index());
                 terminator.terminate_sync().await;
                 break;
             }
@@ -656,11 +656,11 @@ pub async fn run_session<
         },
 
         _ = &mut terminator.get_exit() => {
-            info!(target: "AlephBFT-member", "{:?} exit channel was called.", index);
+            debug!(target: "AlephBFT-member", "{:?} exit channel was called.", index);
         },
     }
 
-    info!(target: "AlephBFT-member", "{:?} Run ending.", index);
+    debug!(target: "AlephBFT-member", "{:?} Run ending.", index);
 
     let terminator_handle = terminator.terminate_sync().fuse();
     pin_mut!(terminator_handle);
@@ -688,5 +688,5 @@ pub async fn run_session<
         debug!(target: "AlephBFT-member", "{:?} Network stopped.", index);
     }
 
-    info!(target: "AlephBFT-member", "{:?} Run ended.", index);
+    debug!(target: "AlephBFT-member", "{:?} Run ended.", index);
 }

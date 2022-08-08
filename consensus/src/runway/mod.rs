@@ -768,20 +768,20 @@ where
                 },
 
                 _ = &mut terminator.get_exit() => {
-                    info!(target: "AlephBFT-runway", "{:?} received exit signal", index);
+                    debug!(target: "AlephBFT-runway", "{:?} received exit signal", index);
                     self.exiting = true;
                 }
             };
             self.move_units_to_consensus();
 
             if self.exiting {
-                info!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
+                debug!(target: "AlephBFT-runway", "{:?} Runway decided to exit.", index);
                 terminator.terminate_sync().await;
                 break;
             }
         }
 
-        info!(target: "AlephBFT-runway", "{:?} Run ended.", index);
+        debug!(target: "AlephBFT-runway", "{:?} Run ended.", index);
     }
 }
 
@@ -1051,7 +1051,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         }
     }
 
-    info!(target: "AlephBFT-runway", "{:?} Ending run.", index);
+    debug!(target: "AlephBFT-runway", "{:?} Ending run.", index);
     let terminator_handle = terminator.terminate_sync().fuse();
     pin_mut!(terminator_handle);
 
@@ -1088,5 +1088,5 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
     }
 
-    info!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
+    debug!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
 }
