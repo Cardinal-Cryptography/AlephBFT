@@ -10,13 +10,14 @@ use log::{debug, info};
 use parking_lot::Mutex;
 use std::{
     fmt,
+    fmt::{Debug, Formatter},
     sync::Arc,
     time::{self, Duration},
 };
 
 pub type BlockNum = u32;
 
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Default, Encode, Decode)]
 pub struct Block {
     pub num: BlockNum,
     pub data: Vec<u8>,
@@ -42,6 +43,7 @@ impl Block {
 
 pub type BlockPlan = Arc<dyn Fn(BlockNum) -> NodeIndex + Sync + Send + 'static>;
 
+#[derive(Clone)]
 pub struct ChainConfig {
     // Our NodeIndex.
     pub node_ix: NodeIndex,
@@ -53,6 +55,15 @@ pub struct ChainConfig {
     pub init_delay: Duration,
     // f(k) means who should author the kth block
     pub authorship_plan: BlockPlan,
+}
+
+impl Debug for ChainConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "node index: {:?}, ", self.node_ix)?;
+        write!(f, "data size: {}, ", self.data_size)?;
+        write!(f, "blocktime: {:?}, ", self.blocktime)?;
+        write!(f, "initial delay: {:?}", self.init_delay)
+    }
 }
 
 impl ChainConfig {
