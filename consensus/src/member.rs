@@ -534,7 +534,7 @@ where
             }
         }
 
-        debug!(target: "AlephBFT-member", "{:?} Member stopped.", self.index());
+        info!(target: "AlephBFT-member", "{:?} Member stopped.", self.index());
     }
 
     fn send_notification_to_runway(&mut self, notification: RunwayNotificationIn<H, D, S>) {
