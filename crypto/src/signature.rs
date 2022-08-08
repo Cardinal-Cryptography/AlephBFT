@@ -260,7 +260,7 @@ impl<T: Signable + Index, K: Keychain> From<Signed<T, K>> for UncheckedSigned<T,
 /// implement the [`Index`] trait, it should use the `Signed::sign_with_index` method which will
 /// use this wrapper transparently. Note that in the implementation of `Signable` for `Indexed<T>`,
 /// the hash is the hash of the underlying data `T`. Therefore, instances of the type
-/// [`Signed<'a, Indexed<T>, MK>`] can be aggregated into `Multisigned<'a, T, MK>`
+/// [`Signed<Indexed<T>, MK>`] can be aggregated into `Multisigned<T, MK>`
 #[derive(Clone, Debug, Decode, Encode, PartialEq, Eq, Hash)]
 pub struct Indexed<T: Signable> {
     signable: T,
@@ -293,10 +293,9 @@ impl<T: Signable> Index for Indexed<T> {
 
 /// Signable data together with a complete multisignature.
 ///
-/// An instance of `Multisigned<'a, T: Signable, MK: MultiKeychain>` consists of a data of type `T`
-/// together with a multisignature which is valid and complete according to a multikeychain
-/// reference `&'a MK`. The lifetime parameter ensures that the data with a multisignature do not
-/// outlive the session.
+/// An instance of `Multisigned<T: Signable, MK: MultiKeychain>` consists of a data of type `T`
+/// together with a multisignature which is valid and complete according to a multikeychain of
+/// type `MK`.
 #[derive(Debug)]
 pub struct Multisigned<T: Signable, MK: MultiKeychain> {
     unchecked: UncheckedSigned<T, MK::PartialMultisignature>,

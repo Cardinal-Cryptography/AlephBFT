@@ -160,7 +160,7 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
 /// Reliable Multicast Box
 ///
 /// The instance of [`ReliableMulticast<'a, H, MK>`] reliably broadcasts hashes of type `H`,
-/// and when a hash is successfully broadcasted, the multisigned hash `Multisigned<'a, H, MK>`
+/// and when a hash is successfully broadcasted, the multisigned hash `Multisigned<H, MK>`
 /// is asynchronously returned.
 ///
 /// A node with an instance of [`ReliableMulticast<'a, H, MK>`] can initiate broadcasting
