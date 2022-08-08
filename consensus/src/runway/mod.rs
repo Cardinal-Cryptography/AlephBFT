@@ -1088,5 +1088,5 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
     }
 
-    debug!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
+    info!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
 }

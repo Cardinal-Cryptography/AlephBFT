@@ -130,7 +130,7 @@ impl<
             }
         }
 
-        debug!(target: "AlephBFT-network-hub", "Network ended.");
+        info!(target: "AlephBFT-network-hub", "Network ended.");
     }
 }
 

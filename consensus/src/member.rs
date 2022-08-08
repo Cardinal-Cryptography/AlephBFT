@@ -688,5 +688,5 @@ pub async fn run_session<
         debug!(target: "AlephBFT-member", "{:?} Network stopped.", index);
     }
 
-    debug!(target: "AlephBFT-member", "{:?} Run ended.", index);
+    info!(target: "AlephBFT-member", "{:?} Session ended.", index);
 }
