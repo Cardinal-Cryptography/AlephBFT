@@ -4,7 +4,7 @@ use crate::{
 };
 use codec::{Decode, Encode};
 use futures::{FutureExt, StreamExt};
-use log::{debug, error, warn};
+use log::{error, info, warn};
 use std::fmt::Debug;
 
 #[derive(Encode, Decode, Clone, Debug)]
