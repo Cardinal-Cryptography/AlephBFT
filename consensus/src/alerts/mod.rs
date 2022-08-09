@@ -19,7 +19,7 @@ mod io;
 
 pub(crate) type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);
 
-#[derive(Debug, Decode, Encode, Derivative)]
+#[derive(Debug, Decode, Derivative, Encode)]
 #[derivative(PartialEq, Eq, Hash)]
 pub struct Alert<H: Hasher, D: Data, S: Signature> {
     sender: NodeIndex,

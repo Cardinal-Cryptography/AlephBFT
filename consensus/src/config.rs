@@ -1,5 +1,9 @@
 use crate::{NodeCount, NodeIndex, Round, SessionId};
-use std::{sync::Arc, time::Duration};
+use std::{
+    fmt::{Debug, Formatter},
+    sync::Arc,
+    time::Duration,
+};
 
 pub type DelaySchedule = Arc<dyn Fn(usize) -> Duration + Sync + Send + 'static>;
 
@@ -19,6 +23,23 @@ pub struct DelayConfig {
     pub unit_creation_delay: DelaySchedule,
 }
 
+impl Debug for DelayConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "tick interval: {:?}, ", self.tick_interval)?;
+        write!(f, "request interval: {:?}, ", self.requests_interval)?;
+        write!(
+            f,
+            "min unit rebroadcast interval: {:?}, ",
+            self.unit_rebroadcast_interval_min
+        )?;
+        write!(
+            f,
+            "max unit rebroadcast interval: {:?}",
+            self.unit_rebroadcast_interval_max
+        )
+    }
+}
+
 /// Main configuration of the consensus. We refer to [the documentation](https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html#34-alephbft-sessions)
 /// Section 3.4 for a discussion of some of these parameters and their significance.
 #[derive(Clone)]
@@ -33,6 +54,16 @@ pub struct Config {
     pub delay_config: DelayConfig,
     /// Maximum allowable round of a unit.
     pub max_round: Round,
+}
+
+impl Debug for Config {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "node index: {:?}, ", self.node_ix)?;
+        write!(f, "session id: {}, ", self.session_id)?;
+        write!(f, "#members: {:?}, ", self.n_members)?;
+        write!(f, "delay config: {:?}, ", self.delay_config)?;
+        write!(f, "max round: {:?}", self.max_round)
+    }
 }
 
 pub fn exponential_slowdown(

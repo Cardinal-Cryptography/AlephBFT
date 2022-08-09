@@ -3,6 +3,7 @@ use futures::{
     future::FusedFuture,
 };
 use log::debug;
+use std::fmt::{Debug, Formatter};
 
 type TerminatorConnection = (Sender<()>, Receiver<()>);
 
@@ -13,6 +14,17 @@ pub struct Terminator {
     parent_exit: Receiver<()>,
     parent_connection: Option<TerminatorConnection>,
     offspring_connections: Vec<(&'static str, (Sender<()>, TerminatorConnection))>,
+}
+
+impl Debug for Terminator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "component name: {}, ", self.component_name)?;
+        write!(
+            f,
+            "#offspring connections: {}",
+            self.offspring_connections.len()
+        )
+    }
 }
 
 impl Terminator {

@@ -26,7 +26,7 @@ fn generate_salt() -> Salt {
 }
 
 /// A response to the request for the newest unit.
-#[derive(Debug, Encode, Decode, Clone)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Default, Decode, Encode)]
 pub struct NewestUnitResponse<H: Hasher, D: Data, S: Signature> {
     requester: NodeIndex,
     responder: NodeIndex,
@@ -128,6 +128,7 @@ pub enum Status {
 
 /// Initial unit collection to figure out at which round we should start unit production.
 /// Unfortunately this isn't quite BFT, but it's good enough in many situations.
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Collection<'a, MK: Keychain> {
     keychain: &'a MK,
     validator: &'a Validator<'a, MK>,

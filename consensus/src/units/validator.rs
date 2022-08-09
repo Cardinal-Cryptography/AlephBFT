@@ -56,6 +56,7 @@ impl<H: Hasher, D: Data, S: Signature> From<SignatureError<FullUnit<H, D>, S>>
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Validator<'a, K: Keychain> {
     session_id: SessionId,
     keychain: &'a K,
