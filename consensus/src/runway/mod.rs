@@ -1071,27 +1071,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     }
 
     info!(target: "AlephBFT-runway", "{:?} Ending run.", index);
-    let terminator_handle = terminator.terminate_sync().fuse();
-    pin_mut!(terminator_handle);
-
-    loop {
-        futures::select! {
-            _ = runway_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
-            },
-
-            result = packer_handle => {
-                match result {
-                    Err(()) => warn!(target: "AlephBFT-runway", "{:?} Packer finished with an error", index),
-                    _ => debug!(target: "AlephBFT-runway", "{:?} Packer stopped.", index),
-                }
-            },
-
-            _ = terminator_handle => {},
-
-            complete => break,
-        }
-    }
+    terminator.terminate_sync().await;
 
     if !consensus_handle.is_terminated() {
         if let Err(()) = consensus_handle.await {
@@ -1105,6 +1085,20 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             warn!(target: "AlephBFT-runway", "{:?} Alerter finished with an error", index);
         }
         debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
+    }
+
+    if !runway_handle.is_terminated() {
+        if let Err(()) = runway_handle.await {
+            warn!(target: "AlephBFT-runway", "{:?} Runway finished with an error", index);
+        }
+        debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
+    }
+
+    if !packer_handle.is_terminated() {
+        if let Err(()) = packer_handle.await {
+            warn!(target: "AlephBFT-runway", "{:?} Packer finished with an error", index);
+        }
+        debug!(target: "AlephBFT-runway", "{:?} Packer stopped.", index);
     }
 
     info!(target: "AlephBFT-runway", "{:?} Runway ended.", index);

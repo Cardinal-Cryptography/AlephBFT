@@ -673,30 +673,27 @@ pub async fn run_session<
 
     info!(target: "AlephBFT-member", "{:?} Run ending.", index);
 
-    let terminator_handle = terminator.terminate_sync().fuse();
-    pin_mut!(terminator_handle);
-
-    loop {
-        futures::select! {
-            _ = runway_handle => {
-                debug!(target: "AlephBFT-member", "{:?} Runway stopped.", index);
-            },
-
-            _ = member_handle => {
-                debug!(target: "AlephBFT-member", "{:?} Member stopped.", index);
-            },
-
-            _ = terminator_handle => {}
-
-            complete => break,
-        }
-    }
+    terminator.terminate_sync().await;
 
     if !network_handle.is_terminated() {
         if let Err(()) = network_handle.await {
             warn!(target: "AlephBFT-member", "{:?} Network task stopped with an error", index);
         }
         debug!(target: "AlephBFT-member", "{:?} Network stopped.", index);
+    }
+
+    if !runway_handle.is_terminated() {
+        if let Err(()) = runway_handle.await {
+            warn!(target: "AlephBFT-member", "{:?} Runway task stopped with an error", index);
+        }
+        debug!(target: "AlephBFT-member", "{:?} Runway stopped.", index);
+    }
+
+    if !member_handle.is_terminated() {
+        if let Err(()) = member_handle.await {
+            warn!(target: "AlephBFT-member", "{:?} Member task stopped with an error", index);
+        }
+        debug!(target: "AlephBFT-member", "{:?} Member stopped.", index);
     }
 
     info!(target: "AlephBFT-member", "{:?} Run ended.", index);
