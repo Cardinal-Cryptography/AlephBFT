@@ -7,7 +7,7 @@ use crate::{
 use codec::{Decode, Encode};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use futures_timer::Delay;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use std::{
     cmp::max,
     collections::hash_map::DefaultHasher,
@@ -248,11 +248,11 @@ impl<'a, H: Hasher, D: Data, MK: Keychain> IO<'a, H, D, MK> {
         {
             warn!(target: "AlephBFT-runway", "unable to send resolved request:  {}", e);
         }
-        debug!(target: "AlephBFT-runway", "Finished initial unit collection with status: {:?}", self.collection.status());
+        info!(target: "AlephBFT-runway", "Finished initial unit collection with status: {:?}", self.collection.status());
     }
 
     fn status_report(&self) {
-        debug!(target: "AlephBFT-runway", "Initial unit collection status report: status - {:?}, collected starting rounds - {}", self.collection.status(), self.collection.collected_starting_rounds);
+        info!(target: "AlephBFT-runway", "Initial unit collection status report: status - {:?}, collected starting rounds - {}", self.collection.status(), self.collection.collected_starting_rounds);
     }
 
     /// Run the initial unit collection until it sends the initial round.
@@ -271,7 +271,7 @@ impl<'a, H: Hasher, D: Data, MK: Keychain> IO<'a, H, D, MK> {
                         Some(response) => response,
                         None => {
                             warn!(target: "AlephBFT-runway", "Response channel closed.");
-                            debug!(target: "AlephBFT-runway", "Finished initial unit collection with status: {:?}", self.collection.status());
+                            info!(target: "AlephBFT-runway", "Finished initial unit collection with status: {:?}", self.collection.status());
                             return;
                         }
                     };

@@ -460,7 +460,7 @@ where
             &self.not_resolved_parents,
             &self.not_resolved_coords,
         );
-        debug!(target: "AlephBFT-member", "{}", status);
+        info!(target: "AlephBFT-member", "{}", status);
     }
 
     async fn run(mut self, mut terminator: Terminator) {
