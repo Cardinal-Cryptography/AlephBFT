@@ -1,7 +1,7 @@
 use crate::{units::UncheckedSignedUnit, Data, Hasher, NodeIndex, Round, SessionId, Signature};
 use codec::{Decode, Encode, Error as CodecError};
 use futures::channel::oneshot;
-use log::{error, info, warn};
+use log::{debug, error, warn};
 use std::{
     fmt,
     io::{Read, Write},
@@ -176,7 +176,7 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
         }
     };
     let next_round_backup: Round = units.len() as Round;
-    info!(target: "AlephBFT-unit-backup", "loaded units from backup. Loaded {:?} units", units.len());
+    debug!(target: "AlephBFT-unit-backup", "loaded units from backup. Loaded {:?} units", units.len());
 
     if let Err(e) = loaded_unit_tx.send(units) {
         error!(target: "AlephBFT-unit-backup", "could not send loaded units: {:?}", e);
@@ -192,7 +192,7 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
             return;
         }
     };
-    info!(target: "AlephBFT-unit-backup", "received next round from unit collection: {:?}", next_round_collection);
+    debug!(target: "AlephBFT-unit-backup", "received next round from unit collection: {:?}", next_round_collection);
 
     if next_round_backup < next_round_collection {
         error!(target: "AlephBFT-unit-backup", "backup lower than unit collection result. Backup got: {:?}, collection got: {:?}", next_round_backup, next_round_collection);

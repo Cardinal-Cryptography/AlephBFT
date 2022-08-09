@@ -705,7 +705,7 @@ where
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
-        info!(target: "AlephBFT-runway", "{:?} Runway started.", index);
+        debug!(target: "AlephBFT-runway", "{:?} Runway started.", index);
         loop {
             futures::select! {
                 notification = self.rx_consensus.next() => match notification {
@@ -1088,5 +1088,5 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
     }
 
-    info!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
+    debug!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
 }
