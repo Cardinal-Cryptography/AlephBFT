@@ -144,13 +144,20 @@ impl Terminator {
     }
 }
 
-pub async fn handle_task_termination<T>(task_handle: T, target: &'static str, name: &'static str, index: aleph_bft_types::NodeIndex)
-where
+pub async fn handle_task_termination<T>(
+    task_handle: T,
+    target: &'static str,
+    name: &'static str,
+    index: aleph_bft_types::NodeIndex,
+) where
     T: FusedFuture<Output = Result<(), ()>>,
 {
     if !task_handle.is_terminated() {
         if let Err(()) = task_handle.await {
-            warn!(target: target, "{:?} {} task stopped with an error", index, name);
+            warn!(
+                target: target,
+                "{:?} {} task stopped with an error", index, name
+            );
         }
         debug!(target: target, "{:?} {} stopped.", index, name);
     }

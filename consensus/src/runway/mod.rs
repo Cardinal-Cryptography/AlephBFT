@@ -1,6 +1,6 @@
 use crate::{
     alerts::{self, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
-    consensus,
+    consensus, handle_task_termination,
     member::UnitMessage,
     units::{
         ControlHash, PreUnit, SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore,
@@ -8,11 +8,10 @@ use crate::{
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
     NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, Signature, Signed, SpawnHandle,
-    Terminator, UncheckedSigned, handle_task_termination,
+    Terminator, UncheckedSigned,
 };
 use futures::{
     channel::{mpsc, oneshot},
-    future::FusedFuture,
     pin_mut, Future, FutureExt, StreamExt,
 };
 use futures_timer::Delay;

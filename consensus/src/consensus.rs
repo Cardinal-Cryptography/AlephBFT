@@ -1,17 +1,17 @@
 use futures::{
     channel::{mpsc, oneshot},
-    future::FusedFuture,
     FutureExt,
 };
-use log::{debug, warn};
+use log::debug;
 
 use crate::{
     config::Config,
     creation,
     extender::Extender,
+    handle_task_termination,
     runway::{NotificationIn, NotificationOut},
     terminal::Terminal,
-    Hasher, Receiver, Round, Sender, SpawnHandle, Terminator, handle_task_termination,
+    Hasher, Receiver, Round, Sender, SpawnHandle, Terminator,
 };
 
 pub(crate) async fn run<H: Hasher + 'static>(
