@@ -7,6 +7,7 @@ use crate::{
     },
     task_queue::TaskQueue,
     units::{UncheckedSignedUnit, UnitCoord},
+    handle_task_termination,
     Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
     NodeIndex, Receiver, Recipient, Round, Sender, Signature, SpawnHandle, Terminator,
     UncheckedSigned,
@@ -676,26 +677,9 @@ pub async fn run_session<
 
     terminator.terminate_sync().await;
 
-    if !network_handle.is_terminated() {
-        if let Err(()) = network_handle.await {
-            warn!(target: "AlephBFT-member", "{:?} Network task stopped with an error", index);
-        }
-        debug!(target: "AlephBFT-member", "{:?} Network stopped.", index);
-    }
-
-    if !runway_handle.is_terminated() {
-        if let Err(()) = runway_handle.await {
-            warn!(target: "AlephBFT-member", "{:?} Runway task stopped with an error", index);
-        }
-        debug!(target: "AlephBFT-member", "{:?} Runway stopped.", index);
-    }
-
-    if !member_handle.is_terminated() {
-        if let Err(()) = member_handle.await {
-            warn!(target: "AlephBFT-member", "{:?} Member task stopped with an error", index);
-        }
-        debug!(target: "AlephBFT-member", "{:?} Member stopped.", index);
-    }
+    handle_task_termination(network_handle, "AlephBFT-member", "Network", index).await;
+    handle_task_termination(runway_handle, "AlephBFT-member", "Runway", index).await;
+    handle_task_termination(member_handle, "AlephBFT-member", "Member", index).await;
 
     info!(target: "AlephBFT-member", "{:?} Session ended.", index);
 }

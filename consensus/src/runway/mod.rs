@@ -8,7 +8,7 @@ use crate::{
     },
     Config, Data, DataProvider, FinalizationHandler, Hasher, Index, MultiKeychain, NodeCount,
     NodeIndex, NodeMap, Receiver, Recipient, Round, Sender, Signature, Signed, SpawnHandle,
-    Terminator, UncheckedSigned,
+    Terminator, UncheckedSigned, handle_task_termination,
 };
 use futures::{
     channel::{mpsc, oneshot},
@@ -1073,33 +1073,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     debug!(target: "AlephBFT-runway", "{:?} Ending run.", index);
     terminator.terminate_sync().await;
 
-    if !consensus_handle.is_terminated() {
-        if let Err(()) = consensus_handle.await {
-            warn!(target: "AlephBFT-runway", "{:?} Consensus finished with an error", index);
-        }
-        debug!(target: "AlephBFT-runway", "{:?} Consensus stopped.", index);
-    }
-
-    if !alerter_handle.is_terminated() {
-        if let Err(()) = alerter_handle.await {
-            warn!(target: "AlephBFT-runway", "{:?} Alerter finished with an error", index);
-        }
-        debug!(target: "AlephBFT-runway", "{:?} Alerter stopped.", index);
-    }
-
-    if !runway_handle.is_terminated() {
-        if let Err(()) = runway_handle.await {
-            warn!(target: "AlephBFT-runway", "{:?} Runway finished with an error", index);
-        }
-        debug!(target: "AlephBFT-runway", "{:?} Runway stopped.", index);
-    }
-
-    if !packer_handle.is_terminated() {
-        if let Err(()) = packer_handle.await {
-            warn!(target: "AlephBFT-runway", "{:?} Packer finished with an error", index);
-        }
-        debug!(target: "AlephBFT-runway", "{:?} Packer stopped.", index);
-    }
+    handle_task_termination(consensus_handle, "AlephBFT-runway", "Consensus", index).await;
+    handle_task_termination(alerter_handle, "AlephBFT-runway", "Alerter", index).await;
+    handle_task_termination(runway_handle, "AlephBFT-runway", "Runway", index).await;
+    handle_task_termination(packer_handle, "AlephBFT-runway", "Packer", index).await;
 
     debug!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
 }
