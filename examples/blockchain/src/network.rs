@@ -106,11 +106,13 @@ pub struct NetworkManager {
 
 impl Debug for NetworkManager {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "id: {:?}, ", self.id)?;
-        write!(f, "address: {:?}, ", self.address)?;
-        write!(f, "#addresses: {}, ", self.addresses.len())?;
-        write!(f, "#bootnodes: {}, ", self.bootnodes.len())?;
-        write!(f, "#nodes: {}, ", self.n_nodes)
+        f.debug_struct("NetworkManager")
+            .field("id", &self.id)
+            .field("address", &self.address)
+            .field("#addresses", &self.addresses.len())
+            .field("#bootnodes", &self.bootnodes.len())
+            .field("#nodes", &self.n_nodes)
+            .finish()
     }
 }
 

@@ -39,11 +39,13 @@ pub struct TerminalUnit<H: Hasher> {
 
 impl<H: Hasher> Debug for TerminalUnit<H> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "unit: {:?}, ", self.unit)?;
-        write!(f, "#parents: {:?}, ", self.parents.size())?;
-        write!(f, "#miss par decoded: {:?}, ", self.n_miss_par_decoded)?;
-        write!(f, "#miss par dag: {:?}, ", self.n_miss_par_dag)?;
-        write!(f, "status: {:?}, ", self.status)
+        f.debug_struct("TerminalUnit")
+            .field("unit", &self.unit)
+            .field("#parents", &self.parents.size())
+            .field("#miss par decoded", &self.n_miss_par_decoded)
+            .field("#miss par dag", &self.n_miss_par_dag)
+            .field("status", &self.status)
+            .finish()
     }
 }
 

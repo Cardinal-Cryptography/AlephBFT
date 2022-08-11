@@ -18,12 +18,10 @@ pub struct Terminator {
 
 impl Debug for Terminator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "component name: {}, ", self.component_name)?;
-        write!(
-            f,
-            "#offspring connections: {}",
-            self.offspring_connections.len()
-        )
+        f.debug_struct("Terminator")
+            .field("component name", &self.component_name)
+            .field("#offspring connections", &self.offspring_connections.len())
+            .finish()
     }
 }
 

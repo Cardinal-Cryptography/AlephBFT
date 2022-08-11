@@ -24,19 +24,13 @@ pub struct DataStore {
 
 impl Debug for DataStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "next message id: {}, ", self.next_message_id)?;
-        write!(f, "#available blocks: {}, ", self.available_blocks.len())?;
-        write!(
-            f,
-            "#message requirements: {}, ",
-            self.message_requirements.len()
-        )?;
-        write!(
-            f,
-            "#dependent messages: {}, ",
-            self.dependent_messages.len()
-        )?;
-        write!(f, "#pending messages: {}, ", self.pending_messages.len())
+        f.debug_struct("DataStore")
+            .field("next message id", &self.next_message_id)
+            .field("#available blocks", &self.available_blocks.len())
+            .field("#message requirements", &self.message_requirements.len())
+            .field("#dependent messages", &self.dependent_messages.len())
+            .field("#pending messages", &self.pending_messages.len())
+            .finish()
     }
 }
 

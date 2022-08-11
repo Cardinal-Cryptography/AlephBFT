@@ -23,7 +23,7 @@ pub struct Block {
     pub data: Vec<u8>,
 }
 
-impl fmt::Debug for Block {
+impl Debug for Block {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Block").field("num", &self.num).finish()
     }
@@ -59,10 +59,12 @@ pub struct ChainConfig {
 
 impl Debug for ChainConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "node index: {:?}, ", self.node_ix)?;
-        write!(f, "data size: {}, ", self.data_size)?;
-        write!(f, "blocktime: {:?}, ", self.blocktime)?;
-        write!(f, "initial delay: {:?}", self.init_delay)
+        f.debug_struct("ChainConfig")
+            .field("node index", &self.node_ix)
+            .field("data size", &self.data_size)
+            .field("blocktime", &self.blocktime)
+            .field("initial delay", &self.init_delay)
+            .finish()
     }
 }
 

@@ -96,13 +96,11 @@ pub struct DoublingDelayScheduler<T> {
 
 impl<T> Debug for DoublingDelayScheduler<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "initial delay: {:?}, ", self.initial_delay)?;
-        write!(
-            f,
-            "#scheduled instants: {}, ",
-            self.scheduled_instants.len()
-        )?;
-        write!(f, "#scheduled tasks: {}, ", self.scheduled_tasks.len())
+        f.debug_struct("DoublingDelayScheduler")
+            .field("initial delay", &self.initial_delay)
+            .field("#scheduled instants", &self.scheduled_instants.len())
+            .field("#scheduled tasks", &self.scheduled_tasks.len())
+            .finish()
     }
 }
 

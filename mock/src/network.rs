@@ -100,9 +100,11 @@ pub struct Router<D: Debug> {
 
 impl<D: Debug> Debug for Router<D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "peers: {:?}, ", self.peer_list)?;
-        write!(f, "#hooks: {:?}, ", self.hook_list.borrow().len())?;
-        write!(f, "reliability: {}", self.reliability)
+        f.debug_struct("Router")
+            .field("peers", &self.peer_list)
+            .field("#hooks", &self.hook_list.borrow().len())
+            .field("reliability", &self.reliability)
+            .finish()
     }
 }
 

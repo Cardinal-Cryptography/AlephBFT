@@ -25,18 +25,18 @@ pub struct DelayConfig {
 
 impl Debug for DelayConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "tick interval: {:?}, ", self.tick_interval)?;
-        write!(f, "request interval: {:?}, ", self.requests_interval)?;
-        write!(
-            f,
-            "min unit rebroadcast interval: {:?}, ",
-            self.unit_rebroadcast_interval_min
-        )?;
-        write!(
-            f,
-            "max unit rebroadcast interval: {:?}",
-            self.unit_rebroadcast_interval_max
-        )
+        f.debug_struct("DelayConfig")
+            .field("tick interval", &self.tick_interval)
+            .field("request interval", &self.requests_interval)
+            .field(
+                "min unit rebroadcast interval",
+                &self.unit_rebroadcast_interval_min,
+            )
+            .field(
+                "max unit rebroadcast interval",
+                &self.unit_rebroadcast_interval_max,
+            )
+            .finish()
     }
 }
 

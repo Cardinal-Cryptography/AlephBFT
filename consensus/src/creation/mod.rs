@@ -27,9 +27,11 @@ pub struct Config {
 
 impl Debug for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "node id: {:?}, ", self.node_id)?;
-        write!(f, "#members: {:?}, ", self.n_members)?;
-        write!(f, "max round: {:?}", self.max_round)
+        f.debug_struct("Config")
+            .field("node id", &self.node_id)
+            .field("#members", &self.n_members)
+            .field("max round", &self.max_round)
+            .finish()
     }
 }
 
