@@ -110,7 +110,6 @@ impl<H: Hasher> PreUnit<H> {
     }
 }
 
-///
 #[derive(Debug, Decode, Derivative, Encode)]
 #[derivative(Eq, PartialEq, Hash)]
 pub struct FullUnit<H: Hasher, D: Data> {
@@ -118,8 +117,7 @@ pub struct FullUnit<H: Hasher, D: Data> {
     data: Option<D>,
     session_id: SessionId,
     #[codec(skip)]
-    #[derivative(PartialEq = "ignore")]
-    #[derivative(Hash = "ignore")]
+    #[derivative(PartialEq = "ignore", Hash = "ignore")]
     hash: RwLock<Option<H::Hash>>,
 }
 

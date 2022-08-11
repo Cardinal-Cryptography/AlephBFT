@@ -2,7 +2,7 @@ use crate::{Index, NodeCount, NodeIndex, NodeMap};
 use async_trait::async_trait;
 use codec::{Codec, Decode, Encode};
 use log::warn;
-use std::{fmt::Debug, hash::Hash, marker::PhantomData};
+use std::{fmt::Debug, hash::Hash};
 
 /// The type used as a signature.
 ///
@@ -328,27 +328,29 @@ impl<T: Signable + Clone, MK: MultiKeychain> Clone for Multisigned<T, MK> {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
+/// Error resulting from multisignature being incomplete.
+///
+/// ### `Hash` derivation
+/// `PartiallyMultisigned` only conditionally implements `Hash`:
+/// ```rust
+/// # use std::hash::Hasher;
+/// # use aleph_bft_crypto::{MultiKeychain, PartiallyMultisigned, Signable};
+/// # trait Hash {};
+/// impl<'a, T: Hash + Signable, MK: Hash + MultiKeychain>
+///    Hash for PartiallyMultisigned<'a, T, MK>
+/// where MK::PartialMultisignature: Hash {}
+/// ```
+/// i.e. Rust automatically adds `where MK::PartialMultisignature: Hash`.
+///
+/// This is a problem, since such `where` guard cannot be inferred for
+/// `IncompleteMultisignatureError` (because we do not use the associate type
+/// `MK::PartialMultisignature` of `MK` explicitly here).
+///
+/// The alternative solution could be to make `Signature: Hash` or add a phantom marker using
+/// `MK::PartialMultisignature` type.
+#[derive(Clone, Eq, PartialEq, Debug, Decode, Encode)]
 pub struct IncompleteMultisignatureError<T: Signable, MK: MultiKeychain> {
     pub partial: PartiallyMultisigned<T, MK>,
-    /// `PartiallyMultisigned` only conditionally implements `Hash`:
-    /// ```rust
-    /// # use std::hash::Hasher;
-    /// # use aleph_bft_crypto::{MultiKeychain, PartiallyMultisigned, Signable};
-    /// # trait Hash {};
-    /// impl<'a, T: Hash + Signable, MK: Hash + MultiKeychain>
-    ///    Hash for PartiallyMultisigned<'a, T, MK>
-    /// where MK::PartialMultisignature: Hash {}
-    /// ```
-    /// i.e. Rust automatically adds `where MK::PartialMultisignature: Hash`.
-    ///
-    /// This is a problem, since such `where` guard cannot be inferred for
-    /// `IncompleteMultisignatureError` (because we do not use the associate type
-    /// `MK::PartialMultisignature` of `MK` explicitly here).
-    ///
-    /// The alternative solution could be to make `Signature: Hash` or give up `Hash` for
-    /// `IncompleteMultisignatureError`.
-    _phantom: PhantomData<MK::PartialMultisignature>,
 }
 
 /// Signable data together with a valid partial multisignature.
@@ -356,12 +358,7 @@ pub struct IncompleteMultisignatureError<T: Signable, MK: MultiKeychain> {
 /// Instances of this type keep track whether the partial multisignautre is complete or not.
 /// If the multisignature is complete, you can get [`Multisigned`] by pattern matching
 /// against the variant [`PartiallyMultisigned::Complete`].
-///
-/// We can derive neither `codec::Encode` nor `codec::Decode`, because the generated implementation
-/// for enum passes template arguments incorrectly (against `E0109`), i.e.
-/// `PartiallyMultisigned::<T, MK>::Complete` instead of
-/// `PartiallyMultisigned::Complete::<T, MK>`.
-#[derive(Clone, Eq, PartialEq, Hash, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub enum PartiallyMultisigned<T: Signable, MK: MultiKeychain> {
     Incomplete {
         unchecked: UncheckedSigned<T, MK::PartialMultisignature>,

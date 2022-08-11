@@ -42,7 +42,7 @@ impl Debug for DelayConfig {
 
 /// Main configuration of the consensus. We refer to [the documentation](https://cardinal-cryptography.github.io/AlephBFT/aleph_bft_api.html#34-alephbft-sessions)
 /// Section 3.4 for a discussion of some of these parameters and their significance.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     /// Identification number of the Member=0,..,(n_members-1).
     pub node_ix: NodeIndex,
@@ -54,16 +54,6 @@ pub struct Config {
     pub delay_config: DelayConfig,
     /// Maximum allowable round of a unit.
     pub max_round: Round,
-}
-
-impl Debug for Config {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "node index: {:?}, ", self.node_ix)?;
-        write!(f, "session id: {}, ", self.session_id)?;
-        write!(f, "#members: {:?}, ", self.n_members)?;
-        write!(f, "delay config: {:?}, ", self.delay_config)?;
-        write!(f, "max round: {:?}", self.max_round)
-    }
 }
 
 pub fn exponential_slowdown(
