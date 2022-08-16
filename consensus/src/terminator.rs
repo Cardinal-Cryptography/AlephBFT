@@ -20,7 +20,10 @@ impl Debug for Terminator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Terminator")
             .field("component name", &self.component_name)
-            .field("#offspring connections", &self.offspring_connections.len())
+            .field(
+                "offspring connection count",
+                &self.offspring_connections.len(),
+            )
             .finish()
     }
 }

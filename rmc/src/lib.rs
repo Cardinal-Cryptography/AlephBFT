@@ -98,8 +98,8 @@ impl<T> Debug for DoublingDelayScheduler<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DoublingDelayScheduler")
             .field("initial delay", &self.initial_delay)
-            .field("#scheduled instants", &self.scheduled_instants.len())
-            .field("#scheduled tasks", &self.scheduled_tasks.len())
+            .field("scheduled instant count", &self.scheduled_instants.len())
+            .field("scheduled task count", &self.scheduled_tasks.len())
             .finish()
     }
 }

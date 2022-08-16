@@ -41,9 +41,9 @@ impl<H: Hasher> Debug for TerminalUnit<H> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TerminalUnit")
             .field("unit", &self.unit)
-            .field("#parents", &self.parents.size())
-            .field("#miss par decoded", &self.n_miss_par_decoded)
-            .field("#miss par dag", &self.n_miss_par_dag)
+            .field("parent count", &self.parents.size())
+            .field("miss par decoded count", &self.n_miss_par_decoded)
+            .field("miss par dag count", &self.n_miss_par_dag)
             .field("status", &self.status)
             .finish()
     }

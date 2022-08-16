@@ -26,10 +26,13 @@ impl Debug for DataStore {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DataStore")
             .field("next message id", &self.next_message_id)
-            .field("#available blocks", &self.available_blocks.len())
-            .field("#message requirements", &self.message_requirements.len())
-            .field("#dependent messages", &self.dependent_messages.len())
-            .field("#pending messages", &self.pending_messages.len())
+            .field("available block count", &self.available_blocks.len())
+            .field(
+                "message requirement count",
+                &self.message_requirements.len(),
+            )
+            .field("dependent message count", &self.dependent_messages.len())
+            .field("pending message count", &self.pending_messages.len())
             .finish()
     }
 }

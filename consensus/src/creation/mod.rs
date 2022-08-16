@@ -29,7 +29,7 @@ impl Debug for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config")
             .field("node id", &self.node_id)
-            .field("#members", &self.n_members)
+            .field("member count", &self.n_members)
             .field("max round", &self.max_round)
             .finish()
     }

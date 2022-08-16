@@ -33,7 +33,7 @@ pub struct TaskQueue<T: Eq + PartialEq> {
 impl<T: Eq + PartialEq> Debug for TaskQueue<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TaskQueue")
-            .field("#tasks", &self.queue.len())
+            .field("task count", &self.queue.len())
             .finish()
     }
 }

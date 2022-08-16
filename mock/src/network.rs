@@ -102,7 +102,7 @@ impl<D: Debug> Debug for Router<D> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Router")
             .field("peers", &self.peer_list)
-            .field("#hooks", &self.hook_list.borrow().len())
+            .field("hook count", &self.hook_list.borrow().len())
             .field("reliability", &self.reliability)
             .finish()
     }

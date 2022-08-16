@@ -109,9 +109,9 @@ impl Debug for NetworkManager {
         f.debug_struct("NetworkManager")
             .field("id", &self.id)
             .field("address", &self.address)
-            .field("#addresses", &self.addresses.len())
-            .field("#bootnodes", &self.bootnodes.len())
-            .field("#nodes", &self.n_nodes)
+            .field("address count", &self.addresses.len())
+            .field("bootnode count", &self.bootnodes.len())
+            .field("node count", &self.n_nodes)
             .finish()
     }
 }
