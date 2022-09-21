@@ -8,9 +8,8 @@ use crate::{
     },
     task_queue::TaskQueue,
     units::{UncheckedSignedUnit, UnitCoord},
-    Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeCount,
-    NodeIndex, Receiver, Recipient, Round, Sender, Signature, SpawnHandle, Terminator,
-    UncheckedSigned,
+    Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeIndex,
+    Receiver, Recipient, Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
 use aleph_bft_types::NodeMap;
 use codec::{Decode, Encode};
@@ -231,7 +230,7 @@ where
     not_resolved_parents: HashSet<H::Hash>,
     not_resolved_coords: HashSet<UnitCoord>,
     newest_unit_resolved: bool,
-    n_members: NodeCount,
+    peers: Vec<Recipient>,
     unit_messages_for_network: Sender<(UnitMessage<H, D, S>, Recipient)>,
     unit_messages_from_network: Receiver<UnitMessage<H, D, S>>,
     notifications_for_runway: Sender<RunwayNotificationIn<H, D, S>>,
@@ -256,6 +255,11 @@ where
         resolved_requests: Receiver<Request<H>>,
     ) -> Self {
         let n_members = config.n_members;
+        let peers = (0..n_members.0)
+            .map(NodeIndex)
+            .filter(|x| *x != config.node_ix)
+            .map(Recipient::Node)
+            .collect();
 
         Self {
             config,
@@ -263,7 +267,7 @@ where
             not_resolved_parents: HashSet::new(),
             not_resolved_coords: HashSet::new(),
             newest_unit_resolved: false,
-            n_members,
+            peers,
             unit_messages_for_network,
             unit_messages_from_network,
             notifications_for_runway,
@@ -342,11 +346,10 @@ where
     }
 
     fn random_peers(&self, n: usize) -> Vec<Recipient> {
-        (0..self.n_members.into())
+        self.peers
+            .iter()
+            .cloned()
             .choose_multiple(&mut rand::thread_rng(), n)
-            .into_iter()
-            .map(|i| Recipient::Node(NodeIndex(i)))
-            .collect()
     }
 
     fn index(&self) -> NodeIndex {
@@ -692,12 +695,13 @@ mod tests {
     use super::*;
     use crate::testing::gen_config;
     use aleph_bft_mock::{Hasher64, Signature};
+    use aleph_bft_types::NodeCount;
     use futures::channel::mpsc::unbounded;
     use itertools::Itertools;
     use std::sync::Arc;
 
-    fn mock_member() -> Member<Hasher64, u32, Signature> {
-        let config = gen_config(NodeIndex(0), NodeCount(20));
+    fn mock_member(node_ix: NodeIndex, node_count: NodeCount) -> Member<Hasher64, u32, Signature> {
+        let config = gen_config(node_ix, node_count);
         let (unit_messages_for_network_sx, _) = unbounded();
         let (_, unit_messages_from_network_rx) = unbounded();
         let (notifications_for_runway_sx, _) = unbounded();
@@ -716,7 +720,7 @@ mod tests {
 
     #[test]
     fn delay_for_coord_request() {
-        let mut member = mock_member();
+        let mut member = mock_member(NodeIndex(7), NodeCount(20));
         member.config.delay_config.coord_request_delay =
             Arc::new(|t| Duration::from_millis(123 + t as u64));
 
@@ -727,7 +731,8 @@ mod tests {
 
     #[test]
     fn recipients_for_coord_request() {
-        let mut member = mock_member();
+        let node_ix = NodeIndex(7);
+        let mut member = mock_member(node_ix, NodeCount(20));
         member.config.delay_config.coord_request_recipients = Arc::new(|t| 10 - t);
 
         let request = CoordRequest(UnitCoord::new(1, NodeIndex(3)));
@@ -738,17 +743,28 @@ mod tests {
             recipients.iter().cloned().unique().collect::<Vec<_>>(),
             recipients
         );
+        assert!(!recipients.contains(&Recipient::Node(node_ix)));
     }
 
     #[test]
     fn at_most_n_members_recipients_for_coord_request() {
-        let mut member = mock_member();
-        let size = member.n_members.0;
-        member.config.delay_config.coord_request_recipients = Arc::new(move |_| size + 10);
+        let mut member = mock_member(NodeIndex(7), NodeCount(20));
+        member.config.delay_config.coord_request_recipients = Arc::new(move |_| 30);
 
         let request = CoordRequest(UnitCoord::new(1, NodeIndex(3)));
         let recipients = member.recipients(&request, 10);
 
-        assert_eq!(recipients.len(), member.n_members.0);
+        assert_eq!(recipients.len(), member.config.n_members.0 - 1);
+    }
+
+    #[test]
+    fn no_recipients_for_coord_request_in_one_node_setup() {
+        let mut member = mock_member(NodeIndex(0), NodeCount(1));
+        member.config.delay_config.coord_request_recipients = Arc::new(move |_| 30);
+
+        let request = CoordRequest(UnitCoord::new(1, NodeIndex(3)));
+        let recipients = member.recipients(&request, 10);
+
+        assert_eq!(recipients, vec![]);
     }
 }
