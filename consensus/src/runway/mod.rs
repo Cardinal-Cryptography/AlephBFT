@@ -598,12 +598,8 @@ where
             trace!(target: "AlephBFT-runway", "{:?} We have the parents for {:?} even though we did not request them.", self.index(), u_hash);
             let notification = NotificationIn::UnitParents(u_hash, p_hashes);
             self.send_consensus_notification(notification);
-        } else {
-            if self.missing_parents.insert(u_hash) {
-                self.send_message_for_network(RunwayNotificationOut::Request(Request::Parents(
-                    u_hash,
-                )));
-            }
+        } else if self.missing_parents.insert(u_hash) {
+            self.send_message_for_network(RunwayNotificationOut::Request(Request::Parents(u_hash)));
         }
     }
 
