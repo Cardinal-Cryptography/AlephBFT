@@ -19,7 +19,7 @@ use futures_timer::Delay;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use network::NetworkData;
-use rand::Rng;
+use rand::{prelude::IteratorRandom, Rng};
 use std::{
     collections::HashSet,
     convert::TryInto,
@@ -70,7 +70,7 @@ enum Task<H: Hasher, D: Data, S: Signature> {
     // Request the unit with the given (creator, round) coordinates.
     CoordRequest(UnitCoord),
     // Request parents of the unit with the given hash and Recipient.
-    ParentsRequest(H::Hash, Recipient),
+    ParentsRequest(H::Hash),
     // Rebroadcast a given unit periodically (cancelled after a more recent unit by the same creator is received)
     UnitBroadcast(UncheckedSignedUnit<H, D, S>),
     // Request the newest unit created by node itself.
@@ -103,7 +103,7 @@ enum TaskDetails<H: Hasher, D: Data, S: Signature> {
     Cancel,
     Perform {
         message: UnitMessage<H, D, S>,
-        recipient: Recipient,
+        recipients: Vec<Recipient>,
         reschedule: Duration,
     },
 }
@@ -168,7 +168,7 @@ where
         for task in self.task_queue.iter().map(|st| &st.task) {
             match task {
                 CoordRequest(_) => count_coord_request += 1,
-                ParentsRequest(_, _) => count_parents_request += 1,
+                ParentsRequest(_) => count_parents_request += 1,
                 RequestNewest(_) => count_request_newest += 1,
                 UnitBroadcast(_) => count_rebroadcast += 1,
             }
@@ -289,7 +289,7 @@ where
         {
             self.top_units.insert(unit_creator, unit_round);
             let task = RepeatableTask::new(UnitBroadcast(new_unit));
-            let delay = self.delay(&task.task);
+            let delay = self.delay(&task.task, task.counter);
             self.task_queue.schedule_in(task, delay)
         }
     }
@@ -305,13 +305,13 @@ where
         self.trigger_tasks();
     }
 
-    fn on_request_parents(&mut self, u_hash: H::Hash, recipient: Recipient) {
+    fn on_request_parents(&mut self, u_hash: H::Hash) {
         if !self.not_resolved_parents.insert(u_hash) {
             return;
         }
 
         self.task_queue
-            .schedule_now(RepeatableTask::new(ParentsRequest(u_hash, recipient)));
+            .schedule_now(RepeatableTask::new(ParentsRequest(u_hash)));
         self.trigger_tasks();
     }
 
@@ -327,10 +327,13 @@ where
                 TaskDetails::Cancel => (),
                 TaskDetails::Perform {
                     message,
-                    recipient,
+                    recipients,
                     reschedule,
                 } => {
-                    self.send_unit_message(message, recipient);
+                    for recipient in recipients.into_iter() {
+                        self.send_unit_message(message.clone(), recipient);
+                    }
+
                     task.counter += 1;
                     self.task_queue.schedule_in(task, reschedule)
                 }
@@ -338,11 +341,12 @@ where
         }
     }
 
-    fn random_peer(&self) -> Recipient {
-        let node = rand::thread_rng()
-            .gen_range(0..self.n_members.into())
-            .into();
-        Recipient::Node(node)
+    fn random_peers(&self, n: usize) -> Vec<Recipient> {
+        (0..self.n_members.into())
+            .choose_multiple(&mut rand::thread_rng(), n)
+            .into_iter()
+            .map(|i| Recipient::Node(NodeIndex(i)))
+            .collect()
     }
 
     fn index(&self) -> NodeIndex {
@@ -369,8 +373,8 @@ where
             false => TaskDetails::Cancel,
             true => TaskDetails::Perform {
                 message: self.message(task),
-                recipient: self.recipient(task, counter),
-                reschedule: self.delay(task),
+                recipients: self.recipients(task, counter),
+                reschedule: self.delay(task, counter),
             },
         }
     }
@@ -378,33 +382,27 @@ where
     fn message(&self, task: &Task<H, D, S>) -> UnitMessage<H, D, S> {
         match task {
             CoordRequest(coord) => UnitMessage::RequestCoord(self.index(), *coord),
-            ParentsRequest(hash, _) => UnitMessage::RequestParents(self.index(), *hash),
+            ParentsRequest(hash) => UnitMessage::RequestParents(self.index(), *hash),
             UnitBroadcast(unit) => UnitMessage::NewUnit(unit.clone()),
             RequestNewest(salt) => UnitMessage::RequestNewest(self.index(), *salt),
         }
     }
 
-    fn recipient(&self, task: &Task<H, D, S>, counter: usize) -> Recipient {
-        match (self.preferred_recipient(task), counter) {
-            (Recipient::Everyone, _) => Recipient::Everyone,
-            (recipient, 0) => recipient,
-            (_, _) => self.random_peer(),
-        }
-    }
-
-    fn preferred_recipient(&self, task: &Task<H, D, S>) -> Recipient {
+    fn recipients(&self, task: &Task<H, D, S>, counter: usize) -> Vec<Recipient> {
         match task {
-            CoordRequest(coord) => Recipient::Node(coord.creator()),
-            ParentsRequest(_, preferred_recipient) => preferred_recipient.clone(),
-            UnitBroadcast(_) => Recipient::Everyone,
-            RequestNewest(_) => Recipient::Everyone,
+            CoordRequest(_) => {
+                self.random_peers((self.config.delay_config.coord_request_recipients)(counter))
+            }
+            ParentsRequest(_) => self.random_peers(1),
+            UnitBroadcast(_) => vec![Recipient::Everyone],
+            RequestNewest(_) => vec![Recipient::Everyone],
         }
     }
 
     fn still_valid(&self, task: &Task<H, D, S>) -> bool {
         match task {
             CoordRequest(coord) => self.not_resolved_coords.contains(coord),
-            ParentsRequest(hash, _preferred_recipient) => self.not_resolved_parents.contains(hash),
+            ParentsRequest(hash) => self.not_resolved_parents.contains(hash),
             RequestNewest(_) => !self.newest_unit_resolved,
             UnitBroadcast(unit) => {
                 Some(&unit.as_signable().round())
@@ -414,9 +412,13 @@ where
     }
 
     /// Most tasks use `requests_interval` (see [crate::DelayConfig]) as their delay.
-    /// The exception is [Task::UnitBroadcast] - this one picks a random delay between
+    ///
+    /// The first exception is [Task::UnitBroadcast] - this one picks a random delay between
     /// `unit_rebroadcast_interval_min` and `unit_rebroadcast_interval_max`.
-    fn delay(&self, task: &Task<H, D, S>) -> Duration {
+    ///
+    /// The other exception is [Task::CoordRequest] - this one uses the configurable
+    /// `coord_request_delay` schedule.
+    fn delay(&self, task: &Task<H, D, S>, counter: usize) -> Duration {
         match task {
             UnitBroadcast(_) => {
                 let low = self.config.delay_config.unit_rebroadcast_interval_min;
@@ -424,6 +426,7 @@ where
                 let millis = rand::thread_rng().gen_range(low.as_millis()..high.as_millis());
                 Duration::from_millis(millis as u64)
             }
+            CoordRequest(_) => (self.config.delay_config.coord_request_delay)(counter),
             _ => self.config.delay_config.requests_interval,
         }
     }
@@ -432,9 +435,9 @@ where
         match message {
             RunwayNotificationOut::NewSelfUnit(u) => self.on_create(u),
             RunwayNotificationOut::NewAnyUnit(u) => self.on_unit_discovered(u),
-            RunwayNotificationOut::Request(request, recipient) => match request {
+            RunwayNotificationOut::Request(request) => match request {
                 Request::Coord(coord) => self.on_request_coord(coord),
-                Request::Parents(u_hash) => self.on_request_parents(u_hash, recipient),
+                Request::Parents(u_hash) => self.on_request_parents(u_hash),
                 Request::NewestUnit(salt) => self.on_request_newest(salt),
             },
             RunwayNotificationOut::Response(response, recipient) => match response {
@@ -682,4 +685,70 @@ pub async fn run_session<
     handle_task_termination(member_handle, "AlephBFT-member", "Member", index).await;
 
     info!(target: "AlephBFT-member", "{:?} Session ended.", index);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::gen_config;
+    use aleph_bft_mock::{Hasher64, Signature};
+    use futures::channel::mpsc::unbounded;
+    use itertools::Itertools;
+    use std::sync::Arc;
+
+    fn mock_member() -> Member<Hasher64, u32, Signature> {
+        let config = gen_config(NodeIndex(0), NodeCount(20));
+        let (unit_messages_for_network_sx, _) = unbounded();
+        let (_, unit_messages_from_network_rx) = unbounded();
+        let (notifications_for_runway_sx, _) = unbounded();
+        let (_, notifications_from_runway_rx) = unbounded();
+        let (_, resolved_requests_rx) = unbounded();
+
+        Member::new(
+            config,
+            unit_messages_for_network_sx,
+            unit_messages_from_network_rx,
+            notifications_for_runway_sx,
+            notifications_from_runway_rx,
+            resolved_requests_rx,
+        )
+    }
+
+    #[test]
+    fn delay_for_coord_request() {
+        let mut member = mock_member();
+        member.config.delay_config.coord_request_delay =
+            Arc::new(|t| Duration::from_millis(123 + t as u64));
+
+        let delay = member.delay(&CoordRequest(UnitCoord::new(1, NodeIndex(3))), 10);
+
+        assert_eq!(delay, Duration::from_millis(133));
+    }
+
+    #[test]
+    fn recipients_for_coord_request() {
+        let mut member = mock_member();
+        member.config.delay_config.coord_request_recipients = Arc::new(|t| 10 - t);
+
+        let request = CoordRequest(UnitCoord::new(1, NodeIndex(3)));
+        let recipients = member.recipients(&request, 3);
+
+        assert_eq!(recipients.len(), 7);
+        assert_eq!(
+            recipients.iter().cloned().unique().collect::<Vec<_>>(),
+            recipients
+        );
+    }
+
+    #[test]
+    fn at_most_n_members_recipients_for_coord_request() {
+        let mut member = mock_member();
+        let size = member.n_members.0;
+        member.config.delay_config.coord_request_recipients = Arc::new(move |_| size + 10);
+
+        let request = CoordRequest(UnitCoord::new(1, NodeIndex(3)));
+        let recipients = member.recipients(&request, 10);
+
+        assert_eq!(recipients.len(), member.n_members.0);
+    }
 }
