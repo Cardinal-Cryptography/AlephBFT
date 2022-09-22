@@ -396,7 +396,11 @@ where
             CoordRequest(_) => {
                 self.random_peers((self.config.delay_config.coord_request_recipients)(counter))
             }
-            ParentsRequest(_) => self.random_peers(1),
+            ParentsRequest(_) => {
+                self.random_peers((self.config.delay_config.parent_request_recipients)(
+                    counter,
+                ))
+            }
             UnitBroadcast(_) => vec![Recipient::Everyone],
             RequestNewest(_) => vec![Recipient::Everyone],
         }
@@ -430,7 +434,8 @@ where
                 Duration::from_millis(millis as u64)
             }
             CoordRequest(_) => (self.config.delay_config.coord_request_delay)(counter),
-            _ => self.config.delay_config.requests_interval,
+            ParentsRequest(_) => (self.config.delay_config.parent_request_delay)(counter),
+            RequestNewest(_) => (self.config.delay_config.newest_request_delay)(counter),
         }
     }
 
@@ -730,12 +735,51 @@ mod tests {
     }
 
     #[test]
+    fn delay_for_parent_request() {
+        let mut member = mock_member(NodeIndex(7), NodeCount(20));
+        member.config.delay_config.parent_request_delay =
+            Arc::new(|t| Duration::from_millis(123 + t as u64));
+
+        let delay = member.delay(&ParentsRequest(Hasher64::hash(&[0x0])), 10);
+
+        assert_eq!(delay, Duration::from_millis(133));
+    }
+
+    #[test]
+    fn delay_for_newest_request() {
+        let mut member = mock_member(NodeIndex(7), NodeCount(20));
+        member.config.delay_config.newest_request_delay =
+            Arc::new(|t| Duration::from_millis(123 + t as u64));
+
+        let delay = member.delay(&RequestNewest(12345), 10);
+
+        assert_eq!(delay, Duration::from_millis(133));
+    }
+
+    #[test]
     fn recipients_for_coord_request() {
         let node_ix = NodeIndex(7);
         let mut member = mock_member(node_ix, NodeCount(20));
         member.config.delay_config.coord_request_recipients = Arc::new(|t| 10 - t);
 
         let request = CoordRequest(UnitCoord::new(1, NodeIndex(3)));
+        let recipients = member.recipients(&request, 3);
+
+        assert_eq!(recipients.len(), 7);
+        assert_eq!(
+            recipients.iter().cloned().unique().collect::<Vec<_>>(),
+            recipients
+        );
+        assert!(!recipients.contains(&Recipient::Node(node_ix)));
+    }
+
+    #[test]
+    fn recipients_for_parent_request() {
+        let node_ix = NodeIndex(7);
+        let mut member = mock_member(node_ix, NodeCount(20));
+        member.config.delay_config.parent_request_recipients = Arc::new(|t| 10 - t);
+
+        let request = ParentsRequest(Hasher64::hash(&[0x0]));
         let recipients = member.recipients(&request, 3);
 
         assert_eq!(recipients.len(), 7);

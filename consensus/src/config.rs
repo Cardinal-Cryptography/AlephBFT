@@ -16,8 +16,6 @@ pub type RecipientCountSchedule = Arc<dyn Fn(usize) -> usize + Sync + Send + 'st
 pub struct DelayConfig {
     /// Tick frequency of the Member. Governs internal task queue of the Member.
     pub tick_interval: Duration,
-    /// After what delay, we repeat a request for a coord or parents.
-    pub requests_interval: Duration,
     /// Minimum frequency of broadcast of top known units. Units have to be at least this old to be
     /// rebroadcast at all.
     pub unit_rebroadcast_interval_min: Duration,
@@ -31,13 +29,21 @@ pub struct DelayConfig {
     /// coord_request_recipients(k) represents the number of nodes to ask at the kth try when
     /// requesting a unit by coords.
     pub coord_request_recipients: RecipientCountSchedule,
+    /// parent_request_delay(k) represents the delay between the kth and (k+1)st try when requesting
+    /// unknown parents of a unit.
+    pub parent_request_delay: DelaySchedule,
+    /// parent_request_recipients(k) represents the number of nodes to ask at the kth try when
+    /// requesting unknown parents of a unit.
+    pub parent_request_recipients: RecipientCountSchedule,
+    /// newest_request_delay(k) represents the delay between the kth and (k+1)st try when sending
+    /// a broadcast request for newest units
+    pub newest_request_delay: DelaySchedule,
 }
 
 impl Debug for DelayConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DelayConfig")
             .field("tick interval", &self.tick_interval)
-            .field("request interval", &self.requests_interval)
             .field(
                 "min unit rebroadcast interval",
                 &self.unit_rebroadcast_interval_min,
@@ -94,12 +100,14 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
         n_members,
         delay_config: DelayConfig {
             tick_interval: Duration::from_millis(100),
-            requests_interval: Duration::from_millis(3000),
             unit_rebroadcast_interval_min: Duration::from_millis(15000),
             unit_rebroadcast_interval_max: Duration::from_millis(20000),
             unit_creation_delay: default_unit_creation_delay(),
             coord_request_delay: default_coord_request_delay(),
             coord_request_recipients: default_coord_request_recipients(),
+            parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+            parent_request_recipients: Arc::new(|_| 1),
+            newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
         },
         max_round: 5000,
     }

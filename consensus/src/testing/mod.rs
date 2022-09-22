@@ -41,7 +41,6 @@ pub fn complete_oneshot<T: std::fmt::Debug>(t: T) -> oneshot::Receiver<T> {
 pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount) -> Config {
     let delay_config = DelayConfig {
         tick_interval: Duration::from_millis(5),
-        requests_interval: Duration::from_millis(50),
         unit_rebroadcast_interval_min: Duration::from_millis(400),
         unit_rebroadcast_interval_max: Duration::from_millis(500),
         //50, 50, 50, 50, ...
@@ -50,6 +49,12 @@ pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount) -> Config {
         coord_request_delay: Arc::new(|_| Duration::from_millis(100)),
         //3, 1, 1, 1, ...
         coord_request_recipients: Arc::new(|t| if t == 0 { 3 } else { 1 }),
+        // 50, 50, 50, 50, ...
+        parent_request_delay: Arc::new(|_| Duration::from_millis(50)),
+        // 1, 1, 1, ...
+        parent_request_recipients: Arc::new(|_| 1),
+        // 50, 50, 50, 50, ...
+        newest_request_delay: Arc::new(|_| Duration::from_millis(50)),
     };
     Config {
         node_ix,
