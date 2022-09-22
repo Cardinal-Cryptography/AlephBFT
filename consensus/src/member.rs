@@ -18,7 +18,7 @@ use futures_timer::Delay;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use network::NetworkData;
-use rand::{prelude::IteratorRandom, Rng};
+use rand::{prelude::SliceRandom, Rng};
 use std::{
     collections::HashSet,
     convert::TryInto,
@@ -347,9 +347,9 @@ where
 
     fn random_peers(&self, n: usize) -> Vec<Recipient> {
         self.peers
-            .iter()
-            .cloned()
             .choose_multiple(&mut rand::thread_rng(), n)
+            .cloned()
+            .collect()
     }
 
     fn index(&self) -> NodeIndex {

@@ -1,6 +1,6 @@
 use aleph_bft::{
-    exponential_slowdown, run_session, Config, DelayConfig, LocalIO, Network as NetworkT,
-    NetworkData, NodeCount, NodeIndex, Recipient, SpawnHandle, TaskHandle, Terminator,
+    run_session, Config, DelayConfig, LocalIO, Network as NetworkT, NetworkData, NodeCount,
+    NodeIndex, Recipient, SpawnHandle, TaskHandle, Terminator,
 };
 use aleph_bft_mock::{
     Data, DataProvider, FinalizationHandler, Hasher64, Keychain, Loader, NetworkHook,
@@ -193,7 +193,7 @@ pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount) -> Config {
         unit_rebroadcast_interval_min: Duration::from_millis(400),
         unit_rebroadcast_interval_max: Duration::from_millis(500),
         //50, 50, 50, 50, ...
-        unit_creation_delay: Arc::new(|t| exponential_slowdown(t, 50.0, usize::MAX, 1.000)),
+        unit_creation_delay: Arc::new(|_| Duration::from_millis(50)),
         //100, 100, 100, ...
         coord_request_delay: Arc::new(|_| Duration::from_millis(100)),
         //3, 1, 1, 1, ...

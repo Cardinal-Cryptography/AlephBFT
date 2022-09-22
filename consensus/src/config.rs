@@ -25,8 +25,8 @@ pub struct DelayConfig {
     pub unit_rebroadcast_interval_max: Duration,
     /// unit_creation_delay(k) represents the delay between creating the (k-1)th and kth unit.
     pub unit_creation_delay: DelaySchedule,
-    /// coord_request_delay(k) represents the delay between the (k - 1)th and kth retry when
-    /// requesting a unit by coords.
+    /// coord_request_delay(k) represents the delay between the kth and (k+1)st try when requesting
+    /// a unit by coords.
     pub coord_request_delay: DelaySchedule,
     /// coord_request_recipients(k) represents the number of nodes to ask at the kth try when
     /// requesting a unit by coords.
@@ -116,11 +116,13 @@ fn default_unit_creation_delay() -> DelaySchedule {
     })
 }
 
-/// 100, 1000, 3000, 6000, 9000, ...
+/// 0, 50, 1000, 3000, 6000, 9000, ...
 fn default_coord_request_delay() -> DelaySchedule {
     Arc::new(|t| {
-        if t <= 1 {
-            Duration::from_millis(100)
+        if t <= 0 {
+            Duration::from_millis(0)
+        } else if t <= 1 {
+            Duration::from_millis(50)
         } else if t == 2 {
             Duration::from_millis(1000)
         } else {
