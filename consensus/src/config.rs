@@ -115,27 +115,19 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
 
 /// 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)
 fn default_unit_creation_delay() -> DelaySchedule {
-    Arc::new(|t| {
-        if t == 0 {
-            Duration::from_millis(5000)
-        } else {
-            exponential_slowdown(t, 500.0, 3000, 1.005)
-        }
+    Arc::new(|t| match t {
+        0 => Duration::from_millis(5000),
+        _ => exponential_slowdown(t, 500.0, 3000, 1.005),
     })
 }
 
 /// 0, 50, 1000, 3000, 6000, 9000, ...
 fn default_coord_request_delay() -> DelaySchedule {
-    Arc::new(|t| {
-        if t <= 0 {
-            Duration::from_millis(0)
-        } else if t <= 1 {
-            Duration::from_millis(50)
-        } else if t == 2 {
-            Duration::from_millis(1000)
-        } else {
-            Duration::from_millis(3000 * (t as u64 - 2))
-        }
+    Arc::new(|t| match t {
+        0 => Duration::from_millis(0),
+        1 => Duration::from_millis(50),
+        2 => Duration::from_millis(1000),
+        _ => Duration::from_millis(3000 * (t as u64 - 2)),
     })
 }
 
