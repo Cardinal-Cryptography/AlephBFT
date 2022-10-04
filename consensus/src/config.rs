@@ -99,7 +99,7 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
         session_id,
         n_members,
         delay_config: DelayConfig {
-            tick_interval: Duration::from_millis(100),
+            tick_interval: Duration::from_millis(10),
             unit_rebroadcast_interval_min: Duration::from_millis(15000),
             unit_rebroadcast_interval_max: Duration::from_millis(20000),
             unit_creation_delay: default_unit_creation_delay(),
