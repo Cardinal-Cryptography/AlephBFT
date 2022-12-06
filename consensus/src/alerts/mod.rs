@@ -406,19 +406,18 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     }
 }
 
-pub(crate) type MessagesForNetwork<H, D, MK> = Sender<(
+pub type MessagesForNetwork<H, D, MK> = (
     AlertMessage<H, D, <MK as Keychain>::Signature, <MK as MultiKeychain>::PartialMultisignature>,
     Recipient,
-)>;
+);
 
-pub(crate) type MessagesFromNetwork<H, D, MK> = Receiver<
-    AlertMessage<H, D, <MK as Keychain>::Signature, <MK as MultiKeychain>::PartialMultisignature>,
->;
+pub type MessagesFromNetwork<H, D, MK> =
+    AlertMessage<H, D, <MK as Keychain>::Signature, <MK as MultiKeychain>::PartialMultisignature>;
 
 pub(crate) async fn run<H: Hasher, D: Data, MK: MultiKeychain>(
     keychain: MK,
-    messages_for_network: MessagesForNetwork<H, D, MK>,
-    messages_from_network: MessagesFromNetwork<H, D, MK>,
+    messages_for_network: Sender<MessagesForNetwork<H, D, MK>>,
+    messages_from_network: Receiver<MessagesFromNetwork<H, D, MK>>,
     notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     config: AlertConfig,
