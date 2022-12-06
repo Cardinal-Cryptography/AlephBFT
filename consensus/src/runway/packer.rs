@@ -113,16 +113,16 @@ mod tests {
     const NODE_ID: NodeIndex = NodeIndex(0);
     const N_MEMBERS: NodeCount = NodeCount(4);
 
-    fn prepare(
-        keychain: Keychain,
-    ) -> (
+    type Preliminaries = (
         Sender<PreUnit<Hasher64>>,
         Receiver<SignedUnit<Hasher64, Data, Keychain>>,
         Packer<Hasher64, Data, DataProvider, Keychain>,
         oneshot::Sender<()>,
         Terminator,
         PreUnit<Hasher64>,
-    ) {
+    );
+
+    fn prepare(keychain: Keychain) -> Preliminaries {
         let data_provider = DataProvider::new();
         let (preunits_channel, preunits_from_runway) = mpsc::unbounded();
         let (signed_units_for_runway, signed_units_channel) = mpsc::unbounded();

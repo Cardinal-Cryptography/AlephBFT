@@ -212,11 +212,17 @@ impl<'a, MK: Keychain> Collection<'a, MK> {
     }
 }
 
+type ResponsesFromNetwork<H, D, MK> = Receiver<
+    UncheckedSigned<
+        NewestUnitResponse<H, D, <MK as Keychain>::Signature>,
+        <MK as Keychain>::Signature,
+    >,
+>;
+
 /// A runnable wrapper around initial unit collection.
 pub struct IO<'a, H: Hasher, D: Data, MK: Keychain> {
     round_for_creator: oneshot::Sender<Round>,
-    responses_from_network:
-        Receiver<UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>>,
+    responses_from_network: ResponsesFromNetwork<H, D, MK>,
     resolved_requests: Sender<Request<H>>,
     collection: Collection<'a, MK>,
 }
@@ -225,9 +231,7 @@ impl<'a, H: Hasher, D: Data, MK: Keychain> IO<'a, H, D, MK> {
     /// Create the IO instance for the specified collection and channels associated with it.
     pub fn new(
         round_for_creator: oneshot::Sender<Round>,
-        responses_from_network: Receiver<
-            UncheckedSigned<NewestUnitResponse<H, D, MK::Signature>, MK::Signature>,
-        >,
+        responses_from_network: ResponsesFromNetwork<H, D, MK>,
         resolved_requests: Sender<Request<H>>,
         collection: Collection<'a, MK>,
     ) -> Self {

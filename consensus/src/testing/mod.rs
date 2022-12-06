@@ -65,18 +65,20 @@ pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount) -> Config {
     }
 }
 
+type HonestMemeber = (
+    UnboundedReceiver<Data>,
+    Arc<Mutex<Vec<u8>>>,
+    oneshot::Sender<()>,
+    TaskHandle,
+);
+
 pub fn spawn_honest_member(
     spawner: Spawner,
     node_index: NodeIndex,
     n_members: NodeCount,
     units: Vec<u8>,
     network: impl 'static + NetworkT<NetworkData>,
-) -> (
-    UnboundedReceiver<Data>,
-    Arc<Mutex<Vec<u8>>>,
-    oneshot::Sender<()>,
-    TaskHandle,
-) {
+) -> HonestMemeber {
     let data_provider = DataProvider::new();
     let (finalization_handler, finalization_rx) = FinalizationHandler::new();
     let config = gen_config(node_index, n_members);

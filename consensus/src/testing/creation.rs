@@ -63,15 +63,15 @@ impl TestController {
     }
 }
 
-fn setup_test(
-    n_members: NodeCount,
-) -> (
+type TestSetup = (
     TestController,
     Vec<oneshot::Sender<()>>,
     Vec<tokio::task::JoinHandle<()>>,
     Receiver<Unit>,
     Vec<Sender<Unit>>,
-) {
+);
+
+fn setup_test(n_members: NodeCount) -> TestSetup {
     let (notifications_for_controller, notifications_from_creators) = mpsc::unbounded();
     let (units_for_creators, units_from_controller) = mpsc::unbounded();
 
