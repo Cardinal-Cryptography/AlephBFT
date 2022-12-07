@@ -132,7 +132,7 @@ mod tests {
             keychain,
             SESSION_ID,
         );
-        let (_, exit_rx) = oneshot::channel();
+        let (_exit_tx, exit_rx) = oneshot::channel();
         let parent_map = NodeMap::with_size(N_MEMBERS);
         let control_hash = ControlHash::new(&parent_map);
         let terminator = Terminator::create_root(exit_rx, "AlephBFT-packer");

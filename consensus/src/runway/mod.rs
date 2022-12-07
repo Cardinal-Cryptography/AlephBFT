@@ -1,8 +1,5 @@
 use crate::{
-    alerts::{
-        self, Alert, AlertConfig, ForkProof, ForkingNotification, MessagesForNetwork,
-        MessagesFromNetwork,
-    },
+    alerts::{self, Alert, AlertConfig, ForkProof, ForkingNotification, NetworkMessages},
     consensus, handle_task_termination,
     member::UnitMessage,
     units::{
@@ -13,6 +10,7 @@ use crate::{
     NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Signature, Signed, SpawnHandle,
     Terminator, UncheckedSigned,
 };
+use aleph_bft_types::Recipient;
 use futures::{
     channel::{mpsc, oneshot},
     pin_mut, Future, FutureExt, StreamExt,
@@ -120,11 +118,7 @@ impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
     }
 }
 
-type ResponsesForCollection<H, D, MK> = UncheckedSigned<
-    NewestUnitResponse<H, D, <MK as Keychain>::Signature>,
-    <MK as Keychain>::Signature,
->;
-type ResponsesFromCollection<H, D, MK> = UncheckedSigned<
+type CollectionResponses<H, D, MK> = UncheckedSigned<
     NewestUnitResponse<H, D, <MK as Keychain>::Signature>,
     <MK as Keychain>::Signature,
 >;
@@ -146,7 +140,7 @@ where
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
     unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
-    responses_for_collection: Sender<ResponsesForCollection<H, D, MK>>,
+    responses_for_collection: Sender<CollectionResponses<H, D, MK>>,
     resolved_requests: Sender<Request<H>>,
     tx_consensus: Sender<NotificationIn<H>>,
     rx_consensus: Receiver<NotificationOut<H>>,
@@ -209,7 +203,7 @@ struct RunwayConfig<H: Hasher, D: Data, US: Write, FH: FinalizationHandler<D>, M
     rx_consensus: Receiver<NotificationOut<H>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
     unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
-    responses_for_collection: Sender<ResponsesForCollection<H, D, MK>>,
+    responses_for_collection: Sender<CollectionResponses<H, D, MK>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     resolved_requests: Sender<Request<H>>,
     preunits_for_packer: Sender<PreUnit<H>>,
@@ -771,8 +765,8 @@ where
 }
 
 pub(crate) struct NetworkIO<H: Hasher, D: Data, MK: MultiKeychain> {
-    pub(crate) alert_messages_for_network: Sender<MessagesForNetwork<H, D, MK>>,
-    pub(crate) alert_messages_from_network: Receiver<MessagesFromNetwork<H, D, MK>>,
+    pub(crate) alert_messages_for_network: Sender<(NetworkMessages<H, D, MK>, Recipient)>,
+    pub(crate) alert_messages_from_network: Receiver<NetworkMessages<H, D, MK>>,
     pub(crate) unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     pub(crate) unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
     pub(crate) resolved_requests: Sender<Request<H>>,
@@ -785,7 +779,7 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
     threshold: NodeCount,
     unit_messages_for_network: &Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     unit_collection_sender: oneshot::Sender<Round>,
-    responses_from_runway: Receiver<ResponsesFromCollection<H, D, MK>>,
+    responses_from_runway: Receiver<CollectionResponses<H, D, MK>>,
     resolved_requests: Sender<Request<H>>,
 ) -> Result<impl Future<Output = ()> + 'a, ()> {
     let (collection, salt) = Collection::new(keychain, validator, threshold);

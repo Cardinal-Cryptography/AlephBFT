@@ -1,8 +1,8 @@
 use super::*;
 
 pub struct IO<'a, H: Hasher, D: Data, MK: MultiKeychain> {
-    pub messages_for_network: Sender<MessagesForNetwork<H, D, MK>>,
-    pub messages_from_network: Receiver<MessagesFromNetwork<H, D, MK>>,
+    pub messages_for_network: Sender<(NetworkMessages<H, D, MK>, Recipient)>,
+    pub messages_from_network: Receiver<NetworkMessages<H, D, MK>>,
     pub notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     pub alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     pub rmc: ReliableMulticast<'a, H::Hash, MK>,
