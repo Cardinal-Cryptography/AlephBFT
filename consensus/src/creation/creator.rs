@@ -6,15 +6,15 @@ use log::trace;
 
 #[derive(Clone)]
 struct UnitsCollector<H: Hasher> {
-    n_candidates: NodeCount,
     candidates: NodeMap<H::Hash>,
+    n_candidates: NodeCount,
 }
 
 impl<H: Hasher> UnitsCollector<H> {
     pub fn new(n_members: NodeCount) -> Self {
         Self {
-            n_candidates: NodeCount(0),
             candidates: NodeMap::with_size(n_members),
+            n_candidates: NodeCount(0),
         }
     }
 
@@ -58,9 +58,9 @@ fn create_unit<H: Hasher>(
 }
 
 pub struct Creator<H: Hasher> {
+    round_collectors: Vec<UnitsCollector<H>>,
     node_id: NodeIndex,
     n_members: NodeCount,
-    round_collectors: Vec<UnitsCollector<H>>,
 }
 
 impl<H: Hasher> Creator<H> {
@@ -80,7 +80,7 @@ impl<H: Hasher> Creator<H> {
     fn get_collector_for_round(&mut self, round: Round) -> &mut UnitsCollector<H> {
         let round = usize::from(round);
         if round >= self.round_collectors.len() {
-            let new_size = (round + 1).into();
+            let new_size = round + 1;
             self.round_collectors
                 .resize(new_size, UnitsCollector::new(self.n_members));
         };
