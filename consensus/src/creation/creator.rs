@@ -4,11 +4,58 @@ use crate::{
 };
 use log::trace;
 
+#[derive(Clone)]
+struct UnitsCollector<H: Hasher> {
+    n_candidates: NodeCount,
+    candidates: NodeMap<H::Hash>,
+}
+
+impl<H: Hasher> UnitsCollector<H> {
+    pub fn new(n_members: NodeCount) -> Self {
+        Self {
+            n_candidates: NodeCount(0),
+            candidates: NodeMap::with_size(n_members),
+        }
+    }
+
+    pub fn add_unit(&mut self, unit: &Unit<H>) {
+        let pid = unit.creator();
+        let hash = unit.hash();
+
+        if self.candidates.get(pid).is_none() {
+            self.candidates.insert(pid, hash);
+            self.n_candidates += NodeCount(1);
+        }
+    }
+
+    pub fn can_create(&self, node_id: NodeIndex) -> Option<&NodeMap<H::Hash>> {
+        let threshold = (self.candidates.size() * 2) / 3 + NodeCount(1);
+
+        if self.n_candidates >= threshold && self.candidates.get(node_id).is_some() {
+            Some(&self.candidates)
+        } else {
+            None
+        }
+    }
+}
+
+fn create_unit<H: Hasher>(
+    node_id: NodeIndex,
+    parents: NodeMap<H::Hash>,
+    round: Round,
+) -> (PreUnit<H>, Vec<H::Hash>) {
+    let control_hash = ControlHash::new(&parents);
+    let parent_hashes = parents.into_values().collect();
+
+    let new_preunit = PreUnit::new(node_id, round, control_hash);
+    trace!(target: "AlephBFT-creator", "Created a new unit {:?} at round {:?}.", new_preunit, round);
+    (new_preunit, parent_hashes)
+}
+
 pub struct Creator<H: Hasher> {
     node_id: NodeIndex,
     n_members: NodeCount,
-    candidates_by_round: Vec<NodeMap<H::Hash>>,
-    n_candidates_by_round: Vec<NodeCount>, // len of this - 1 is the highest round number of all known units
+    round_collectors: Vec<UnitsCollector<H>>,
 }
 
 impl<H: Hasher> Creator<H> {
@@ -16,73 +63,45 @@ impl<H: Hasher> Creator<H> {
         Creator {
             node_id,
             n_members,
-            candidates_by_round: vec![NodeMap::with_size(n_members)],
-            n_candidates_by_round: vec![NodeCount(0)],
+            round_collectors: vec![UnitsCollector::new(n_members)],
         }
     }
 
     pub fn current_round(&self) -> Round {
-        (self.n_candidates_by_round.len() - 1) as Round
+        (self.round_collectors.len() - 1) as Round
     }
 
-    // initializes the vectors corresponding to the given round (and all between if not there)
-    fn init_round(&mut self, round: Round) {
-        if round > self.current_round() {
+    // gets or initializes unit collectors for a given round (and all between if not there)
+    fn get_collector_for_round(&mut self, round: Round) -> &mut UnitsCollector<H> {
+        let round = usize::from(round);
+        if round >= self.round_collectors.len() {
             let new_size = (round + 1).into();
-            self.candidates_by_round
-                .resize(new_size, NodeMap::with_size(self.n_members));
-            self.n_candidates_by_round.resize(new_size, NodeCount(0));
-        }
+            self.round_collectors
+                .resize(new_size, UnitsCollector::new(self.n_members));
+        };
+        &mut self.round_collectors[round]
     }
 
     /// Returns `None` if a unit cannot be created.
     /// To create a new unit, we need to have at least floor(2*N/3) + 1 parents available in previous round.
     /// Additionally, our unit from previous round must be available.
     pub fn create_unit(&self, round: Round) -> Option<(PreUnit<H>, Vec<H::Hash>)> {
-        if !self.can_create(round) {
-            return None;
+        if round == 0 {
+            let parents = NodeMap::with_size(self.n_members);
+            return create_unit(self.node_id, parents, round).into();
         }
-        let parents = {
-            if round == 0 {
-                NodeMap::with_size(self.n_members)
-            } else {
-                self.candidates_by_round[(round - 1) as usize].clone()
-            }
-        };
+        let prev_round = usize::from(round - 1);
 
-        let control_hash = ControlHash::new(&parents);
-        let parent_hashes = parents.into_values().collect();
+        let parents = self
+            .round_collectors
+            .get(prev_round)?
+            .can_create(self.node_id)?;
 
-        let new_preunit = PreUnit::new(self.node_id, round, control_hash);
-        trace!(target: "AlephBFT-creator", "Created a new unit {:?} at round {:?}.", new_preunit, round);
-        Some((new_preunit, parent_hashes))
+        create_unit(self.node_id, parents.clone(), round).into()
     }
 
     pub fn add_unit(&mut self, unit: &Unit<H>) {
-        let round = unit.round();
-        let pid = unit.creator();
-        let hash = unit.hash();
-        self.init_round(round);
-        if self.candidates_by_round[round as usize].get(pid).is_none() {
-            // passing the check above means that we do not have any unit for the pair (round, pid) yet
-            self.candidates_by_round[round as usize].insert(pid, hash);
-            self.n_candidates_by_round[round as usize] += NodeCount(1);
-        }
-    }
-
-    fn can_create(&self, round: Round) -> bool {
-        if round == 0 {
-            return true;
-        }
-        let prev_round = (round - 1).into();
-
-        let threshold = (self.n_members * 2) / 3 + NodeCount(1);
-
-        self.n_candidates_by_round.len() > prev_round
-            && self.n_candidates_by_round[prev_round] >= threshold
-            && self.candidates_by_round[prev_round]
-                .get(self.node_id)
-                .is_some()
+        self.get_collector_for_round(unit.round()).add_unit(unit);
     }
 }
 
