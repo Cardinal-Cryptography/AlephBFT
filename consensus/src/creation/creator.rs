@@ -25,17 +25,22 @@ impl<H: Hasher> UnitsCollector<H> {
         if self.candidates.get(pid).is_none() {
             self.candidates.insert(pid, hash);
             self.n_candidates += NodeCount(1);
+            trace!(target: "AlephBFT-creator", "Added a new unit: {:#?}.", unit);
         }
     }
 
     pub fn can_create(&self, node_id: NodeIndex) -> Option<&NodeMap<H::Hash>> {
         let threshold = (self.candidates.size() * 2) / 3 + NodeCount(1);
 
-        if self.n_candidates >= threshold && self.candidates.get(node_id).is_some() {
-            Some(&self.candidates)
-        } else {
-            None
+        if self.n_candidates < threshold {
+            trace!(target: "AlephBFT-creator", "Unable to create a unit: not enough parents available.");
+            return None;
         }
+        if self.candidates.get(node_id).is_none() {
+            trace!(target: "AlephBFT-creator", "Unable to create a unit: missing our own unit in parents.");
+            return None;
+        }
+        Some(&self.candidates)
     }
 }
 
