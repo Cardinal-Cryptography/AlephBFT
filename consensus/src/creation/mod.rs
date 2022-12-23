@@ -55,16 +55,23 @@ async fn create_unit<H: Hasher>(
     round: Round,
     creator: &mut Creator<H>,
     create_lag: &DelaySchedule,
-    mut can_create: bool,
+    mut try_create: bool,
     incoming_parents: &mut Receiver<Unit<H>>,
     mut exit: &mut oneshot::Receiver<()>,
 ) -> Result<(PreUnit<H>, Vec<H::Hash>), ()> {
-    let mut delay = Delay::new(create_lag(round.into())).fuse();
+    const THIRTY_MINUTES: Duration = Duration::from_secs(30 * 60);
+
+    let initial_delay = match try_create {
+        false => create_lag(round.into()),
+        true => THIRTY_MINUTES,
+    };
+    let mut delay = Delay::new(initial_delay).fuse();
     loop {
-        if can_create {
+        if try_create {
             if let Some(result) = creator.create_unit(round) {
                 return Ok(result);
             }
+            debug!(target: "AlephBFT-creator", "Creator unable to create a new unit at round {:?}.", round);
         }
         futures::select! {
             unit = incoming_parents.next() => match unit {
@@ -75,11 +82,11 @@ async fn create_unit<H: Hasher>(
                 }
             },
             _ = &mut delay => {
-                if can_create {
-                    warn!(target: "AlephBFT-creator", "Delay passed despite us not waiting for it.");
+                if try_create {
+                    warn!(target: "AlephBFT-creator", "Delay passed at round {} despite us not waiting for it.", &round);
                 }
-                can_create = true;
-                delay = Delay::new(Duration::from_secs(30 * 60)).fuse();
+                try_create = true;
+                delay = Delay::new(THIRTY_MINUTES).fuse();
             },
             _ = exit => {
                 debug!(target: "AlephBFT-creator", "Received exit signal.");
@@ -143,6 +150,8 @@ pub async fn run<H: Hasher>(
         // Skip waiting if someone created a unit of a higher round.
         // In such a case at least 2/3 nodes created units from this round so we aren't skipping a
         // delay we should observe.
+        // NOTE: even we've observed a unit from a higher round, our own unit from previous round
+        // might not be yet added to `creator`. We still might need to wait for its arrival.
         let ignore_delay = creator.current_round() > round;
         let (unit, parent_hashes) = match create_unit(
             round,
