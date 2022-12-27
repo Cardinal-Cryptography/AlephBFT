@@ -55,19 +55,20 @@ async fn create_unit<H: Hasher>(
     round: Round,
     creator: &mut Creator<H>,
     create_lag: &DelaySchedule,
-    mut try_create: bool,
+    skip_delay: bool,
     incoming_parents: &mut Receiver<Unit<H>>,
     mut exit: &mut oneshot::Receiver<()>,
 ) -> Result<(PreUnit<H>, Vec<H::Hash>), ()> {
     const THIRTY_MINUTES: Duration = Duration::from_secs(30 * 60);
 
-    let initial_delay = match try_create {
-        false => create_lag(round.into()),
+    let initial_delay = match skip_delay {
         true => THIRTY_MINUTES,
+        false => create_lag(round.into()),
     };
     let mut delay = Delay::new(initial_delay).fuse();
+    let mut delay_passed = skip_delay;
     loop {
-        if try_create {
+        if delay_passed {
             if let Some(result) = creator.create_unit(round) {
                 return Ok(result);
             }
@@ -82,10 +83,10 @@ async fn create_unit<H: Hasher>(
                 }
             },
             _ = &mut delay => {
-                if try_create {
+                if delay_passed {
                     warn!(target: "AlephBFT-creator", "Delay passed at round {} despite us not waiting for it.", &round);
                 }
-                try_create = true;
+                delay_passed = true;
                 delay = Delay::new(THIRTY_MINUTES).fuse();
             },
             _ = exit => {
