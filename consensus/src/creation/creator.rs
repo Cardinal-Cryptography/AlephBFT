@@ -29,7 +29,7 @@ impl<H: Hasher> UnitsCollector<H> {
         }
     }
 
-    pub fn can_create(&self, node_id: NodeIndex) -> Option<&NodeMap<H::Hash>> {
+    pub fn prospective_parents(&self, node_id: NodeIndex) -> Option<&NodeMap<H::Hash>> {
         let threshold = (self.candidates.size() * 2) / 3 + NodeCount(1);
 
         if self.n_candidates < threshold {
@@ -100,7 +100,7 @@ impl<H: Hasher> Creator<H> {
         let parents = self
             .round_collectors
             .get(prev_round)?
-            .can_create(self.node_id)?;
+            .prospective_parents(self.node_id)?;
 
         create_unit(self.node_id, parents.clone(), round).into()
     }
