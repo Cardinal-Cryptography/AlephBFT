@@ -51,22 +51,22 @@ pub struct IO<H: Hasher> {
     pub(crate) outgoing_units: Sender<NotificationOut<H>>,
 }
 
+fn very_long_delay() -> Delay {
+    Delay::new(Duration::from_secs(30 * 60))
+}
+
 async fn create_unit<H: Hasher>(
     round: Round,
     creator: &mut Creator<H>,
-    create_lag: &DelaySchedule,
-    skip_delay: bool,
+    delay: Option<Delay>,
     incoming_parents: &mut Receiver<Unit<H>>,
     mut exit: &mut oneshot::Receiver<()>,
 ) -> Result<(PreUnit<H>, Vec<H::Hash>), ()> {
-    const VERY_LONG_TIME: Duration = Duration::from_secs(30 * 60);
-
-    let initial_delay = match skip_delay {
-        true => VERY_LONG_TIME,
-        false => create_lag(round.into()),
+    let (initial_delay, mut delay_passed) = match delay {
+        None => (very_long_delay(), true),
+        Some(delay) => (delay, false),
     };
-    let mut delay = Delay::new(initial_delay).fuse();
-    let mut delay_passed = skip_delay;
+    let mut delay = initial_delay.fuse();
     loop {
         if delay_passed {
             if let Some(result) = creator.create_unit(round) {
@@ -87,7 +87,7 @@ async fn create_unit<H: Hasher>(
                     warn!(target: "AlephBFT-creator", "Delay passed at round {} despite us not waiting for it.", &round);
                 }
                 delay_passed = true;
-                delay = Delay::new(VERY_LONG_TIME).fuse();
+                delay = very_long_delay().fuse();
             },
             _ = exit => {
                 debug!(target: "AlephBFT-creator", "Received exit signal.");
@@ -154,11 +154,15 @@ pub async fn run<H: Hasher>(
         // NOTE: even we've observed a unit from a higher round, our own unit from previous round
         // might not be yet added to `creator`. We still might need to wait for its arrival.
         let ignore_delay = creator.current_round() > round;
+        let lag = if ignore_delay {
+            None
+        } else {
+            Some(Delay::new(create_lag(round.into())))
+        };
         let (unit, parent_hashes) = match create_unit(
             round,
             &mut creator,
-            &create_lag,
-            ignore_delay,
+            lag,
             &mut incoming_parents,
             terminator.get_exit(),
         )
