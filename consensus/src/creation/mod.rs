@@ -69,10 +69,12 @@ async fn create_unit<H: Hasher>(
     let mut delay = initial_delay.fuse();
     loop {
         if delay_passed {
-            if let Some(result) = creator.create_unit(round) {
-                return Ok(result);
+            match creator.create_unit(round) {
+                Ok(unit) => return Ok(unit),
+                Err(err) => {
+                    debug!(target: "AlephBFT-creator", "Creator unable to create a new unit at round {:?}: {}.", round, err)
+                }
             }
-            debug!(target: "AlephBFT-creator", "Creator unable to create a new unit at round {:?}.", round);
         }
         futures::select! {
             unit = incoming_parents.next() => match unit {

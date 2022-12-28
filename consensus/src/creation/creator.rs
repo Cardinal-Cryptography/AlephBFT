@@ -2,7 +2,31 @@ use crate::{
     units::{ControlHash, PreUnit, Unit},
     Hasher, NodeCount, NodeIndex, NodeMap, Round,
 };
+use anyhow::Result;
 use log::trace;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+enum ConstraintError {
+    #[error("Not enough parents.")]
+    NotEnoughParents,
+    #[error("Missing own parent.")]
+    MissingOwnParent,
+}
+
+#[derive(Error, Debug)]
+enum CreateError {
+    #[error("Unfulfilled constraint: {0}")]
+    MissingContraint(ConstraintError),
+    #[error("Missing units collector for given pid.")]
+    MissingCollector,
+}
+
+impl From<ConstraintError> for CreateError {
+    fn from(value: ConstraintError) -> Self {
+        CreateError::MissingContraint(value)
+    }
+}
 
 #[derive(Clone)]
 struct UnitsCollector<H: Hasher> {
@@ -29,18 +53,19 @@ impl<H: Hasher> UnitsCollector<H> {
         }
     }
 
-    pub fn prospective_parents(&self, node_id: NodeIndex) -> Option<&NodeMap<H::Hash>> {
+    pub fn prospective_parents(
+        &self,
+        node_id: NodeIndex,
+    ) -> Result<&NodeMap<H::Hash>, ConstraintError> {
         let threshold = (self.candidates.size() * 2) / 3 + NodeCount(1);
 
         if self.n_candidates < threshold {
-            trace!(target: "AlephBFT-creator", "Unable to create a unit: not enough parents available.");
-            return None;
+            return Err(ConstraintError::NotEnoughParents);
         }
         if self.candidates.get(node_id).is_none() {
-            trace!(target: "AlephBFT-creator", "Unable to create a unit: missing our own unit in parents.");
-            return None;
+            return Err(ConstraintError::MissingOwnParent);
         }
-        Some(&self.candidates)
+        Ok(&self.candidates)
     }
 }
 
@@ -90,19 +115,20 @@ impl<H: Hasher> Creator<H> {
     /// Returns `None` if a unit cannot be created.
     /// To create a new unit, we need to have at least floor(2*N/3) + 1 parents available in previous round.
     /// Additionally, our unit from previous round must be available.
-    pub fn create_unit(&self, round: Round) -> Option<(PreUnit<H>, Vec<H::Hash>)> {
+    pub fn create_unit(&self, round: Round) -> Result<(PreUnit<H>, Vec<H::Hash>)> {
         if round == 0 {
             let parents = NodeMap::with_size(self.n_members);
-            return create_unit(self.node_id, parents, round).into();
+            return Ok(create_unit(self.node_id, parents, round));
         }
         let prev_round = usize::from(round - 1);
 
         let parents = self
             .round_collectors
-            .get(prev_round)?
+            .get(prev_round)
+            .ok_or(CreateError::MissingCollector)?
             .prospective_parents(self.node_id)?;
 
-        create_unit(self.node_id, parents.clone(), round).into()
+        Ok(create_unit(self.node_id, parents.clone(), round))
     }
 
     pub fn add_unit(&mut self, unit: &Unit<H>) {
@@ -208,7 +234,7 @@ mod tests {
         creator.add_units(&new_units);
         let round = 1;
         assert_eq!(creator.current_round(), 0);
-        assert!(creator.create_unit(round).is_none())
+        assert!(creator.create_unit(round).is_err())
     }
 
     #[test]
@@ -282,6 +308,6 @@ mod tests {
         let creator = &mut creators[0];
         creator.add_units(&new_units);
         let round = 1;
-        assert!(creator.create_unit(round).is_none());
+        assert!(creator.create_unit(round).is_err());
     }
 }
