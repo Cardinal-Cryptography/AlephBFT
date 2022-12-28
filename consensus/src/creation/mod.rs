@@ -58,11 +58,11 @@ fn very_long_delay() -> Delay {
 async fn create_unit<H: Hasher>(
     round: Round,
     creator: &mut Creator<H>,
-    delay: Option<Delay>,
+    create_delay: Option<Delay>,
     incoming_parents: &mut Receiver<Unit<H>>,
     mut exit: &mut oneshot::Receiver<()>,
 ) -> Result<(PreUnit<H>, Vec<H::Hash>), ()> {
-    let (initial_delay, mut delay_passed) = match delay {
+    let (initial_delay, mut delay_passed) = match create_delay {
         None => (very_long_delay(), true),
         Some(delay) => (delay, false),
     };
