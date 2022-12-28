@@ -3,7 +3,6 @@ use crate::{
     Hasher, NodeCount, NodeIndex, NodeMap, Round,
 };
 use anyhow::Result;
-use log::trace;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -49,7 +48,6 @@ impl<H: Hasher> UnitsCollector<H> {
         if self.candidates.get(pid).is_none() {
             self.candidates.insert(pid, hash);
             self.n_candidates += NodeCount(1);
-            trace!(target: "AlephBFT-creator", "Added a new unit: {:#?}.", unit);
         }
     }
 
@@ -78,7 +76,6 @@ fn create_unit<H: Hasher>(
     let parent_hashes = parents.into_values().collect();
 
     let new_preunit = PreUnit::new(node_id, round, control_hash);
-    trace!(target: "AlephBFT-creator", "Created a new unit {:?} at round {:?}.", new_preunit, round);
     (new_preunit, parent_hashes)
 }
 
