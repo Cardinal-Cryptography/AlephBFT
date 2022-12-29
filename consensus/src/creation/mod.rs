@@ -131,7 +131,7 @@ pub async fn run<H: Hasher>(
     mut terminator: Terminator,
 ) {
     futures::select! {
-        _= read_starting_round_and_run_creator(conf, &mut io, &mut starting_round).fuse() =>
+        _ = read_starting_round_and_run_creator(conf, &mut io, &mut starting_round).fuse() =>
             debug!(target: "AlephBFT-creator", "Creator is about to finish."),
         _ = terminator.get_exit() =>
             debug!(target: "AlephBFT-creator", "Received an exit signal."),
