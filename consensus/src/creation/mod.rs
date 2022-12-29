@@ -67,7 +67,7 @@ async fn create_unit<H: Hasher>(
     round: Round,
     creator: &mut Creator<H>,
     incoming_parents: &mut Receiver<Unit<H>>,
-) -> Result<(PreUnit<H>, Vec<H::Hash>), ()> {
+) -> Result<(PreUnit<H>, Vec<H::Hash>), CreatorError> {
     let mut delay = very_long_delay().fuse();
     loop {
         match creator.create_unit(round) {
@@ -93,8 +93,11 @@ async fn create_unit<H: Hasher>(
 async fn process_unit<H: Hasher>(
     creator: &mut Creator<H>,
     incoming_parents: &mut Receiver<Unit<H>>,
-) -> anyhow::Result<(), ()> {
-    let unit = incoming_parents.next().await.ok_or(())?;
+) -> anyhow::Result<(), CreatorError> {
+    let unit = incoming_parents
+        .next()
+        .await
+        .ok_or(CreatorError::ParentsChannelClosed)?;
     creator.add_unit(&unit);
     Ok(())
 }
@@ -102,7 +105,7 @@ async fn process_unit<H: Hasher>(
 async fn keep_processing_units<H: Hasher>(
     creator: &mut Creator<H>,
     incoming_parents: &mut Receiver<Unit<H>>,
-) -> anyhow::Result<(), ()> {
+) -> anyhow::Result<(), CreatorError> {
     loop {
         process_unit(creator, incoming_parents).await?;
     }
@@ -112,7 +115,7 @@ async fn keep_processing_units_until<H: Hasher>(
     creator: &mut Creator<H>,
     incoming_parents: &mut Receiver<Unit<H>>,
     until: Delay,
-) -> anyhow::Result<(), ()> {
+) -> anyhow::Result<(), CreatorError> {
     futures::select! {
         result = keep_processing_units(creator, incoming_parents).fuse() => {
             result?
@@ -211,9 +214,7 @@ async fn run_creator<H: Hasher>(
                 .map_err(|_| CreatorError::ParentsChannelClosed)?;
         }
 
-        let (unit, parent_hashes) = create_unit(round, &mut creator, incoming_parents)
-            .await
-            .map_err(|_| CreatorError::ParentsChannelClosed)?;
+        let (unit, parent_hashes) = create_unit(round, &mut creator, incoming_parents).await?;
 
         trace!(target: "AlephBFT-creator", "Created a new unit {:?} at round {:?}.", unit, round);
 
