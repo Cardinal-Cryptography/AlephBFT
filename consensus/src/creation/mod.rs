@@ -203,8 +203,6 @@ async fn run_creator<H: Hasher>(
         // Skip waiting if someone created a unit of a higher round.
         // In such a case at least 2/3 nodes created units from this round so we aren't skipping a
         // delay we should observe.
-        // NOTE: even we've observed a unit from a higher round, our own unit from previous round
-        // might not be yet added to `creator`. We still might need to wait for its arrival.
         if creator.current_round() <= round {
             let lag = Delay::new(create_lag(round.into()));
 
