@@ -10,10 +10,7 @@ use futures::{
 };
 use futures_timer::Delay;
 use log::{debug, error, trace, warn};
-use std::{
-    fmt::{Debug, Formatter},
-    time::Duration,
-};
+use std::fmt::{Debug, Formatter};
 
 mod creator;
 
@@ -59,16 +56,11 @@ pub struct IO<H: Hasher> {
     pub(crate) outgoing_units: Sender<NotificationOut<H>>,
 }
 
-fn very_long_delay() -> Delay {
-    Delay::new(Duration::from_secs(30 * 60))
-}
-
 async fn create_unit<H: Hasher>(
     round: Round,
     creator: &mut Creator<H>,
     incoming_parents: &mut Receiver<Unit<H>>,
 ) -> Result<(PreUnit<H>, Vec<H::Hash>), CreatorError> {
-    let mut delay = very_long_delay().fuse();
     loop {
         match creator.create_unit(round) {
             Ok(unit) => return Ok(unit),
@@ -76,15 +68,7 @@ async fn create_unit<H: Hasher>(
                 debug!(target: "AlephBFT-creator", "Creator unable to create a new unit at round {:?}: {}.", round, err)
             }
         }
-        futures::select! {
-            _ = delay => {
-                warn!(target: "AlephBFT-creator", "Delay passed at round {} despite us not waiting for it.", round);
-                delay = very_long_delay().fuse();
-            },
-            result = process_unit(creator, incoming_parents).fuse() => {
-                result?
-            }
-        }
+        process_unit(creator, incoming_parents).await?;
     }
 }
 
