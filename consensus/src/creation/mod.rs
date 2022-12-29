@@ -205,8 +205,7 @@ async fn run_creator<H: Hasher>(
         // delay we should observe.
         // NOTE: even we've observed a unit from a higher round, our own unit from previous round
         // might not be yet added to `creator`. We still might need to wait for its arrival.
-        let should_delay = creator.current_round() <= round;
-        if should_delay {
+        if creator.current_round() <= round {
             let lag = Delay::new(create_lag(round.into()));
 
             keep_processing_units_until(&mut creator, incoming_parents, lag)
