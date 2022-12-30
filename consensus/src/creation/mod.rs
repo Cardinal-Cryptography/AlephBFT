@@ -194,9 +194,7 @@ async fn run_creator<H: Hasher>(
         if !skip_delay {
             let lag = Delay::new(create_lag(round.into()));
 
-            keep_processing_units_until(&mut creator, incoming_parents, lag)
-                .await
-                .map_err(|_| CreatorError::ParentsChannelClosed)?;
+            keep_processing_units_until(&mut creator, incoming_parents, lag).await?;
         }
 
         let (unit, parent_hashes) = create_unit(round, &mut creator, incoming_parents).await?;
