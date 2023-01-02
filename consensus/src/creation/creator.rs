@@ -17,7 +17,7 @@ enum ConstraintError {
 enum CreateError {
     #[error("Unfulfilled constraint: {0}")]
     MissingContraint(ConstraintError),
-    #[error("Missing units collector for given pid.")]
+    #[error("Missing units collector for given node_index.")]
     MissingCollector,
 }
 
@@ -42,25 +42,25 @@ impl<H: Hasher> UnitsCollector<H> {
     }
 
     pub fn add_unit(&mut self, unit: &Unit<H>) {
-        let pid = unit.creator();
+        let node_ix = unit.creator();
         let hash = unit.hash();
 
-        if self.candidates.get(pid).is_none() {
-            self.candidates.insert(pid, hash);
+        if self.candidates.get(node_ix).is_none() {
+            self.candidates.insert(node_ix, hash);
             self.n_candidates += NodeCount(1);
         }
     }
 
     pub fn prospective_parents(
         &self,
-        node_id: NodeIndex,
+        node_ix: NodeIndex,
     ) -> Result<&NodeMap<H::Hash>, ConstraintError> {
         let threshold = (self.candidates.size() * 2) / 3 + NodeCount(1);
 
         if self.n_candidates < threshold {
             return Err(ConstraintError::NotEnoughParents);
         }
-        if self.candidates.get(node_id).is_none() {
+        if self.candidates.get(node_ix).is_none() {
             return Err(ConstraintError::MissingOwnParent);
         }
         Ok(&self.candidates)
@@ -68,27 +68,27 @@ impl<H: Hasher> UnitsCollector<H> {
 }
 
 fn create_unit<H: Hasher>(
-    node_id: NodeIndex,
+    node_ix: NodeIndex,
     parents: NodeMap<H::Hash>,
     round: Round,
 ) -> (PreUnit<H>, Vec<H::Hash>) {
     let control_hash = ControlHash::new(&parents);
     let parent_hashes = parents.into_values().collect();
 
-    let new_preunit = PreUnit::new(node_id, round, control_hash);
+    let new_preunit = PreUnit::new(node_ix, round, control_hash);
     (new_preunit, parent_hashes)
 }
 
 pub struct Creator<H: Hasher> {
     round_collectors: Vec<UnitsCollector<H>>,
-    node_id: NodeIndex,
+    node_ix: NodeIndex,
     n_members: NodeCount,
 }
 
 impl<H: Hasher> Creator<H> {
-    pub fn new(node_id: NodeIndex, n_members: NodeCount) -> Self {
+    pub fn new(node_ix: NodeIndex, n_members: NodeCount) -> Self {
         Creator {
-            node_id,
+            node_ix,
             n_members,
             round_collectors: vec![UnitsCollector::new(n_members)],
         }
@@ -115,7 +115,7 @@ impl<H: Hasher> Creator<H> {
     pub fn create_unit(&self, round: Round) -> Result<(PreUnit<H>, Vec<H::Hash>)> {
         if round == 0 {
             let parents = NodeMap::with_size(self.n_members);
-            return Ok(create_unit(self.node_id, parents, round));
+            return Ok(create_unit(self.node_ix, parents, round));
         }
         let prev_round = usize::from(round - 1);
 
@@ -123,9 +123,9 @@ impl<H: Hasher> Creator<H> {
             .round_collectors
             .get(prev_round)
             .ok_or(CreateError::MissingCollector)?
-            .prospective_parents(self.node_id)?;
+            .prospective_parents(self.node_ix)?;
 
-        Ok(create_unit(self.node_id, parents.clone(), round))
+        Ok(create_unit(self.node_ix, parents.clone(), round))
     }
 
     pub fn add_unit(&mut self, unit: &Unit<H>) {
