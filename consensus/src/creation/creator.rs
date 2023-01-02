@@ -16,14 +16,14 @@ enum ConstraintError {
 #[derive(Error, Debug)]
 enum CreateError {
     #[error("Unfulfilled constraint: {0}")]
-    MissingContraint(ConstraintError),
-    #[error("Missing units collector for given node_index.")]
-    MissingCollector,
+    MissingConstraint(ConstraintError),
+    #[error("Missing units collector for given round.")]
+    MissingCollector(Round),
 }
 
 impl From<ConstraintError> for CreateError {
     fn from(value: ConstraintError) -> Self {
-        CreateError::MissingContraint(value)
+        CreateError::MissingConstraint(value)
     }
 }
 
@@ -98,18 +98,17 @@ impl<H: Hasher> Creator<H> {
         (self.round_collectors.len() - 1) as Round
     }
 
-    // gets or initializes unit collectors for a given round (and all between if not there)
-    fn get_collector_for_round(&mut self, round: Round) -> &mut UnitsCollector<H> {
-        let round = usize::from(round);
-        if round >= self.round_collectors.len() {
-            let new_size = round + 1;
+    // gets or initializes a unit collector for a given round (and all between if not there)
+    fn get_or_initialize_collector_for_round(&mut self, round: Round) -> &mut UnitsCollector<H> {
+        let round_ix = usize::from(round);
+        if round > self.current_round() {
+            let new_size = round_ix + 1;
             self.round_collectors
                 .resize(new_size, UnitsCollector::new(self.n_members));
         };
-        &mut self.round_collectors[round]
+        &mut self.round_collectors[round_ix]
     }
 
-    /// Returns `None` if a unit cannot be created.
     /// To create a new unit, we need to have at least floor(2*N/3) + 1 parents available in previous round.
     /// Additionally, our unit from previous round must be available.
     pub fn create_unit(&self, round: Round) -> Result<(PreUnit<H>, Vec<H::Hash>)> {
@@ -122,14 +121,15 @@ impl<H: Hasher> Creator<H> {
         let parents = self
             .round_collectors
             .get(prev_round)
-            .ok_or(CreateError::MissingCollector)?
+            .ok_or(CreateError::MissingCollector(round - 1))?
             .prospective_parents(self.node_ix)?;
 
         Ok(create_unit(self.node_ix, parents.clone(), round))
     }
 
     pub fn add_unit(&mut self, unit: &Unit<H>) {
-        self.get_collector_for_round(unit.round()).add_unit(unit);
+        self.get_or_initialize_collector_for_round(unit.round())
+            .add_unit(unit);
     }
 }
 
