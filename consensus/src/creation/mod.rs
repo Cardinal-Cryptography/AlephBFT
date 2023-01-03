@@ -22,7 +22,7 @@ pub use creator::Creator;
 /// The configuration needed for the process creating new units.
 #[derive(Clone)]
 pub struct Config {
-    node_ix: NodeIndex,
+    node_id: NodeIndex,
     n_members: NodeCount,
     create_lag: DelaySchedule,
     max_round: Round,
@@ -31,7 +31,7 @@ pub struct Config {
 impl Debug for Config {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Config")
-            .field("node ix", &self.node_ix)
+            .field("node id", &self.node_id)
             .field("member count", &self.n_members)
             .field("max round", &self.max_round)
             .finish()
@@ -41,7 +41,7 @@ impl Debug for Config {
 impl From<GeneralConfig> for Config {
     fn from(conf: GeneralConfig) -> Self {
         Config {
-            node_ix: conf.node_ix,
+            node_id: conf.node_ix,
             n_members: conf.n_members,
             create_lag: conf.delay_config.unit_creation_delay,
             max_round: conf.max_round,
@@ -185,12 +185,12 @@ async fn run_creator<H: Hasher>(
     starting_round: Round,
 ) -> anyhow::Result<(), CreatorError> {
     let Config {
-        node_ix,
+        node_id,
         n_members,
         create_lag,
         max_round,
     } = conf;
-    let mut creator = Creator::new(node_ix, n_members);
+    let mut creator = Creator::new(node_id, n_members);
     let incoming_parents = &mut io.incoming_parents;
     let outgoing_units = &io.outgoing_units;
 
