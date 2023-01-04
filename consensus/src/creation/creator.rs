@@ -5,26 +5,12 @@ use crate::{
 use anyhow::Result;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Eq, Error, Debug, PartialEq)]
 enum ConstraintError {
     #[error("Not enough parents.")]
     NotEnoughParents,
     #[error("Missing own parent.")]
     MissingOwnParent,
-}
-
-#[derive(Error, Debug)]
-enum CreateError {
-    #[error("Unfulfilled constraint: {0}")]
-    MissingConstraint(ConstraintError),
-    #[error("Missing units collector for given round: {0}.")]
-    MissingCollector(Round),
-}
-
-impl From<ConstraintError> for CreateError {
-    fn from(value: ConstraintError) -> Self {
-        CreateError::MissingConstraint(value)
-    }
 }
 
 #[derive(Clone)]
@@ -121,7 +107,7 @@ impl<H: Hasher> Creator<H> {
         let parents = self
             .round_collectors
             .get(prev_round)
-            .ok_or(CreateError::MissingCollector(round - 1))?
+            .ok_or(ConstraintError::NotEnoughParents)?
             .prospective_parents(self.node_id)?;
 
         Ok(create_unit(self.node_id, parents.clone(), round))
@@ -135,8 +121,9 @@ impl<H: Hasher> Creator<H> {
 
 #[cfg(test)]
 mod tests {
-    use super::Creator as GenericCreator;
+    use super::{Creator as GenericCreator, UnitsCollector};
     use crate::{
+        creation::creator::ConstraintError,
         units::{create_units, creator_set, preunit_to_unit},
         NodeCount, NodeIndex,
     };
@@ -306,5 +293,74 @@ mod tests {
         creator.add_units(&new_units);
         let round = 1;
         assert!(creator.create_unit(round).is_err());
+    }
+
+    #[test]
+    fn units_collector_successfully_computes_parents() {
+        let n_members = NodeCount(4);
+        let creators = creator_set(n_members);
+        let new_units = create_units(creators.iter(), 0);
+        let new_units: Vec<_> = new_units
+            .into_iter()
+            .map(|(pu, _)| preunit_to_unit(pu, 0))
+            .collect();
+
+        let mut units_collector = UnitsCollector::new(n_members);
+        new_units
+            .iter()
+            .for_each(|unit| units_collector.add_unit(unit));
+
+        let parents = units_collector
+            .prospective_parents(NodeIndex(0))
+            .expect("we should be able to retrieve parents");
+        assert_eq!(parents.item_count(), 4);
+
+        let new_units: HashSet<_> = new_units.iter().map(|unit| unit.hash()).collect();
+        let selected_parents = parents.values().cloned().collect();
+        assert_eq!(new_units, selected_parents);
+    }
+
+    #[test]
+    fn units_collector_returns_err_when_not_enough_parents() {
+        let n_members = NodeCount(4);
+        let creators = creator_set(n_members);
+        let new_units = create_units(creators.iter().take(2), 0);
+        let new_units: Vec<_> = new_units
+            .into_iter()
+            .map(|(pu, _)| preunit_to_unit(pu, 0))
+            .collect();
+
+        let mut units_collector = UnitsCollector::new(n_members);
+        new_units
+            .iter()
+            .for_each(|unit| units_collector.add_unit(unit));
+
+        let parents = units_collector.prospective_parents(NodeIndex(0));
+        assert_eq!(
+            parents.expect_err("should be an error"),
+            ConstraintError::NotEnoughParents
+        );
+    }
+
+    #[test]
+    fn units_collector_returns_err_when_missing_own_parent() {
+        let n_members = NodeCount(4);
+        let creators = creator_set(n_members);
+        let new_units = create_units(creators.iter().take(3), 0);
+        let new_units: Vec<_> = new_units
+            .into_iter()
+            .map(|(pu, _)| preunit_to_unit(pu, 0))
+            .collect();
+
+        let mut units_collector = UnitsCollector::new(n_members);
+        new_units
+            .iter()
+            .for_each(|unit| units_collector.add_unit(unit));
+
+        let parents = units_collector.prospective_parents(NodeIndex(3));
+        assert_eq!(
+            parents.expect_err("should be an error"),
+            ConstraintError::MissingOwnParent
+        );
     }
 }
