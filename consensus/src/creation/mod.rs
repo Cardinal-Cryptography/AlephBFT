@@ -74,7 +74,7 @@ async fn create_unit<H: Hasher>(
         match creator.create_unit(round) {
             Ok(unit) => return Ok(unit),
             Err(err) => {
-                debug!(target: "AlephBFT-creator", "Creator unable to create a new unit at round {:?}: {}.", round, err)
+                trace!(target: "AlephBFT-creator", "Creator unable to create a new unit at round {}: {}.", round, err)
             }
         }
         process_unit(creator, incoming_parents).await?;
