@@ -93,7 +93,9 @@ pub struct Saver {
 
 impl Saver {
     pub fn new() -> Self {
-        Self { data: Arc::new(Mutex::new(vec![])) }
+        Self {
+            data: Arc::new(Mutex::new(vec![])),
+        }
     }
     pub fn from_data(data: Arc<Mutex<Vec<u8>>>) -> Self {
         Self { data }
