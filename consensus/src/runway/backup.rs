@@ -249,10 +249,9 @@ mod tests {
             }
 
             let mut unchecked_signed_units = Vec::with_capacity(pre_units.len());
-            for (i, (pre_unit, _)) in pre_units.into_iter().enumerate() {
-                unchecked_signed_units.push(
-                    preunit_to_unchecked_signed_unit(pre_unit, session_id, &keychains[i]).await,
-                )
+            for ((pre_unit, _), keychain) in pre_units.into_iter().zip(keychains.iter()) {
+                unchecked_signed_units
+                    .push(preunit_to_unchecked_signed_unit(pre_unit, session_id, keychain).await)
             }
 
             units_per_round.push(unchecked_signed_units);
