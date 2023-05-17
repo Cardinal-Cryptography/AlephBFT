@@ -275,12 +275,8 @@ mod tests {
         units.iter().map(|u| u.encode()).collect()
     }
 
-    fn concatenate_encodings(mut unit_encodings: Vec<Vec<u8>>) -> Vec<u8> {
-        let mut full_encoding = Vec::new();
-        for encoding in unit_encodings.iter_mut() {
-            full_encoding.append(encoding);
-        }
-        full_encoding
+    fn concatenate_encodings(unit_encodings: Vec<Vec<u8>>) -> Vec<u8> {
+        unit_encodings.into_iter().flatten().collect()
     }
 
     async fn prepare_test<'a>(
