@@ -90,7 +90,7 @@ pub(crate) enum RunwayNotificationIn<H: Hasher, D: Data, S: Signature> {
 }
 
 impl<H: Hasher, D: Data, S: Signature> TryFrom<UnitMessage<H, D, S>>
-    for RunwayNotificationIn<H, D, S>
+for RunwayNotificationIn<H, D, S>
 {
     type Error = ();
 
@@ -123,13 +123,12 @@ type CollectionResponse<H, D, MK> = UncheckedSigned<
     <MK as Keychain>::Signature,
 >;
 
-struct Runway<H, D, US, FH, MK>
-where
-    H: Hasher,
-    D: Data,
-    US: Write,
-    FH: FinalizationHandler<D>,
-    MK: MultiKeychain,
+struct Runway<H, D, FH, MK>
+    where
+        H: Hasher,
+        D: Data,
+        FH: FinalizationHandler<D>,
+        MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
     missing_parents: HashSet<H::Hash>,
@@ -146,7 +145,8 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     finalization_handler: FH,
-    unit_saver: UnitSaver<US, H, D, MK::Signature>,
+    save_unit_tx: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, MK::Signature>>,
+    unit_saved_rx: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     preunits_for_packer: Sender<PreUnit<H>>,
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
     exiting: bool,
@@ -193,10 +193,11 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
     }
 }
 
-struct RunwayConfig<H: Hasher, D: Data, US: Write, FH: FinalizationHandler<D>, MK: MultiKeychain> {
+struct RunwayConfig<H: Hasher, D: Data, FH: FinalizationHandler<D>, MK: MultiKeychain> {
     max_round: Round,
     finalization_handler: FH,
-    unit_saver: UnitSaver<US, H, D, MK::Signature>,
+    save_unit_tx: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, MK::Signature>>,
+    unit_saved_rx: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -210,20 +211,20 @@ struct RunwayConfig<H: Hasher, D: Data, US: Write, FH: FinalizationHandler<D>, M
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
 }
 
-impl<H, D, US, FH, MK> Runway<H, D, US, FH, MK>
-where
-    H: Hasher,
-    D: Data,
-    US: Write,
-    FH: FinalizationHandler<D>,
-    MK: MultiKeychain,
+impl<H, D, FH, MK> Runway<H, D, FH, MK>
+    where
+        H: Hasher,
+        D: Data,
+        FH: FinalizationHandler<D>,
+        MK: MultiKeychain,
 {
-    fn new(config: RunwayConfig<H, D, US, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
+    fn new(config: RunwayConfig<H, D, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
         let n_members = keychain.node_count();
         let RunwayConfig {
             max_round,
             finalization_handler,
-            unit_saver,
+            save_unit_tx,
+            unit_saved_rx,
             alerts_for_alerter,
             notifications_from_alerter,
             tx_consensus,
@@ -253,7 +254,8 @@ where
             rx_consensus,
             ordered_batch_rx,
             finalization_handler,
-            unit_saver,
+            save_unit_tx,
+            unit_saved_rx,
             responses_for_collection,
             preunits_for_packer,
             signed_units_from_packer,
@@ -512,19 +514,8 @@ where
         }
     }
 
-    fn save_unit(&mut self, uu: UncheckedSignedUnit<H, D, MK::Signature>) {
-        let h = uu.as_signable().hash();
-        trace!(target: "AlephBFT-runway", "{:?} Saving a created unit {:?}.", self.index(), h);
-        if let Err(err) = self.unit_saver.save(uu) {
-            error!(target: "AlephBFT-runway", "{:?} Failed to save unit {:?}. {}", self.index(), h, err);
-        } else {
-            trace!(target: "AlephBFT-runway", "{:?} Saved a created unit {:?}.", self.index(), h);
-        }
-    }
-
     fn on_packed(&mut self, signed_unit: SignedUnit<H, D, MK>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
-        self.save_unit(signed_unit.clone().into());
         self.store.add_unit(signed_unit, false);
     }
 
@@ -564,20 +555,26 @@ where
                 self.store.add_parents(h, p_hashes);
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
-                    self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(
-                        su.clone().into(),
-                    ));
-
-                    if su.as_signable().creator() == self.index() {
-                        trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), h);
-                        self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(
-                            su.into(),
-                        ));
+                    if let Err(_) = self.save_unit_tx.unbounded_send(su.into()) {
+                        error!(target: "AlephBFT-runway", "{:?} A unit couldn't be sent to backup: {:?}.", self.index(), h);
                     }
                 } else {
                     error!(target: "AlephBFT-runway", "{:?} A unit already added to DAG is not in our store: {:?}.", self.index(), h);
                 }
             }
+        }
+    }
+
+    fn on_unit_backup_saved(&mut self, unit: UncheckedSignedUnit<H, D, MK::Signature>) {
+        self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(
+            unit.clone(),
+        ));
+
+        if unit.as_signable().creator() == self.index() {
+            trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), unit.as_signable().hash());
+            self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(
+                unit,
+            ));
         }
     }
 
@@ -721,6 +718,13 @@ where
                     }
                 },
 
+                message = self.unit_saved_rx.next() => match message {
+                    Some(unit) => self.on_unit_backup_saved(unit),
+                    None => {
+                        error!(target: "AlephBFT-runway", "{:?} Saved units receiver closed.", index);
+                    }
+                },
+
                 message = units_from_backup => match message {
                     Ok(units) => {
                         for u in units {
@@ -750,7 +754,7 @@ where
                     debug!(target: "AlephBFT-runway", "{:?} received exit signal", index);
                     self.exiting = true;
                 }
-            };
+            }
             self.move_units_to_consensus();
 
             if self.exiting {
@@ -781,7 +785,7 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
     unit_collection_sender: oneshot::Sender<Round>,
     responses_from_runway: Receiver<CollectionResponse<H, D, MK>>,
     resolved_requests: Sender<Request<H>>,
-) -> Result<impl Future<Output = ()> + 'a, ()> {
+) -> Result<impl Future<Output=()> + 'a, ()> {
     let (collection, salt) = Collection::new(keychain, validator, threshold);
     let notification = RunwayNotificationOut::Request(Request::NewestUnit(salt));
 
@@ -802,7 +806,7 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
 #[cfg(not(feature = "initial_unit_collection"))]
 fn trivial_start(
     starting_round_sender: oneshot::Sender<Round>,
-) -> Result<impl Future<Output = ()>, ()> {
+) -> Result<impl Future<Output=()>, ()> {
     if let Err(e) = starting_round_sender.send(0) {
         error!(target: "AlephBFT-runway", "Unable to send the starting round: {}", e);
         return Err(());
@@ -827,14 +831,14 @@ pub struct RunwayIO<
 }
 
 impl<
-        H: Hasher,
-        D: Data,
-        S: Signature,
-        US: Write + Send + Sync + 'static,
-        UL: Read + Send + Sync + 'static,
-        DP: DataProvider<D>,
-        FH: FinalizationHandler<D>,
-    > RunwayIO<H, D, S, US, UL, DP, FH>
+    H: Hasher,
+    D: Data,
+    S: Signature,
+    US: Write + Send + Sync + 'static,
+    UL: Read + Send + Sync + 'static,
+    DP: DataProvider<D>,
+    FH: FinalizationHandler<D>,
+> RunwayIO<H, D, S, US, UL, DP, FH>
 {
     pub fn new(
         data_provider: DP,
@@ -892,8 +896,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             alerts_from_units,
             alert_config,
             alerter_terminator,
-        )
-        .await;
+        ).await;
     });
     let mut alerter_handle = alerter_handle.fuse();
 
@@ -911,10 +914,23 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             consensus_spawner,
             starting_round,
             consensus_terminator,
-        )
-        .await
+        ).await
     });
     let mut consensus_handle = consensus_handle.fuse();
+
+    let (save_unit_tx, save_unit_rx) = mpsc::unbounded();
+    let (unit_saved_tx, unit_saved_rx) = mpsc::unbounded();
+
+    let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
+    let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {
+        backup::run_saving_mechanism(
+            runway_io.unit_saver,
+            save_unit_rx,
+            unit_saved_tx,
+            backup_saver_terminator,
+        ).await;
+    });
+    let mut backup_saver_handle = backup_saver_handle.fuse();
 
     let index = keychain.index();
     let threshold = (keychain.node_count() * 2) / 3 + NodeCount(1);
@@ -937,8 +953,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
                 loaded_units_tx,
                 starting_round_sender,
                 unit_collection_result,
-            )
-            .await
+            ).await
         })
         .fuse();
     pin_mut!(backup_loading_handle);
@@ -966,7 +981,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let RunwayIO {
         data_provider,
         finalization_handler,
-        unit_saver,
         ..
     } = runway_io;
     let (preunits_for_packer, preunits_from_runway) = mpsc::unbounded();
@@ -976,7 +990,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         .spawn_essential("runway", {
             let runway_config = RunwayConfig {
                 finalization_handler,
-                unit_saver,
+                save_unit_tx,
+                unit_saved_rx,
                 alerts_for_alerter,
                 notifications_from_alerter,
                 tx_consensus,
@@ -1041,6 +1056,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
                 debug!(target: "AlephBFT-runway", "{:?} Packer task terminated early.", index);
                 break;
             },
+            _ = backup_saver_handle => {
+                debug!(target: "AlephBFT-runway", "{:?} Backup saving task terminated early.", index);
+                break;
+            },
             _ = starting_round_handle => {
                 debug!(target: "AlephBFT-runway", "{:?} Starting round task terminated.", index);
             },
@@ -1060,6 +1079,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     handle_task_termination(alerter_handle, "AlephBFT-runway", "Alerter", index).await;
     handle_task_termination(runway_handle, "AlephBFT-runway", "Runway", index).await;
     handle_task_termination(packer_handle, "AlephBFT-runway", "Packer", index).await;
+    handle_task_termination(backup_saver_handle, "AlephBFT-backup-saver", "BackupSaver", index).await;
 
     debug!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
 }
