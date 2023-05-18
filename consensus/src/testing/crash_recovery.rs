@@ -1,6 +1,6 @@
 use crate::{
     testing::{init_log, spawn_honest_member, HonestMember, Network, ReconnectSender},
-    units::UncheckedSignedUnit,
+    units::{UncheckedSignedUnit, UnitCoord},
     NodeCount, NodeIndex, SpawnHandle, TaskHandle,
 };
 use aleph_bft_mock::{Data, Hasher64, Router, Signature, Spawner};
@@ -11,9 +11,11 @@ use futures::{
 };
 use parking_lot::Mutex;
 use serial_test::serial;
-use std::{collections::HashMap, sync::Arc, time::Duration};
-use std::collections::HashSet;
-use crate::units::UnitCoord;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 struct NodeData {
     batch_rx: mpsc::UnboundedReceiver<Data>,

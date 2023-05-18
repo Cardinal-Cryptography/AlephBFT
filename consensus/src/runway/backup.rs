@@ -1,16 +1,20 @@
-use crate::{units::UncheckedSignedUnit, Data, Hasher, NodeIndex, Round, SessionId, Signature, Terminator};
+use crate::{
+    runway::backup::LoaderError::InconsistentData,
+    units::{UncheckedSignedUnit, UnitCoord},
+    Data, Hasher, NodeIndex, Round, SessionId, Signature, Terminator,
+};
 use codec::{Decode, Encode, Error as CodecError};
-use futures::channel::{mpsc, oneshot};
+use futures::{
+    channel::{mpsc, oneshot},
+    StreamExt,
+};
 use log::{debug, error, info, warn};
 use std::{
+    collections::HashSet,
     fmt,
     io::{Read, Write},
     marker::PhantomData,
 };
-use std::collections::HashSet;
-use futures::StreamExt;
-use crate::runway::backup::LoaderError::InconsistentData;
-use crate::units::UnitCoord;
 
 /// Backup load error. Could be either caused by io error from Reader, or by decoding.
 #[derive(Debug)]
@@ -25,7 +29,11 @@ impl fmt::Display for LoaderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LoaderError::IO(err) => {
-                write!(f, "Received IO error while reading from backup source: {}", err)
+                write!(
+                    f,
+                    "Received IO error while reading from backup source: {}",
+                    err
+                )
             }
 
             LoaderError::Codec(err) => {
@@ -177,7 +185,8 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
         .iter()
         .filter(|u| u.as_signable().creator() == index)
         .map(|u| u.as_signable().round())
-        .max() {
+        .max()
+    {
         Some(round) => round + 1,
         None => 0,
     };
@@ -206,8 +215,10 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
     info!(target: "AlephBFT-unit-backup", "Next round inferred from collection: {:?}", next_round_collection);
 
     if next_round_backup < next_round_collection {
+        // Our newest unit doesn't appear in the backup. This indicates a serious issue, for example
+        // a different node running with the same pair of keys. It's safer not to continue.
         error!(
-            target: "AlephBFT-unit-backup", "Insufficient backup data to continue. Next round inferred from: collection: {:?}, backup: {:?}",
+            target: "AlephBFT-unit-backup", "Backup state behind unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
             next_round_collection,
             next_round_backup,
         );
@@ -216,8 +227,10 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
     };
 
     if next_round_collection < next_round_backup {
+        // Our newest unit didn't reach any peer, but it resides in our backup. One possible reason is that
+        // our node was taken down after saving the unit, but before broadcasting it. It is safe to continue.
         warn!(
-            target: "AlephBFT-unit-backup", "Backup has fresher state than unit collection. Next round inferred from: collection: {:?}, backup: {:?}",
+            target: "AlephBFT-unit-backup", "Backup state ahead of than unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
             next_round_backup,
             next_round_collection
         );
@@ -242,11 +255,11 @@ pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write
         futures::select! {
             unit_to_save = save_unit_rx.next() => {
                 if let Some(unit) = unit_to_save {
-                    if let Err(_) = unit_saver.save(unit.clone()) {
+                    if unit_saver.save(unit.clone()).is_err() {
                         error!(target: "AlephBFT-backup-saver", "Couldn't save unit to backup {:?}.", unit);
                         break;
                     }
-                    if let Err(_) = unit_saved_tx.unbounded_send(unit.clone()) {
+                    if unit_saved_tx.unbounded_send(unit.clone()).is_err() {
                         error!(target: "AlephBFT-backup-saver", "Couldn't respond on saved unit {:?}.", unit);
                         break;
                     }
