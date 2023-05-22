@@ -181,15 +181,13 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
         }
     };
 
-    let next_round_backup: Round = match units
+    let next_round_backup: Round = units
         .iter()
         .filter(|u| u.as_signable().creator() == index)
         .map(|u| u.as_signable().round())
         .max()
-    {
-        Some(round) => round + 1,
-        None => 0,
-    };
+        .map(|round| round + 1)
+        .unwrap_or(0);
 
     info!(
         target: "AlephBFT-unit-backup", "Loaded {:?} units from backup. Able to continue from round: {:?}.",
@@ -227,8 +225,8 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
     };
 
     if next_round_collection < next_round_backup {
-        // Our newest unit didn't reach any peer, but it resides in our backup. One possible reason is that
-        // our node was taken down after saving the unit, but before broadcasting it. It is safe to continue.
+        // Our newest unit didn't reach any peer, but it resides in our backup. One possible reason
+        // is that our node was taken down after saving the unit, but before broadcasting it.
         warn!(
             target: "AlephBFT-unit-backup", "Backup state ahead of than unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
             next_round_backup,
@@ -254,18 +252,20 @@ pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write
     loop {
         futures::select! {
             unit_to_save = save_unit_rx.next() => {
-                if let Some(unit) = unit_to_save {
-                    if unit_saver.save(unit.clone()).is_err() {
-                        error!(target: "AlephBFT-backup-saver", "Couldn't save unit to backup {:?}.", unit);
+                let unit_to_save = match unit_to_save {
+                    Some(unit) => unit,
+                    None => {
+                        error!(target: "AlephBFT-backup-saver", "Receiver of units to save closed early.");
                         break;
-                    }
-                    if unit_saved_tx.unbounded_send(unit.clone()).is_err() {
-                        error!(target: "AlephBFT-backup-saver", "Couldn't respond on saved unit {:?}.", unit);
-                        break;
-                    }
+                    },
+                };
+
+                if let Err(e) = unit_saver.save(unit_to_save.clone()) {
+                    error!(target: "AlephBFT-backup-saver", "Couldn't save unit to backup: {:?}", e);
+                    break;
                 }
-                else {
-                    error!(target: "AlephBFT-backup-saver", "Receiver of units to save closed early.");
+                if unit_saved_tx.unbounded_send(unit_to_save).is_err() {
+                    error!(target: "AlephBFT-backup-saver", "Couldn't respond with saved unit.");
                     break;
                 }
             },
@@ -349,10 +349,6 @@ mod tests {
         units.iter().map(|u| u.encode()).collect()
     }
 
-    fn concatenate<T>(vector: Vec<Vec<T>>) -> Vec<T> {
-        vector.into_iter().flatten().collect()
-    }
-
     async fn prepare_test<'a>(
         encoded_units: Vec<u8>,
     ) -> (
@@ -400,8 +396,8 @@ mod tests {
 
     #[tokio::test]
     async fn something_loaded_nothing_collected_succeeds() {
-        let units = concatenate(produce_units(5, SESSION_ID).await);
-        let encoded_units = concatenate(encode_all(units.clone()));
+        let units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -420,8 +416,8 @@ mod tests {
 
     #[tokio::test]
     async fn something_loaded_something_collected_succeeds() {
-        let units = concatenate(produce_units(5, SESSION_ID).await);
-        let encoded_units = concatenate(encode_all(units.clone()));
+        let units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -457,8 +453,8 @@ mod tests {
 
     #[tokio::test]
     async fn loaded_smaller_then_collected_fails() {
-        let units = concatenate(produce_units(3, SESSION_ID).await);
-        let encoded_units = concatenate(encode_all(units.clone()));
+        let units: Vec<_> = produce_units(3, SESSION_ID).await.into_iter().flatten().collect();
+        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -477,8 +473,8 @@ mod tests {
 
     #[tokio::test]
     async fn dropped_collection_fails() {
-        let units = concatenate(produce_units(3, SESSION_ID).await);
-        let encoded_units = concatenate(encode_all(units.clone()));
+        let units: Vec<_> = produce_units(3, SESSION_ID).await.into_iter().flatten().collect();
+        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -497,11 +493,11 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_corrupted_encoding_fails() {
-        let units = concatenate(produce_units(5, SESSION_ID).await);
+        let units = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
         let mut unit_encodings = encode_all(units);
         let unit2_encoding_len = unit_encodings[2].len();
         unit_encodings[2].resize(unit2_encoding_len - 1, 0); // remove the last byte
-        let encoded_units = concatenate(unit_encodings);
+        let encoded_units = unit_encodings.into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -519,9 +515,9 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_missing_parent_fails() {
-        let mut units = concatenate(produce_units(5, SESSION_ID).await);
+        let mut units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
         units.remove(2); // it is a parent of all units of round 3
-        let encoded_units = concatenate(encode_all(units));
+        let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -539,10 +535,10 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_duplicate_unit_succeeds() {
-        let mut units = concatenate(produce_units(5, SESSION_ID).await);
+        let mut units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
         let unit2_duplicate = units[2].clone();
         units.insert(3, unit2_duplicate);
-        let encoded_units = concatenate(encode_all(units.clone()));
+        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -562,7 +558,7 @@ mod tests {
     #[tokio::test]
     async fn backup_with_units_of_one_creator_fails() {
         let units = units_of_creator(produce_units(5, SESSION_ID).await, NodeIndex(NODE_ID.0 + 1));
-        let encoded_units = concatenate(encode_all(units));
+        let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
@@ -581,8 +577,8 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_wrong_session_fails() {
-        let units = concatenate(produce_units(5, SESSION_ID + 1).await);
-        let encoded_units = concatenate(encode_all(units));
+        let units = produce_units(5, SESSION_ID + 1).await.into_iter().flatten().collect();
+        let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units).await;
