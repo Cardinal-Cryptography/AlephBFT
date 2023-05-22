@@ -396,7 +396,11 @@ mod tests {
 
     #[tokio::test]
     async fn something_loaded_nothing_collected_succeeds() {
-        let units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
@@ -416,7 +420,11 @@ mod tests {
 
     #[tokio::test]
     async fn something_loaded_something_collected_succeeds() {
-        let units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
@@ -453,7 +461,11 @@ mod tests {
 
     #[tokio::test]
     async fn loaded_smaller_then_collected_fails() {
-        let units: Vec<_> = produce_units(3, SESSION_ID).await.into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(3, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
@@ -473,7 +485,11 @@ mod tests {
 
     #[tokio::test]
     async fn dropped_collection_fails() {
-        let units: Vec<_> = produce_units(3, SESSION_ID).await.into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(3, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
@@ -493,7 +509,11 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_corrupted_encoding_fails() {
-        let units = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let units = produce_units(5, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let mut unit_encodings = encode_all(units);
         let unit2_encoding_len = unit_encodings[2].len();
         unit_encodings[2].resize(unit2_encoding_len - 1, 0); // remove the last byte
@@ -515,7 +535,11 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_missing_parent_fails() {
-        let mut units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let mut units: Vec<_> = produce_units(5, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         units.remove(2); // it is a parent of all units of round 3
         let encoded_units = encode_all(units).into_iter().flatten().collect();
 
@@ -535,7 +559,11 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_duplicate_unit_succeeds() {
-        let mut units: Vec<_> = produce_units(5, SESSION_ID).await.into_iter().flatten().collect();
+        let mut units: Vec<_> = produce_units(5, SESSION_ID)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let unit2_duplicate = units[2].clone();
         units.insert(3, unit2_duplicate);
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
@@ -577,7 +605,11 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_wrong_session_fails() {
-        let units = produce_units(5, SESSION_ID + 1).await.into_iter().flatten().collect();
+        let units = produce_units(5, SESSION_ID + 1)
+            .await
+            .into_iter()
+            .flatten()
+            .collect();
         let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
