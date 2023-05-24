@@ -145,8 +145,8 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     finalization_handler: FH,
-    save_unit_tx: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    unit_saved_rx: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_for_saver: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_from_saver: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     preunits_for_packer: Sender<PreUnit<H>>,
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
     exiting: bool,
@@ -196,8 +196,8 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
 struct RunwayConfig<H: Hasher, D: Data, FH: FinalizationHandler<D>, MK: MultiKeychain> {
     max_round: Round,
     finalization_handler: FH,
-    save_unit_tx: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    unit_saved_rx: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_for_saver: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_from_saver: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -223,8 +223,8 @@ where
         let RunwayConfig {
             max_round,
             finalization_handler,
-            save_unit_tx,
-            unit_saved_rx,
+            backup_units_for_saver,
+            backup_units_from_saver,
             alerts_for_alerter,
             notifications_from_alerter,
             tx_consensus,
@@ -254,8 +254,8 @@ where
             rx_consensus,
             ordered_batch_rx,
             finalization_handler,
-            save_unit_tx,
-            unit_saved_rx,
+            backup_units_for_saver,
+            backup_units_from_saver,
             responses_for_collection,
             preunits_for_packer,
             signed_units_from_packer,
@@ -555,7 +555,11 @@ where
                 self.store.add_parents(h, p_hashes);
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
-                    if self.save_unit_tx.unbounded_send(su.into()).is_err() {
+                    if self
+                        .backup_units_for_saver
+                        .unbounded_send(su.into())
+                        .is_err()
+                    {
                         error!(target: "AlephBFT-runway", "{:?} A unit couldn't be sent to backup: {:?}.", self.index(), h);
                     }
                 } else {
@@ -714,7 +718,7 @@ where
                     }
                 },
 
-                message = self.unit_saved_rx.next() => match message {
+                message = self.backup_units_from_saver.next() => match message {
                     Some(unit) => self.on_unit_backup_saved(unit),
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Saved units receiver closed.", index);
@@ -916,15 +920,15 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     });
     let mut consensus_handle = consensus_handle.fuse();
 
-    let (save_unit_tx, save_unit_rx) = mpsc::unbounded();
-    let (unit_saved_tx, unit_saved_rx) = mpsc::unbounded();
+    let (backup_units_for_saver, backup_units_from_runway) = mpsc::unbounded();
+    let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
 
     let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
     let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {
         backup::run_saving_mechanism(
             runway_io.unit_saver,
-            save_unit_rx,
-            unit_saved_tx,
+            backup_units_from_runway,
+            backup_units_for_runway,
             backup_saver_terminator,
         )
         .await;
@@ -990,8 +994,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         .spawn_essential("runway", {
             let runway_config = RunwayConfig {
                 finalization_handler,
-                save_unit_tx,
-                unit_saved_rx,
+                backup_units_for_saver,
+                backup_units_from_saver,
                 alerts_for_alerter,
                 notifications_from_alerter,
                 tx_consensus,

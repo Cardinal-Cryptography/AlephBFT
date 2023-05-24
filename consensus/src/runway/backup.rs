@@ -240,18 +240,18 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
 }
 
 /// A task responsible for saving units into backup.
-/// It waits for units to appear in `units_to_save_rx`, and writes them to backup.
-/// It announces a successful write through `unit_saved_tx`.
+/// It waits for units to appear in `backup_units_from_runway`, and writes them to backup.
+/// It announces a successful write through `backup_units_for_runway`.
 pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write>(
     mut unit_saver: UnitSaver<W, H, D, S>,
-    mut save_unit_rx: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, S>>,
-    unit_saved_tx: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, S>>,
+    mut backup_units_from_runway: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, S>>,
+    backup_units_for_runway: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, S>>,
     mut terminator: Terminator,
 ) {
     let mut terminator_exit = false;
     loop {
         futures::select! {
-            unit_to_save = save_unit_rx.next() => {
+            unit_to_save = backup_units_from_runway.next() => {
                 let unit_to_save = match unit_to_save {
                     Some(unit) => unit,
                     None => {
@@ -264,7 +264,7 @@ pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write
                     error!(target: "AlephBFT-backup-saver", "Couldn't save unit to backup: {:?}", e);
                     break;
                 }
-                if unit_saved_tx.unbounded_send(unit_to_save).is_err() {
+                if backup_units_for_runway.unbounded_send(unit_to_save).is_err() {
                     error!(target: "AlephBFT-backup-saver", "Couldn't respond with saved unit.");
                     break;
                 }
