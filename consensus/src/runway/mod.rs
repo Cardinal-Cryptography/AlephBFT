@@ -689,6 +689,7 @@ where
             }
             Err(e) => {
                 error!(target: "AlephBFT-runway", "{:?} Units message from backup channel closed: {:?}", index, e);
+                return;
             }
         }
 
