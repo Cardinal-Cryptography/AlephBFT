@@ -681,6 +681,17 @@ where
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
+        match units_from_backup.await {
+            Ok(units) => {
+                for u in units {
+                    self.on_unit_received(u, false);
+                }
+            }
+            Err(e) => {
+                error!(target: "AlephBFT-runway", "{:?} Units message from backup channel closed: {:?}", index, e);
+            }
+        }
+
         debug!(target: "AlephBFT-runway", "{:?} Runway started.", index);
         loop {
             futures::select! {
@@ -723,18 +734,6 @@ where
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Saved units receiver closed.", index);
                     }
-                },
-
-                message = units_from_backup => match message {
-                    Ok(units) => {
-                        for u in units {
-                            self.on_unit_received(u, false);
-                        }
-                    },
-                    Err(e) => {
-                        error!(target: "AlephBFT-runway", "{:?} Units message from backup channel closed: {:?}", index, e);
-                        break;
-                    },
                 },
 
                 batch = self.ordered_batch_rx.next() => match batch {
