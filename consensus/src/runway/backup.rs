@@ -1,13 +1,9 @@
 use crate::{
-    runway::backup::LoaderError::InconsistentData,
     units::{UncheckedSignedUnit, UnitCoord},
-    Data, Hasher, NodeIndex, Round, SessionId, Signature, Terminator,
+    Data, Hasher, NodeIndex, Receiver, Round, Sender, SessionId, Signature, Terminator,
 };
 use codec::{Decode, Encode, Error as CodecError};
-use futures::{
-    channel::{mpsc, oneshot},
-    StreamExt,
-};
+use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, info, warn};
 use std::{
     collections::HashSet,
@@ -143,7 +139,7 @@ fn load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
         for parent_id in parent_ids.elements() {
             let parent = UnitCoord::new(coord.round() - 1, parent_id);
             if !already_loaded_coords.contains(&parent) {
-                return Err(InconsistentData(coord));
+                return Err(LoaderError::InconsistentData(coord));
             }
         }
 
@@ -244,8 +240,8 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
 /// It announces a successful write through `backup_units_for_runway`.
 pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write>(
     mut unit_saver: UnitSaver<W, H, D, S>,
-    mut backup_units_from_runway: mpsc::UnboundedReceiver<UncheckedSignedUnit<H, D, S>>,
-    backup_units_for_runway: mpsc::UnboundedSender<UncheckedSignedUnit<H, D, S>>,
+    mut backup_units_from_runway: Receiver<UncheckedSignedUnit<H, D, S>>,
+    backup_units_for_runway: Sender<UncheckedSignedUnit<H, D, S>>,
     mut terminator: Terminator,
 ) {
     let mut terminator_exit = false;
@@ -295,7 +291,7 @@ mod tests {
     };
     use aleph_bft_mock::{Data, Hasher64, Keychain, Loader, Signature};
     use codec::Encode;
-    use futures::channel::oneshot::{self, Receiver, Sender};
+    use futures::channel::oneshot;
 
     type UncheckedSignedUnit = GenericUncheckedSignedUnit<Hasher64, Data, Signature>;
 
@@ -353,9 +349,9 @@ mod tests {
         encoded_units: Vec<u8>,
     ) -> (
         impl futures::Future,
-        Receiver<Vec<UncheckedSignedUnit>>,
-        Sender<Round>,
-        Receiver<Option<Round>>,
+        oneshot::Receiver<Vec<UncheckedSignedUnit>>,
+        oneshot::Sender<Round>,
+        oneshot::Receiver<Option<Round>>,
     ) {
         let unit_loader = UnitLoader::new(Loader::new(encoded_units));
         let (loaded_unit_tx, loaded_unit_rx) = oneshot::channel();
