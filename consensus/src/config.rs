@@ -113,8 +113,26 @@ pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: Sess
     }
 }
 
+fn time_to_reach_round(round: Round, delay_schedule: DelaySchedule) -> Duration {
+    let mut total_time = Duration::from_millis(0);
+    for r in 0..round {
+        total_time += delay_schedule(r as usize);
+    }
+    total_time
+}
+
+/// Reaching a high round can be expected to introduce some slowdown.
+/// Use this function to ensure that the slowdown will happen.
+pub fn reaching_round_takes_at_least(
+    round: Round,
+    delay_schedule: DelaySchedule,
+    duration: Duration,
+) -> bool {
+    time_to_reach_round(round, delay_schedule) >= duration
+}
+
 /// 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)
-fn default_unit_creation_delay() -> DelaySchedule {
+pub fn default_unit_creation_delay() -> DelaySchedule {
     Arc::new(|t| match t {
         0 => Duration::from_millis(5000),
         _ => exponential_slowdown(t, 500.0, 3000, 1.005),
@@ -134,4 +152,79 @@ fn default_coord_request_delay() -> DelaySchedule {
 /// 3, 3, 3, 1, 1, 1, 1, ...
 fn default_coord_request_recipients() -> RecipientCountSchedule {
     Arc::new(|t| if t <= 2 { 3 } else { 1 })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        config::{reaching_round_takes_at_least, time_to_reach_round, DelaySchedule},
+        exponential_slowdown,
+    };
+    use std::{sync::Arc, time::Duration};
+
+    const MILLIS_IN_WEEK: u64 = 1000 * 60 * 60 * 24 * 7;
+
+    fn creation_delay_for_tests() -> DelaySchedule {
+        Arc::new(move |t| match t {
+            0 => Duration::from_millis(2000),
+            _ => exponential_slowdown(t, 300.0 as f64, 5000, 1.005),
+        })
+    }
+
+    #[test]
+    fn time_to_reach_delay_is_correct() {
+        let delay_schedule = Arc::new(|r| {
+            Duration::from_millis(match r {
+                0 => 2,
+                1 => 3,
+                2 => 5,
+                3 => 7,
+                4 => 11,
+                _ => 13,
+            })
+        });
+
+        assert_eq!(
+            time_to_reach_round(0, delay_schedule.clone()),
+            Duration::from_millis(0)
+        );
+        assert_eq!(
+            time_to_reach_round(1, delay_schedule.clone()),
+            Duration::from_millis(2)
+        );
+        assert_eq!(
+            time_to_reach_round(5, delay_schedule.clone()),
+            Duration::from_millis(28)
+        );
+        assert_eq!(
+            time_to_reach_round(10, delay_schedule),
+            Duration::from_millis(93)
+        );
+    }
+
+    #[test]
+    fn low_round_not_causing_slowdown_fails_the_check() {
+        let round_delays = creation_delay_for_tests();
+        assert_eq!(
+            reaching_round_takes_at_least(
+                5000,
+                round_delays,
+                Duration::from_millis(MILLIS_IN_WEEK)
+            ),
+            false
+        );
+    }
+
+    #[test]
+    fn high_round_causing_slowdown_passes_the_check() {
+        let round_delays = creation_delay_for_tests();
+        assert_eq!(
+            reaching_round_takes_at_least(
+                7000,
+                round_delays,
+                Duration::from_millis(MILLIS_IN_WEEK)
+            ),
+            true
+        );
+    }
 }
