@@ -167,7 +167,7 @@ mod tests {
     fn creation_delay_for_tests() -> DelaySchedule {
         Arc::new(move |t| match t {
             0 => Duration::from_millis(2000),
-            _ => exponential_slowdown(t, 300.0 as f64, 5000, 1.005),
+            _ => exponential_slowdown(t, 300.0, 5000, 1.005),
         })
     }
 
@@ -205,26 +205,20 @@ mod tests {
     #[test]
     fn low_round_not_causing_slowdown_fails_the_check() {
         let round_delays = creation_delay_for_tests();
-        assert_eq!(
-            reaching_round_takes_at_least(
-                5000,
-                round_delays,
-                Duration::from_millis(MILLIS_IN_WEEK)
-            ),
-            false
-        );
+        assert!(!reaching_round_takes_at_least(
+            5000,
+            round_delays,
+            Duration::from_millis(MILLIS_IN_WEEK)
+        ),);
     }
 
     #[test]
     fn high_round_causing_slowdown_passes_the_check() {
         let round_delays = creation_delay_for_tests();
-        assert_eq!(
-            reaching_round_takes_at_least(
-                7000,
-                round_delays,
-                Duration::from_millis(MILLIS_IN_WEEK)
-            ),
-            true
-        );
+        assert!(reaching_round_takes_at_least(
+            7000,
+            round_delays,
+            Duration::from_millis(MILLIS_IN_WEEK)
+        ));
     }
 }
