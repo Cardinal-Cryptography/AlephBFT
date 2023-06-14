@@ -1,9 +1,13 @@
 use crate::{NodeCount, NodeIndex, Round, SessionId};
+use log::error;
 use std::{
     fmt::{Debug, Formatter},
     sync::Arc,
     time::Duration,
 };
+
+#[derive(Debug)]
+pub struct InvalidConfigError;
 
 /// A function answering the question of how long to delay the n-th retry.
 pub type DelaySchedule = Arc<dyn Fn(usize) -> Duration + Sync + Send + 'static>;
@@ -61,23 +65,15 @@ impl Debug for DelayConfig {
 #[derive(Clone, Debug)]
 pub struct Config {
     /// Identification number of the Member=0,..,(n_members-1).
-    pub node_ix: NodeIndex,
+    pub(crate) node_ix: NodeIndex,
     /// Id of the session for which this instance is run.
-    pub session_id: SessionId,
+    pub(crate) session_id: SessionId,
     /// The size of the committee running the consensus.
-    pub n_members: NodeCount,
+    pub(crate) n_members: NodeCount,
     /// Configuration of several parameters related to delaying various tasks.
-    pub delay_config: DelayConfig,
+    pub(crate) delay_config: DelayConfig,
     /// Maximum allowable round of a unit.
-    pub max_round: Round,
-}
-
-impl Config {
-    /// Reaching a high round can be expected to introduce some slowdown.
-    /// Use this function to ensure that the slowdown will happen.
-    pub fn reaching_max_round_takes_at_least(&self, duration: Duration) -> bool {
-        time_to_reach_round(self.max_round, &self.delay_config.unit_creation_delay) >= duration
-    }
+    pub(crate) max_round: Round,
 }
 
 pub fn exponential_slowdown(
@@ -100,25 +96,47 @@ pub fn exponential_slowdown(
     Duration::from_millis(delay)
 }
 
-/// A default configuration of what the creators of this package see as optimal parameters.
-pub fn default_config(n_members: NodeCount, node_ix: NodeIndex, session_id: SessionId) -> Config {
-    Config {
+/// Creates a [`Config`], allowing the user to omit specifying `max_round` and `delay_config`
+/// in which case they will be set do default values, suggested by the creators of this package.
+/// `time_to_reach_max_round` is a lower bound on the time needed to reach the maximum round
+/// expected by the user and is only used for verification.
+pub fn create_config(
+    n_members: NodeCount,
+    node_ix: NodeIndex,
+    session_id: SessionId,
+    max_round: Option<Round>,
+    delay_config: Option<DelayConfig>,
+    time_to_reach_max_round: Duration,
+) -> Result<Config, InvalidConfigError> {
+    let max_round = max_round.unwrap_or(5000);
+
+    let delay_config = delay_config.unwrap_or(DelayConfig {
+        tick_interval: Duration::from_millis(10),
+        unit_rebroadcast_interval_min: Duration::from_millis(15000),
+        unit_rebroadcast_interval_max: Duration::from_millis(20000),
+        unit_creation_delay: default_unit_creation_delay(),
+        coord_request_delay: default_coord_request_delay(),
+        coord_request_recipients: default_coord_request_recipients(),
+        parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+        parent_request_recipients: Arc::new(|_| 1),
+        newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+    });
+
+    if time_to_reach_round(max_round, &delay_config.unit_creation_delay) < time_to_reach_max_round {
+        error!(
+            target: "AlephBFT-config",
+            "Reaching max_round will happen too fast with the given Config. Consider increasing max_round or lowering time_to_reach_max_round."
+        );
+        return Err(InvalidConfigError);
+    }
+
+    Ok(Config {
         node_ix,
         session_id,
         n_members,
-        delay_config: DelayConfig {
-            tick_interval: Duration::from_millis(10),
-            unit_rebroadcast_interval_min: Duration::from_millis(15000),
-            unit_rebroadcast_interval_max: Duration::from_millis(20000),
-            unit_creation_delay: default_unit_creation_delay(),
-            coord_request_delay: default_coord_request_delay(),
-            coord_request_recipients: default_coord_request_recipients(),
-            parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
-            parent_request_recipients: Arc::new(|_| 1),
-            newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
-        },
-        max_round: 5000,
-    }
+        delay_config,
+        max_round,
+    })
 }
 
 /// 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)
@@ -155,18 +173,31 @@ fn time_to_reach_round(round: Round, delay_schedule: &DelaySchedule) -> Duration
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::{time_to_reach_round, DelaySchedule},
-        default_config, exponential_slowdown, NodeCount, NodeIndex,
+        config::{
+            default_coord_request_delay, default_coord_request_recipients, time_to_reach_round,
+            DelaySchedule,
+        },
+        create_config, exponential_slowdown, DelayConfig, NodeCount, NodeIndex,
     };
     use std::{sync::Arc, time::Duration};
 
     const MILLIS_IN_WEEK: u64 = 1000 * 60 * 60 * 24 * 7;
 
-    fn creation_delay_for_tests() -> DelaySchedule {
-        Arc::new(move |t| match t {
-            0 => Duration::from_millis(2000),
-            _ => exponential_slowdown(t, 300.0, 5000, 1.005),
-        })
+    fn delay_config_for_tests() -> DelayConfig {
+        DelayConfig {
+            tick_interval: Duration::from_millis(10),
+            unit_rebroadcast_interval_min: Duration::from_millis(15000),
+            unit_rebroadcast_interval_max: Duration::from_millis(20000),
+            unit_creation_delay: Arc::new(move |t| match t {
+                0 => Duration::from_millis(2000),
+                _ => exponential_slowdown(t, 300.0, 5000, 1.005),
+            }),
+            coord_request_delay: default_coord_request_delay(),
+            coord_request_recipients: default_coord_request_recipients(),
+            parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+            parent_request_recipients: Arc::new(|_| 1),
+            newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+        }
     }
 
     #[test]
@@ -202,19 +233,29 @@ mod tests {
 
     #[test]
     fn low_round_not_causing_slowdown_fails_the_check() {
-        let mut config = default_config(NodeCount(5), NodeIndex(1), 3);
-        config.delay_config.unit_creation_delay = creation_delay_for_tests();
-        config.max_round = 5000;
+        let config = create_config(
+            NodeCount(5),
+            NodeIndex(1),
+            3,
+            Some(5000),
+            Some(delay_config_for_tests()),
+            Duration::from_millis(MILLIS_IN_WEEK),
+        );
 
-        assert!(!config.reaching_max_round_takes_at_least(Duration::from_millis(MILLIS_IN_WEEK)),);
+        assert!(config.is_err());
     }
 
     #[test]
     fn high_round_causing_slowdown_passes_the_check() {
-        let mut config = default_config(NodeCount(5), NodeIndex(1), 3);
-        config.delay_config.unit_creation_delay = creation_delay_for_tests();
-        config.max_round = 7000;
+        let config = create_config(
+            NodeCount(5),
+            NodeIndex(1),
+            3,
+            Some(7000),
+            Some(delay_config_for_tests()),
+            Duration::from_millis(MILLIS_IN_WEEK),
+        );
 
-        assert!(config.reaching_max_round_takes_at_least(Duration::from_millis(MILLIS_IN_WEEK)));
+        assert!(config.is_ok());
     }
 }
