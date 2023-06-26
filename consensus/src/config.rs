@@ -162,6 +162,21 @@ pub fn default_config(
     )
 }
 
+/// Creates a [`DelayConfig`] with default parameters, suggested by the creators of this package.
+pub fn default_delay_config() -> DelayConfig {
+    DelayConfig {
+        tick_interval: Duration::from_millis(10),
+        unit_rebroadcast_interval_min: Duration::from_millis(15000),
+        unit_rebroadcast_interval_max: Duration::from_millis(20000),
+        unit_creation_delay: default_unit_creation_delay(),
+        coord_request_delay: default_coord_request_delay(),
+        coord_request_recipients: default_coord_request_recipients(),
+        parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+        parent_request_recipients: Arc::new(|_| 1),
+        newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+    }
+}
+
 /// 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)
 fn default_unit_creation_delay() -> DelaySchedule {
     Arc::new(|t| match t {
@@ -183,20 +198,6 @@ fn default_coord_request_delay() -> DelaySchedule {
 /// 3, 3, 3, 1, 1, 1, 1, ...
 fn default_coord_request_recipients() -> RecipientCountSchedule {
     Arc::new(|t| if t <= 2 { 3 } else { 1 })
-}
-
-fn default_delay_config() -> DelayConfig {
-    DelayConfig {
-        tick_interval: Duration::from_millis(10),
-        unit_rebroadcast_interval_min: Duration::from_millis(15000),
-        unit_rebroadcast_interval_max: Duration::from_millis(20000),
-        unit_creation_delay: default_unit_creation_delay(),
-        coord_request_delay: default_coord_request_delay(),
-        coord_request_recipients: default_coord_request_recipients(),
-        parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
-        parent_request_recipients: Arc::new(|_| 1),
-        newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
-    }
 }
 
 fn time_to_reach_round(round: Round, delay_schedule: &DelaySchedule) -> Duration {
