@@ -114,10 +114,8 @@ pub fn exponential_slowdown(
     Duration::from_millis(delay)
 }
 
-/// Creates a [`Config`], allowing the user to omit specifying `max_round` and `delay_config`
-/// in which case they will be set do default values, suggested by the creators of this package.
-/// `time_to_reach_max_round` is a lower bound on the time needed to reach the maximum round
-/// expected by the user and is only used for verification.
+/// Creates a [`Config`] which wraps the passed arguments. `time_to_reach_max_round` is a lower bound
+/// on the time needed to reach the maximum round expected by the user and is only used for verification.
 pub fn create_config(
     n_members: NodeCount,
     node_ix: NodeIndex,
@@ -143,6 +141,10 @@ pub fn create_config(
     })
 }
 
+/// Creates a [`Config`], allowing the user to omit specifying the `delay_config`
+/// in which case it will be set to default, suggested by the creators of this package.
+/// `time_to_reach_max_round` is a lower bound on the time needed to reach the maximum round
+/// expected by the user and is only used for verification.
 pub fn default_config(
     n_members: NodeCount,
     node_ix: NodeIndex,
