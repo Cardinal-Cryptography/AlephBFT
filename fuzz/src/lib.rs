@@ -207,15 +207,8 @@ pub fn gen_delay_config() -> DelayConfig {
 }
 
 pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount, delay_config: DelayConfig) -> Config {
-    create_config(
-        n_members,
-        node_ix,
-        0,
-        Some(5000),
-        Some(delay_config),
-        Duration::ZERO,
-    )
-    .expect("Should always succeed with Duration::ZERO")
+    create_config(n_members, node_ix, 0, 5000, delay_config, Duration::ZERO)
+        .expect("Should always succeed with Duration::ZERO")
 }
 
 pub fn spawn_honest_member_with_config(

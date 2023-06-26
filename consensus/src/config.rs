@@ -65,15 +65,33 @@ impl Debug for DelayConfig {
 #[derive(Clone, Debug)]
 pub struct Config {
     /// Identification number of the Member=0,..,(n_members-1).
-    pub(crate) node_ix: NodeIndex,
+    node_ix: NodeIndex,
     /// Id of the session for which this instance is run.
-    pub(crate) session_id: SessionId,
+    session_id: SessionId,
     /// The size of the committee running the consensus.
-    pub(crate) n_members: NodeCount,
+    n_members: NodeCount,
     /// Configuration of several parameters related to delaying various tasks.
-    pub(crate) delay_config: DelayConfig,
+    delay_config: DelayConfig,
     /// Maximum allowable round of a unit.
-    pub(crate) max_round: Round,
+    max_round: Round,
+}
+
+impl Config {
+    pub fn node_ix(&self) -> NodeIndex {
+        self.node_ix
+    }
+    pub fn session_id(&self) -> SessionId {
+        self.session_id
+    }
+    pub fn n_members(&self) -> NodeCount {
+        self.n_members
+    }
+    pub fn delay_config(&self) -> &DelayConfig {
+        &self.delay_config
+    }
+    pub fn max_round(&self) -> Round {
+        self.max_round
+    }
 }
 
 pub fn exponential_slowdown(
@@ -104,24 +122,10 @@ pub fn create_config(
     n_members: NodeCount,
     node_ix: NodeIndex,
     session_id: SessionId,
-    max_round: Option<Round>,
-    delay_config: Option<DelayConfig>,
+    max_round: Round,
+    delay_config: DelayConfig,
     time_to_reach_max_round: Duration,
 ) -> Result<Config, InvalidConfigError> {
-    let max_round = max_round.unwrap_or(5000);
-
-    let delay_config = delay_config.unwrap_or(DelayConfig {
-        tick_interval: Duration::from_millis(10),
-        unit_rebroadcast_interval_min: Duration::from_millis(15000),
-        unit_rebroadcast_interval_max: Duration::from_millis(20000),
-        unit_creation_delay: default_unit_creation_delay(),
-        coord_request_delay: default_coord_request_delay(),
-        coord_request_recipients: default_coord_request_recipients(),
-        parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
-        parent_request_recipients: Arc::new(|_| 1),
-        newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
-    });
-
     if time_to_reach_round(max_round, &delay_config.unit_creation_delay) < time_to_reach_max_round {
         error!(
             target: "AlephBFT-config",
@@ -137,6 +141,24 @@ pub fn create_config(
         delay_config,
         max_round,
     })
+}
+
+pub fn default_config(
+    n_members: NodeCount,
+    node_ix: NodeIndex,
+    session_id: SessionId,
+    max_round: Round,
+    time_to_reach_max_round: Duration,
+) -> Result<Config, InvalidConfigError> {
+    let delay_config = default_delay_config();
+    create_config(
+        n_members,
+        node_ix,
+        session_id,
+        max_round,
+        delay_config,
+        time_to_reach_max_round,
+    )
 }
 
 /// 5000, 500, 500, 500, ... (till step 3000), 500, 500*1.005, 500*(1.005)^2, 500*(1.005)^3, ..., 10742207 (last step)
@@ -160,6 +182,20 @@ fn default_coord_request_delay() -> DelaySchedule {
 /// 3, 3, 3, 1, 1, 1, 1, ...
 fn default_coord_request_recipients() -> RecipientCountSchedule {
     Arc::new(|t| if t <= 2 { 3 } else { 1 })
+}
+
+fn default_delay_config() -> DelayConfig {
+    DelayConfig {
+        tick_interval: Duration::from_millis(10),
+        unit_rebroadcast_interval_min: Duration::from_millis(15000),
+        unit_rebroadcast_interval_max: Duration::from_millis(20000),
+        unit_creation_delay: default_unit_creation_delay(),
+        coord_request_delay: default_coord_request_delay(),
+        coord_request_recipients: default_coord_request_recipients(),
+        parent_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+        parent_request_recipients: Arc::new(|_| 1),
+        newest_request_delay: Arc::new(|_| Duration::from_millis(3000)),
+    }
 }
 
 fn time_to_reach_round(round: Round, delay_schedule: &DelaySchedule) -> Duration {
@@ -237,8 +273,8 @@ mod tests {
             NodeCount(5),
             NodeIndex(1),
             3,
-            Some(5000),
-            Some(delay_config_for_tests()),
+            5000,
+            delay_config_for_tests(),
             Duration::from_millis(MILLIS_IN_WEEK),
         );
 
@@ -251,8 +287,8 @@ mod tests {
             NodeCount(5),
             NodeIndex(1),
             3,
-            Some(7000),
-            Some(delay_config_for_tests()),
+            7000,
+            delay_config_for_tests(),
             Duration::from_millis(MILLIS_IN_WEEK),
         );
 

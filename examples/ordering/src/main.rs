@@ -116,7 +116,7 @@ async fn main() {
     let member_terminator = Terminator::create_root(exit_rx, "AlephBFT-member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
-        let config = aleph_bft::create_config(n_members, id, 0, None, None, Duration::ZERO)
+        let config = aleph_bft::default_config(n_members, id, 0, 5000, Duration::ZERO)
             .expect("Should always succeed with Duration::ZERO");
         run_session(
             config,

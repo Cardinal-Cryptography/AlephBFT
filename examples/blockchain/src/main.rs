@@ -128,12 +128,11 @@ async fn main() {
     let member_terminator = terminator.add_offspring_connection("AlephBFT-member");
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(args.n_members.into(), args.my_id.into());
-        let config = aleph_bft::create_config(
+        let config = aleph_bft::default_config(
             args.n_members.into(),
             args.my_id.into(),
             0,
-            None,
-            None,
+            5000,
             Duration::ZERO,
         )
         .expect("Should always succeed with Duration::ZERO");
