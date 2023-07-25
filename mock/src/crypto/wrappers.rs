@@ -38,8 +38,8 @@ impl<T: MK> Index for BadSigning<T> {
 impl<T: MK> KeychainT for BadSigning<T> {
     type Signature = T::Signature;
 
-    async fn sign(&self, msg: &[u8]) -> Self::Signature {
-        let signature = self.0.sign(msg).await;
+    fn sign(&self, msg: &[u8]) -> Self::Signature {
+        let signature = self.0.sign(msg);
         let mut msg = b"BAD".to_vec();
         msg.extend(signature.msg().clone());
         Signature::new(msg, signature.index())

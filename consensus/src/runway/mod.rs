@@ -289,7 +289,7 @@ where
                 }
                 Request::NewestUnit(salt) => {
                     trace!(target: "AlephBFT-runway", "{:?} Newest unit request received {:?}.", self.index(), salt);
-                    self.on_request_newest(node_id, salt).await
+                    self.on_request_newest(node_id, salt)
                 }
             },
 
@@ -422,13 +422,11 @@ where
         }
     }
 
-    async fn on_request_newest(&mut self, requester: NodeIndex, salt: u64) {
+    fn on_request_newest(&mut self, requester: NodeIndex, salt: u64) {
         let unit = self.store.newest_unit(requester);
         let response = NewestUnitResponse::new(requester, self.index(), unit, salt);
 
-        let signed_response = Signed::sign(response, &self.keychain)
-            .await
-            .into_unchecked();
+        let signed_response = Signed::sign(response, &self.keychain).into_unchecked();
 
         if let Err(e) =
             self.unit_messages_for_network

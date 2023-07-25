@@ -41,7 +41,7 @@ impl KeychainT for Keychain {
         self.count
     }
 
-    async fn sign(&self, msg: &[u8]) -> Self::Signature {
+    fn sign(&self, msg: &[u8]) -> Self::Signature {
         Signature::new(msg.to_vec(), self.index)
     }
 
