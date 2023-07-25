@@ -207,7 +207,7 @@ mod tests {
     };
     use aleph_bft_mock::{Data, Hasher64, Keychain};
 
-    fn create_unit<'a>(
+    fn create_unit(
         round: Round,
         node_idx: NodeIndex,
         count: NodeCount,

@@ -182,6 +182,12 @@ type NetworkAlert<H, D, MK> = Option<(
     <H as Hasher>::Hash,
 )>;
 
+type OnOwnAlertResult<H, D, MK> = (
+    AlertMessage<H, D, <MK as Keychain>::Signature, <MK as MultiKeychain>::PartialMultisignature>,
+    Recipient,
+    <H as Hasher>::Hash,
+);
+
 impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     fn new(keychain: &'a MK, config: AlertConfig) -> Self {
         Self {
@@ -290,14 +296,7 @@ impl<'a, H: Hasher, D: Data, MK: MultiKeychain> Alerter<'a, H, D, MK> {
     }
 
     /// `on_own_alert()` registers RMCs and messages but does not actually send them; make sure the returned values are forwarded to IO
-    fn on_own_alert(
-        &mut self,
-        alert: Alert<H, D, MK::Signature>,
-    ) -> (
-        AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
-        Recipient,
-        H::Hash,
-    ) {
+    fn on_own_alert(&mut self, alert: Alert<H, D, MK::Signature>) -> OnOwnAlertResult<H, D, MK> {
         let forker = alert.forker();
         self.known_forkers.insert(forker, alert.proof.clone());
         let alert = Signed::sign(alert, self.keychain);
@@ -627,7 +626,7 @@ mod tests {
             },
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
-        let alert = Alert::new(alerter_index, fork_proof.clone(), vec![]);
+        let alert = Alert::new(alerter_index, fork_proof, vec![]);
         let alert_hash = Signable::hash(&alert);
         let signed_alert_hash =
             Signed::sign_with_index(alert_hash, &alerter_keychain).into_unchecked();
@@ -665,7 +664,7 @@ mod tests {
         )
         .into_unchecked();
         let wrong_fork_proof = (valid_unit.clone(), valid_unit);
-        let wrong_alert = Alert::new(forker_index, wrong_fork_proof.clone(), vec![]);
+        let wrong_alert = Alert::new(forker_index, wrong_fork_proof, vec![]);
         let signed_wrong_alert = Signed::sign(wrong_alert, &forker_keychain).into_unchecked();
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_wrong_alert)),
@@ -693,7 +692,7 @@ mod tests {
             vec![],
         );
         let alert_hash = Signable::hash(&alert);
-        let signed_alert = Signed::sign(alert.clone(), &own_keychain).into_unchecked();
+        let signed_alert = Signed::sign(alert, &own_keychain).into_unchecked();
         this.on_message(AlertMessage::ForkAlert(signed_alert.clone()));
         for i in 1..n_members.0 {
             let node_id = NodeIndex(i);
@@ -728,7 +727,7 @@ mod tests {
         let empty_alert = Alert::new(double_committer, fork_proof.clone(), vec![]);
         let empty_alert_hash = Signable::hash(&empty_alert);
         let signed_empty_alert =
-            Signed::sign(empty_alert.clone(), &keychains[double_committer.0]).into_unchecked();
+            Signed::sign(empty_alert, &keychains[double_committer.0]).into_unchecked();
         let signed_empty_alert_hash =
             Signed::sign_with_index(empty_alert_hash, &keychains[double_committer.0])
                 .into_unchecked();
@@ -749,14 +748,10 @@ mod tests {
             Some(AlerterResponse::RmcMessage(message)),
         );
         let forker_unit = fork_proof.0.clone();
-        let nonempty_alert = Alert::new(
-            double_committer,
-            fork_proof.clone(),
-            vec![forker_unit.clone()],
-        );
+        let nonempty_alert = Alert::new(double_committer, fork_proof, vec![forker_unit]);
         let nonempty_alert_hash = Signable::hash(&nonempty_alert);
         let signed_nonempty_alert =
-            Signed::sign(nonempty_alert.clone(), &keychains[double_committer.0]).into_unchecked();
+            Signed::sign(nonempty_alert, &keychains[double_committer.0]).into_unchecked();
         let signed_nonempty_alert_hash =
             Signed::sign_with_index(nonempty_alert_hash, &keychains[double_committer.0])
                 .into_unchecked();
@@ -808,7 +803,7 @@ mod tests {
         let empty_alert = Alert::new(double_committer, fork_proof.clone(), vec![]);
         let empty_alert_hash = Signable::hash(&empty_alert);
         let signed_empty_alert =
-            Signed::sign(empty_alert.clone(), &keychains[double_committer.0]).into_unchecked();
+            Signed::sign(empty_alert, &keychains[double_committer.0]).into_unchecked();
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_empty_alert)),
             Some(AlerterResponse::ForkResponse(
@@ -817,14 +812,10 @@ mod tests {
             )),
         );
         let forker_unit = fork_proof.0.clone();
-        let nonempty_alert = Alert::new(
-            double_committer,
-            fork_proof.clone(),
-            vec![forker_unit.clone()],
-        );
+        let nonempty_alert = Alert::new(double_committer, fork_proof, vec![forker_unit]);
         let nonempty_alert_hash = Signable::hash(&nonempty_alert);
         let signed_nonempty_alert =
-            Signed::sign(nonempty_alert.clone(), &keychains[double_committer.0]).into_unchecked();
+            Signed::sign(nonempty_alert, &keychains[double_committer.0]).into_unchecked();
         let signed_nonempty_alert_hash =
             Signed::sign_with_index(nonempty_alert_hash, &keychains[double_committer.0])
                 .into_unchecked();
@@ -976,7 +967,7 @@ mod tests {
             let signed_unit_1 = Signed::sign(unit_1, &keychains[forker_index.0]).into_unchecked();
             (signed_unit_0, signed_unit_1)
         };
-        let alert = Alert::new(own_index, fork_proof.clone(), vec![]);
+        let alert = Alert::new(own_index, fork_proof, vec![]);
         let alert_hash = Signable::hash(&alert);
         let signed_alert = Signed::sign(alert, &keychains[own_index.0]).into_unchecked();
         if make_known {

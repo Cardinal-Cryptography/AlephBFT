@@ -531,7 +531,7 @@ mod tests {
         let (preunit, _) = creator.create_unit(0).expect("Creation should succeed.");
         let unit = preunit_to_unchecked_signed_unit(preunit, wrong_session_id, keychain);
         let responses = create_responses(
-            keychains.iter().skip(1).zip(repeat(Some(unit.clone()))),
+            keychains.iter().skip(1).zip(repeat(Some(unit))),
             salt,
             creator_id,
         );
@@ -560,7 +560,7 @@ mod tests {
         let (preunit, _) = creator.create_unit(0).expect("Creation should succeed.");
         let unit = preunit_to_unchecked_signed_unit(preunit, session_id, &keychains[1]);
         let responses = create_responses(
-            keychains.iter().skip(1).zip(repeat(Some(unit.clone()))),
+            keychains.iter().skip(1).zip(repeat(Some(unit))),
             salt,
             creator_id,
         );
