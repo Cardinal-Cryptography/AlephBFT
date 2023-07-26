@@ -258,7 +258,6 @@ impl<W: Write> SpyingNetworkHook<W> {
     }
 }
 
-#[async_trait::async_trait]
 impl<W: Write + Send> NetworkHook<FuzzNetworkData> for SpyingNetworkHook<W> {
     fn update_state(&mut self, data: &mut FuzzNetworkData, _: NodeIndex, recipient: NodeIndex) {
         if self.node == recipient {

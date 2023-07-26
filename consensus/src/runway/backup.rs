@@ -299,7 +299,7 @@ mod tests {
     const NODE_ID: NodeIndex = NodeIndex(0);
     const N_MEMBERS: NodeCount = NodeCount(4);
 
-    async fn produce_units(rounds: usize, session_id: SessionId) -> Vec<Vec<UncheckedSignedUnit>> {
+    fn produce_units(rounds: usize, session_id: SessionId) -> Vec<Vec<UncheckedSignedUnit>> {
         let mut creators = creator_set(N_MEMBERS);
         let keychains: Vec<_> = (0..N_MEMBERS.0)
             .map(|id| Keychain::new(N_MEMBERS, NodeIndex(id)))
@@ -346,7 +346,7 @@ mod tests {
         units.iter().map(|u| u.encode()).collect()
     }
 
-    async fn prepare_test<'a>(
+    fn prepare_test(
         encoded_units: Vec<u8>,
     ) -> (
         impl futures::Future,
@@ -377,7 +377,7 @@ mod tests {
     #[tokio::test]
     async fn nothing_loaded_nothing_collected_succeeds() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(Vec::new()).await;
+            prepare_test(Vec::new());
 
         let handle = tokio::spawn(async {
             task.await;
@@ -393,15 +393,11 @@ mod tests {
 
     #[tokio::test]
     async fn something_loaded_nothing_collected_succeeds() {
-        let units: Vec<_> = produce_units(5, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -417,15 +413,11 @@ mod tests {
 
     #[tokio::test]
     async fn something_loaded_something_collected_succeeds() {
-        let units: Vec<_> = produce_units(5, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -442,7 +434,7 @@ mod tests {
     #[tokio::test]
     async fn nothing_loaded_something_collected_fails() {
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(Vec::new()).await;
+            prepare_test(Vec::new());
 
         let handle = tokio::spawn(async {
             task.await;
@@ -458,15 +450,11 @@ mod tests {
 
     #[tokio::test]
     async fn loaded_smaller_then_collected_fails() {
-        let units: Vec<_> = produce_units(3, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let units: Vec<_> = produce_units(3, SESSION_ID).into_iter().flatten().collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -482,15 +470,11 @@ mod tests {
 
     #[tokio::test]
     async fn dropped_collection_fails() {
-        let units: Vec<_> = produce_units(3, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let units: Vec<_> = produce_units(3, SESSION_ID).into_iter().flatten().collect();
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -506,18 +490,14 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_corrupted_encoding_fails() {
-        let units = produce_units(5, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let units = produce_units(5, SESSION_ID).into_iter().flatten().collect();
         let mut unit_encodings = encode_all(units);
         let unit2_encoding_len = unit_encodings[2].len();
         unit_encodings[2].resize(unit2_encoding_len - 1, 0); // remove the last byte
         let encoded_units = unit_encodings.into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
         let handle = tokio::spawn(async {
             task.await;
         });
@@ -532,16 +512,12 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_missing_parent_fails() {
-        let mut units: Vec<_> = produce_units(5, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let mut units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
         units.remove(2); // it is a parent of all units of round 3
         let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
         let handle = tokio::spawn(async {
             task.await;
         });
@@ -556,17 +532,13 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_duplicate_unit_succeeds() {
-        let mut units: Vec<_> = produce_units(5, SESSION_ID)
-            .await
-            .into_iter()
-            .flatten()
-            .collect();
+        let mut units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
         let unit2_duplicate = units[2].clone();
         units.insert(3, unit2_duplicate);
         let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -582,11 +554,11 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_units_of_one_creator_fails() {
-        let units = units_of_creator(produce_units(5, SESSION_ID).await, NodeIndex(NODE_ID.0 + 1));
+        let units = units_of_creator(produce_units(5, SESSION_ID), NodeIndex(NODE_ID.0 + 1));
         let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -603,14 +575,13 @@ mod tests {
     #[tokio::test]
     async fn backup_with_wrong_session_fails() {
         let units = produce_units(5, SESSION_ID + 1)
-            .await
             .into_iter()
             .flatten()
             .collect();
         let encoded_units = encode_all(units).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units).await;
+            prepare_test(encoded_units);
 
         let handle = tokio::spawn(async {
             task.await;

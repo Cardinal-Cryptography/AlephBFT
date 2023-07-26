@@ -7,7 +7,6 @@ use crate::{
     Recipient, Round, SessionId, Signed, SpawnHandle, TaskHandle,
 };
 use aleph_bft_mock::{Data, Hash64, Hasher64, Keychain, NetworkHook, Router, Spawner};
-use async_trait::async_trait;
 use futures::{channel::oneshot, StreamExt};
 use log::{debug, error, trace};
 use parking_lot::Mutex;
@@ -223,7 +222,6 @@ impl AlertHook {
     }
 }
 
-#[async_trait]
 impl NetworkHook<NetworkData> for AlertHook {
     fn update_state(&mut self, data: &mut NetworkData, sender: NodeIndex, recipient: NodeIndex) {
         use crate::{alerts::AlertMessage::*, network::NetworkDataInner::*};

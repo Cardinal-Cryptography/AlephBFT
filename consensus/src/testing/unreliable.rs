@@ -5,7 +5,6 @@ use crate::{
     Index, NodeCount, NodeIndex, Round, Signed, SpawnHandle,
 };
 use aleph_bft_mock::{BadSigning, Keychain, NetworkHook, Router, Spawner};
-use async_trait::async_trait;
 use futures::StreamExt;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -40,7 +39,6 @@ struct NoteRequest {
     requested: Arc<Mutex<bool>>,
 }
 
-#[async_trait]
 impl NetworkHook<NetworkData> for NoteRequest {
     fn update_state(&mut self, data: &mut NetworkData, sender: NodeIndex, _: NodeIndex) {
         use NetworkDataInner::Units;

@@ -1,5 +1,4 @@
 use crate::{Index, NodeCount, NodeIndex, NodeMap};
-use async_trait::async_trait;
 use codec::{Codec, Decode, Encode};
 use log::warn;
 use std::{fmt::Debug, hash::Hash};
@@ -18,7 +17,6 @@ impl<T: Debug + Clone + Codec + Send + Sync + Eq + 'static> Signature for T {}
 /// The meaning of sign is then to produce a signature `s` using the given private key,
 /// and `verify(msg, s, j)` is to verify whether the signature s under the message msg is
 /// correct with respect to the public key of the jth node.
-#[async_trait]
 pub trait Keychain: Index + Clone + Send + Sync + 'static {
     type Signature: Signature;
 
@@ -430,7 +428,6 @@ mod tests {
         Index, Keychain, MultiKeychain, NodeCount, NodeIndex, PartialMultisignature,
         PartiallyMultisigned, Signable, SignatureSet, Signed,
     };
-    use async_trait::async_trait;
     use codec::{Decode, Encode};
     use std::fmt::Debug;
 
@@ -460,7 +457,6 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
     impl<K: Keychain> Keychain for DefaultMultiKeychain<K> {
         type Signature = K::Signature;
 
@@ -545,7 +541,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Keychain for TestKeychain {
         type Signature = TestSignature;
 
@@ -572,8 +567,8 @@ mod tests {
         DefaultMultiKeychain::new(keychain)
     }
 
-    #[tokio::test]
-    async fn test_valid_signatures() {
+    #[test]
+    fn test_valid_signatures() {
         let node_count: NodeCount = 7.into();
         let keychains: Vec<TestMultiKeychain> = (0_usize..node_count.0)
             .map(|i| test_multi_keychain(node_count, i.into()))
@@ -591,8 +586,8 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn test_invalid_signatures() {
+    #[test]
+    fn test_invalid_signatures() {
         let node_count: NodeCount = 1.into();
         let index: NodeIndex = 0.into();
         let keychain = test_multi_keychain(node_count, index);
@@ -607,8 +602,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_incomplete_multisignature() {
+    #[test]
+    fn test_incomplete_multisignature() {
         let msg = test_message();
         let index: NodeIndex = 0.into();
         let node_count: NodeCount = 2.into();
@@ -621,8 +616,8 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_multisignatures() {
+    #[test]
+    fn test_multisignatures() {
         let msg = test_message();
         let node_count: NodeCount = 7.into();
         let keychains: Vec<TestMultiKeychain> = (0..node_count.0)
