@@ -271,7 +271,7 @@ where
         self.keychain.node_count()
     }
 
-    async fn on_unit_message(&mut self, message: RunwayNotificationIn<H, D, MK::Signature>) {
+    fn on_unit_message(&mut self, message: RunwayNotificationIn<H, D, MK::Signature>) {
         match message {
             RunwayNotificationIn::NewUnit(u) => {
                 trace!(target: "AlephBFT-runway", "{:?} New unit received {:?}.", self.index(), &u);
@@ -721,7 +721,7 @@ where
                 },
 
                 event = self.unit_messages_from_network.next() => match event {
-                    Some(event) => self.on_unit_message(event).await,
+                    Some(event) => self.on_unit_message(event),
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Unit message stream closed.", index);
                         break;
