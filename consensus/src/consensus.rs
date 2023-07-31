@@ -2,7 +2,7 @@ use futures::{
     channel::{mpsc, oneshot},
     FutureExt,
 };
-use log::debug;
+use log::{debug, warn};
 
 use crate::{
     config::Config,
@@ -53,10 +53,14 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let mut terminal = Terminal::new(index, incoming_notifications, outgoing_notifications);
 
     // send a new parent candidate to the creator
+    let mut parents_for_creator = Some(parents_for_creator);
     terminal.register_post_insert_hook(Box::new(move |u| {
-        parents_for_creator
-            .unbounded_send(u.into())
-            .expect("Channel to creator should be open.");
+        if let Some(parents_for_creator_tx) = &parents_for_creator {
+            if parents_for_creator_tx.unbounded_send(u.into()).is_err() {
+                warn!(target: "AlephBFT", "Channel to creator should be open.");
+                parents_for_creator = None;
+            }
+        }
     }));
     // try to extend the partial order after adding a unit to the dag
     terminal.register_post_insert_hook(Box::new(move |u| {
