@@ -15,12 +15,8 @@ impl SpawnHandle for Spawner {
         _: &str,
         task: impl Future<Output = ()> + Send + 'static,
     ) -> TaskHandle {
-        let (res_tx, res_rx) = oneshot::channel();
-        tokio::spawn(async move {
-            task.await;
-            res_tx.send(()).expect("We own the rx.");
-        });
-        Box::pin(async move { res_rx.await.map_err(|_| ()) })
+        let handle = tokio::spawn(task);
+        Box::pin(async move { handle.await.map_err(|_| ()) })
     }
 }
 
