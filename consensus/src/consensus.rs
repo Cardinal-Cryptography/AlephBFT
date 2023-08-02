@@ -44,9 +44,25 @@ pub(crate) async fn run<H: Hasher + 'static>(
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
     };
-    let mut creator_handle = spawn_handle
-        .spawn_essential("consensus/creation", async move {
-            creation::run(conf.clone().into(), io, starting_round, creator_terminator).await;
+    let creator_handle = spawn_handle.spawn_essential("consensus/creation", async move {
+        creation::run(conf.clone().into(), io, starting_round, creator_terminator).await;
+    });
+    let mut creator_handle_terminator = terminator.add_offspring_connection("creator-handle");
+    let mut creator_handle = creator_handle
+        .then(|result| {
+            Box::pin(async move {
+                debug!(target: "AlephBFT-consensus", "{:?} creator task terminated with some error", index);
+                if !result.is_err() {
+                    debug!(target: "AlephBFT-consensus", "{:?} creator task terminated without errors", index);
+                    if creator_handle_terminator.get_exit().await.is_err() {
+                        debug!(target: "AlephBFT-consensus", "{:?} error while awaiting for creator's terminator", index);
+                    }
+                    Ok(())
+                } else {
+                    debug!(target: "AlephBFT-consensus", "{:?} creator task terminated with some error", index);
+                    Err(())
+                }
+            })
         })
         .fuse();
 
