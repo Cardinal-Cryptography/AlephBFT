@@ -386,6 +386,10 @@ impl<H: Hasher> Terminal<H> {
                     debug!(target: "AlephBFT-terminal", "{:?} received exit signal", self.node_id);
                     self.exiting = true;
                 }
+                complete => {
+                    debug!(target: "AlephBFT-terminal", "{:?} all tasks completed, exiting", self.node_id);
+                    self.exiting = true;
+                }
             }
             if self.exiting {
                 debug!(target: "AlephBFT-terminal", "{:?} Terminal decided to exit.", self.node_id);
