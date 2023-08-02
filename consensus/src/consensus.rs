@@ -44,29 +44,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
     };
-    let creator_handle = spawn_handle.spawn_essential("consensus/creation", async move {
-        creation::run(conf.clone().into(), io, starting_round, creator_terminator).await;
-    });
-    let mut creator_handle_terminator = terminator.add_offspring_connection("creator-handle");
-    let mut creator_handle = creator_handle
-        .then(|result| {
-            Box::pin(async move {
-                debug!(target: "AlephBFT-consensus", "{:?} creator task terminated", index);
-                let result = if !result.is_err() {
-                    debug!(target: "AlephBFT-consensus", "{:?} creator task terminated without errors", index);
-                    if creator_handle_terminator.get_exit().await.is_err() {
-                        debug!(target: "AlephBFT-consensus", "{:?} error while awaiting for creator's terminator", index);
-                    }
-                    Ok(())
-                } else {
-                    debug!(target: "AlephBFT-consensus", "{:?} creator task terminated with some error", index);
-                    Err(())
-                };
-                debug!(target: "AlephBFT-consensus", "{:?} awaiting creator task terminator", index);
-                creator_handle_terminator.terminate_sync().await;
-                debug!(target: "AlephBFT-consensus", "{:?} creator task terminated gracefully", index);
-                result
-            })
+    let creator_handle = spawn_handle
+        .spawn_essential("consensus/creation", async move {
+            creation::run(conf.clone().into(), io, starting_round, creator_terminator).await;
         })
         .fuse();
 
@@ -101,9 +81,6 @@ pub(crate) async fn run<H: Hasher + 'static>(
         _ = terminator.get_exit() => {},
         _ = terminal_handle => {
             debug!(target: "AlephBFT-consensus", "{:?} terminal task terminated early.", index);
-        },
-        _ = creator_handle => {
-            debug!(target: "AlephBFT-consensus", "{:?} creator task terminated early.", index);
         },
         _ = extender_handle => {
             debug!(target: "AlephBFT-consensus", "{:?} extender task terminated early.", index);
