@@ -19,7 +19,7 @@ pub struct Terminator {
 impl Debug for Terminator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Terminator")
-            .field("component name", &&self.component_name)
+            .field("component name", &self.component_name)
             .field(
                 "offspring connection count",
                 &self.offspring_connections.len(),
@@ -34,18 +34,6 @@ impl Terminator {
         parent_connection: Option<TerminatorConnection>,
         component_name: &str,
     ) -> Self {
-        Self::new_offspring(
-            parent_exit,
-            parent_connection,
-            &("Terminator::".to_string() + component_name),
-        )
-    }
-
-    fn new_offspring(
-        parent_exit: Receiver<()>,
-        parent_connection: Option<TerminatorConnection>,
-        component_name: &str,
-    ) -> Self {
         Self {
             component_name: component_name.into(),
             parent_exit,
@@ -56,7 +44,7 @@ impl Terminator {
 
     /// Creates a terminator for the root component
     pub fn create_root(exit: Receiver<()>, name: &'static str) -> Self {
-        Self::new(exit, None, name)
+        Self::new(exit, None, &("Terminator::".to_string() + name))
     }
 
     /// Get exit channel for current component
@@ -77,7 +65,7 @@ impl Terminator {
 
         self.offspring_connections
             .push((name.clone(), (exit_send, endpoint)));
-        Terminator::new_offspring(exit_recv, Some(offspring_endpoint), &name.clone())
+        Terminator::new(exit_recv, Some(offspring_endpoint), &name)
     }
 
     /// Perform a synchronized shutdown
