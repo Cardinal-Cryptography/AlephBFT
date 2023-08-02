@@ -10,16 +10,16 @@ type TerminatorConnection = (Sender<()>, Receiver<()>);
 /// Struct that holds connections to offspring and parent components/tasks
 /// and enables a clean/synchronized shutdown
 pub struct Terminator {
-    component_name: &'static str,
+    component_name: String,
     parent_exit: Receiver<()>,
     parent_connection: Option<TerminatorConnection>,
-    offspring_connections: Vec<(&'static str, (Sender<()>, TerminatorConnection))>,
+    offspring_connections: Vec<(String, (Sender<()>, TerminatorConnection))>,
 }
 
 impl Debug for Terminator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Terminator")
-            .field("component name", &self.component_name)
+            .field("component name", &&self.component_name)
             .field(
                 "offspring connection count",
                 &self.offspring_connections.len(),
@@ -32,10 +32,22 @@ impl Terminator {
     fn new(
         parent_exit: Receiver<()>,
         parent_connection: Option<TerminatorConnection>,
-        component_name: &'static str,
+        component_name: &str,
+    ) -> Self {
+        Self::new_offspring(
+            parent_exit,
+            parent_connection,
+            &("Terminator::".to_string() + component_name),
+        )
+    }
+
+    fn new_offspring(
+        parent_exit: Receiver<()>,
+        parent_connection: Option<TerminatorConnection>,
+        component_name: &str,
     ) -> Self {
         Self {
-            component_name,
+            component_name: component_name.into(),
             parent_exit,
             parent_connection,
             offspring_connections: Vec::new(),
@@ -54,6 +66,8 @@ impl Terminator {
 
     /// Add a connection to an offspring component/task
     pub fn add_offspring_connection(&mut self, name: &'static str) -> Terminator {
+        let name = self.component_name.clone() + "::" + name;
+
         let (exit_send, exit_recv) = channel();
         let (sender, offspring_recv) = channel();
         let (offspring_sender, recv) = channel();
@@ -62,22 +76,22 @@ impl Terminator {
         let offspring_endpoint = (offspring_sender, offspring_recv);
 
         self.offspring_connections
-            .push((name, (exit_send, endpoint)));
-        Terminator::new(exit_recv, Some(offspring_endpoint), name)
+            .push((name.clone(), (exit_send, endpoint)));
+        Terminator::new_offspring(exit_recv, Some(offspring_endpoint), &name.clone())
     }
 
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
         if !self.parent_exit.is_terminated() {
             debug!(
-                target: self.component_name,
+                target: &self.component_name,
                 "Terminator has not recieved exit from parent: synchronization canceled.",
             );
             return;
         }
 
         debug!(
-            target: self.component_name,
+            target: &self.component_name,
             "Terminator preparing for shutdown.",
         );
 
@@ -87,11 +101,11 @@ impl Terminator {
         // First send exits to descendants
         for (name, (exit, connection)) in self.offspring_connections {
             if exit.send(()).is_err() {
-                debug!(target: self.component_name, "{} already stopped.", name);
+                debug!(target: &self.component_name, "{} already stopped.", name);
             }
 
             let (sender, receiver) = connection;
-            offspring_senders.push((sender, name));
+            offspring_senders.push((sender, name.clone()));
             offspring_receivers.push((receiver, name));
         }
 
@@ -99,7 +113,7 @@ impl Terminator {
         for (receiver, name) in offspring_receivers {
             if receiver.await.is_err() {
                 debug!(
-                    target: self.component_name,
+                    target: &self.component_name,
                     "Terminator failed to receive from {}.",
                     name,
                 );
@@ -107,7 +121,7 @@ impl Terminator {
         }
 
         debug!(
-            target: self.component_name,
+            target: &self.component_name,
             "Terminator gathered notifications from descendants.",
         );
 
@@ -116,24 +130,24 @@ impl Terminator {
         if let Some((sender, receiver)) = self.parent_connection {
             if sender.send(()).is_err() {
                 debug!(
-                    target: self.component_name,
+                    target: &self.component_name,
                     "Terminator failed to notify parent component.",
                 );
             } else {
                 debug!(
-                    target: self.component_name,
+                    target: &self.component_name,
                     "Terminator notified parent component.",
                 );
             }
 
             if receiver.await.is_err() {
                 debug!(
-                    target: self.component_name,
+                    target: &self.component_name,
                     "Terminator failed to receive from parent component."
                 );
             } else {
                 debug!(
-                    target: self.component_name,
+                    target: &self.component_name,
                     "Terminator recieved shutdown permission from parent component."
                 );
             }
@@ -143,7 +157,7 @@ impl Terminator {
         for (sender, name) in offspring_senders {
             if sender.send(()).is_err() {
                 debug!(
-                    target: self.component_name,
+                    target: &self.component_name,
                     "Terminator failed to notify {}.",
                     name,
                 );
@@ -151,7 +165,7 @@ impl Terminator {
         }
 
         debug!(
-            target: self.component_name,
+            target: &self.component_name,
             "Terminator sent permits to descendants: ready to exit.",
         );
     }

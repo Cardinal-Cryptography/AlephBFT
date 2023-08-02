@@ -51,8 +51,8 @@ pub(crate) async fn run<H: Hasher + 'static>(
     let mut creator_handle = creator_handle
         .then(|result| {
             Box::pin(async move {
-                debug!(target: "AlephBFT-consensus", "{:?} creator task terminated with some error", index);
-                if !result.is_err() {
+                debug!(target: "AlephBFT-consensus", "{:?} creator task terminated", index);
+                let result = if !result.is_err() {
                     debug!(target: "AlephBFT-consensus", "{:?} creator task terminated without errors", index);
                     if creator_handle_terminator.get_exit().await.is_err() {
                         debug!(target: "AlephBFT-consensus", "{:?} error while awaiting for creator's terminator", index);
@@ -61,7 +61,11 @@ pub(crate) async fn run<H: Hasher + 'static>(
                 } else {
                     debug!(target: "AlephBFT-consensus", "{:?} creator task terminated with some error", index);
                     Err(())
-                }
+                };
+                debug!(target: "AlephBFT-consensus", "{:?} awaiting creator task terminator", index);
+                creator_handle_terminator.terminate_sync().await;
+                debug!(target: "AlephBFT-consensus", "{:?} creator task terminated gracefully", index);
+                result
             })
         })
         .fuse();
