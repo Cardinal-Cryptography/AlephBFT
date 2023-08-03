@@ -70,13 +70,7 @@ impl Terminator {
 
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
-        if !self.parent_exit.is_terminated() {
-            debug!(
-                target: &self.component_name,
-                "Terminator has not recieved exit from parent: synchronization canceled.",
-            );
-            return;
-        }
+        let self_termination = !self.parent_exit.is_terminated();
 
         debug!(
             target: &self.component_name,
@@ -115,29 +109,31 @@ impl Terminator {
 
         // Notify parent that our subtree is ready for graceful exit
         // and wait for signal that all other components are ready
-        if let Some((sender, receiver)) = self.parent_connection {
-            if sender.send(()).is_err() {
-                debug!(
-                    target: &self.component_name,
-                    "Terminator failed to notify parent component.",
-                );
-            } else {
-                debug!(
-                    target: &self.component_name,
-                    "Terminator notified parent component.",
-                );
-            }
+        if !self_termination {
+            if let Some((sender, receiver)) = self.parent_connection {
+                if sender.send(()).is_err() {
+                    debug!(
+                        target: &self.component_name,
+                        "Terminator failed to notify parent component.",
+                    );
+                } else {
+                    debug!(
+                        target: &self.component_name,
+                        "Terminator notified parent component.",
+                    );
+                }
 
-            if receiver.await.is_err() {
-                debug!(
-                    target: &self.component_name,
-                    "Terminator failed to receive from parent component."
-                );
-            } else {
-                debug!(
-                    target: &self.component_name,
-                    "Terminator recieved shutdown permission from parent component."
-                );
+                if receiver.await.is_err() {
+                    debug!(
+                        target: &self.component_name,
+                        "Terminator failed to receive from parent component."
+                    );
+                } else {
+                    debug!(
+                        target: &self.component_name,
+                        "Terminator recieved shutdown permission from parent component."
+                    );
+                }
             }
         }
 
