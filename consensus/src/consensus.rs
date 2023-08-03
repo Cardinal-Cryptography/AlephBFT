@@ -1,6 +1,7 @@
 use futures::{
     channel::{mpsc, oneshot},
-    FutureExt,
+    future::pending,
+    pin_mut, FutureExt,
 };
 use log::{debug, warn};
 
@@ -44,11 +45,26 @@ pub(crate) async fn run<H: Hasher + 'static>(
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
     };
+    let (creator_panic_tx, creator_panic_rx) = oneshot::channel();
     let creator_handle = spawn_handle
         .spawn_essential("consensus/creation", async move {
             creation::run(conf.into(), io, starting_round, creator_terminator).await;
+            // this allows us to handle panics of the creator
+            if creator_panic_tx.send(()).is_err() {
+                debug!(target: "AlephBFT-consensus", "{:?} creator's parent task already exited.", index);
+            }
         })
         .fuse();
+
+    let creator_panic_handle = async move {
+        if creator_panic_rx.await.is_err() {
+            return;
+        }
+        // creator exited normally and so panic handle should not return anything
+        pending().await
+    }
+    .fuse();
+    pin_mut!(creator_panic_handle);
 
     let mut terminal = Terminal::new(index, incoming_notifications, outgoing_notifications);
 
@@ -81,6 +97,9 @@ pub(crate) async fn run<H: Hasher + 'static>(
         _ = terminator.get_exit() => {},
         _ = terminal_handle => {
             debug!(target: "AlephBFT-consensus", "{:?} terminal task terminated early.", index);
+        },
+        _ = creator_panic_handle => {
+            debug!(target: "AlephBFT-consensus", "{:?} creator task terminated early with its task being dropped.", index);
         },
         _ = extender_handle => {
             debug!(target: "AlephBFT-consensus", "{:?} extender task terminated early.", index);
