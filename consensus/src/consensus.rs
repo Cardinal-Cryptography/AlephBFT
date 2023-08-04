@@ -45,14 +45,15 @@ pub(crate) async fn run<H: Hasher + 'static>(
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
     };
-    let mut creator_handle = spawn_handle
+    let creator_handle = spawn_handle
         .spawn_essential(
             "consensus/creation",
             creation::run(conf.into(), io, starting_round, creator_terminator),
         )
-        .fuse();
-    let creator_panic_handle = async {
-        if (&mut creator_handle).await.is_err() {
+        .shared();
+    let creator_handle_for_panic = creator_handle.clone();
+    let creator_panic_handle = async move {
+        if creator_handle_for_panic.await.is_err() {
             return;
         }
         pending().await
