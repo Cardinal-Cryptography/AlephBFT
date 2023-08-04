@@ -1,9 +1,9 @@
 use futures::{
     channel::{mpsc, oneshot},
     future::pending,
-    Future, FutureExt,
+    FutureExt,
 };
-use log::{debug, warn};
+use log::{debug, error, warn};
 
 use crate::{
     config::Config,
@@ -14,28 +14,6 @@ use crate::{
     terminal::Terminal,
     Hasher, Receiver, Round, Sender, SpawnHandle, Terminator,
 };
-
-/// Attaches to a given task a routine which allows us to create a separate Future that returns `()` iff given task panics.
-fn attach_panic_notifier<F: Future>(
-    task: F,
-) -> (impl Future<Output = F::Output>, impl Future<Output = ()>) {
-    let (panic_tx, panic_rx) = oneshot::channel();
-    let main_task = async move {
-        let result = task.await;
-        // this allows us to handle panics of the given task
-        // if the task panics, the receiver part will read an error
-        let _ = panic_tx.send(());
-        result
-    };
-    let panic_handle = async move {
-        if panic_rx.await.is_err() {
-            return;
-        }
-        // task exited normally and so panic handle should not return anything
-        pending().await
-    };
-    (main_task, panic_handle)
-}
 
 pub(crate) async fn run<H: Hasher + 'static>(
     conf: Config,
@@ -67,15 +45,18 @@ pub(crate) async fn run<H: Hasher + 'static>(
         outgoing_units: outgoing_notifications.clone(),
         incoming_parents: parents_from_terminal,
     };
-    let (creator_task, creator_panic_handle) = attach_panic_notifier(creation::run(
-        conf.into(),
-        io,
-        starting_round,
-        creator_terminator,
-    ));
-    let creator_handle = spawn_handle
-        .spawn_essential("consensus/creation", creator_task)
+    let mut creator_handle = spawn_handle
+        .spawn_essential(
+            "consensus/creation",
+            creation::run(conf.into(), io, starting_round, creator_terminator),
+        )
         .fuse();
+    let creator_panic_handle = async {
+        if (&mut creator_handle).await.is_err() {
+            return;
+        }
+        pending().await
+    };
 
     let mut terminal = Terminal::new(index, incoming_notifications, outgoing_notifications);
 
@@ -110,7 +91,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
             debug!(target: "AlephBFT-consensus", "{:?} terminal task terminated early.", index);
         },
         _ = creator_panic_handle.fuse() => {
-            debug!(target: "AlephBFT-consensus", "{:?} creator task terminated early with its task being dropped.", index);
+            error!(target: "AlephBFT-consensus", "{:?} creator task terminated early with its task being dropped.", index);
         },
         _ = extender_handle => {
             debug!(target: "AlephBFT-consensus", "{:?} extender task terminated early.", index);
