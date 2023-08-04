@@ -14,6 +14,7 @@ pub struct Terminator {
     parent_exit: Receiver<()>,
     parent_connection: Option<TerminatorConnection>,
     offspring_connections: Vec<(&'static str, (Sender<()>, TerminatorConnection))>,
+    returned_result: Option<Result<(), ()>>,
 }
 
 impl Debug for Terminator {
@@ -39,6 +40,7 @@ impl Terminator {
             parent_exit,
             parent_connection,
             offspring_connections: Vec::new(),
+            returned_result: None,
         }
     }
 
@@ -47,9 +49,16 @@ impl Terminator {
         Self::new(exit, None, name)
     }
 
-    /// Get exit channel for current component
-    pub fn get_exit(&mut self) -> &mut Receiver<()> {
-        &mut self.parent_exit
+    /// When ready, returns reason why we should exit. `Ok` should be interpreted as "all good, our parent decided to gracefully
+    /// exit". `Err` is returned when our parent autonomously decided to exit, without first receiving such request from its
+    /// parent.
+    pub async fn get_exit(&mut self) -> Result<(), ()> {
+        if let Some(returned) = self.returned_result {
+            return returned;
+        }
+        let result = (&mut self.parent_exit).await.map_err(|_| ());
+        self.returned_result = Some(result);
+        result
     }
 
     /// Add a connection to an offspring component/task
@@ -68,12 +77,12 @@ impl Terminator {
 
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
-        let self_termination = !self.parent_exit.is_terminated();
-        if self_termination {
+        if !self.parent_exit.is_terminated() {
             debug!(
                 target: self.component_name,
-                "Terminator has not received exit from parent.",
+                "Terminator has not recieved exit from parent: synchronization canceled.",
             );
+            return;
         }
 
         debug!(
@@ -113,31 +122,29 @@ impl Terminator {
 
         // Notify parent that our subtree is ready for graceful exit
         // and wait for signal that all other components are ready
-        if !self_termination {
-            if let Some((sender, receiver)) = self.parent_connection {
-                if sender.send(()).is_err() {
-                    debug!(
-                        target: self.component_name,
-                        "Terminator failed to notify parent component.",
-                    );
-                } else {
-                    debug!(
-                        target: self.component_name,
-                        "Terminator notified parent component.",
-                    );
-                }
+        if let Some((sender, receiver)) = self.parent_connection {
+            if sender.send(()).is_err() {
+                debug!(
+                    target: self.component_name,
+                    "Terminator failed to notify parent component.",
+                );
+            } else {
+                debug!(
+                    target: self.component_name,
+                    "Terminator notified parent component.",
+                );
+            }
 
-                if receiver.await.is_err() {
-                    debug!(
-                        target: self.component_name,
-                        "Terminator failed to receive from parent component."
-                    );
-                } else {
-                    debug!(
-                        target: self.component_name,
-                        "Terminator recieved shutdown permission from parent component."
-                    );
-                }
+            if receiver.await.is_err() {
+                debug!(
+                    target: self.component_name,
+                    "Terminator failed to receive from parent component."
+                );
+            } else {
+                debug!(
+                    target: self.component_name,
+                    "Terminator recieved shutdown permission from parent component."
+                );
             }
         }
 
@@ -224,7 +231,7 @@ mod tests {
             _ = leaf_handle_1 => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
             _ = leaf_handle_2 => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
             _ = internal_handle => assert!(with_crash, "internal_1 crashed when it wasn't supposed to"),
-            _ = terminator.get_exit() => assert!(!with_crash, "exited when we expected internal crash"),
+            _ = terminator.get_exit().fuse() => assert!(!with_crash, "exited when we expected internal crash"),
         }
 
         let terminator_handle = terminator.terminate_sync().fuse();
@@ -255,7 +262,7 @@ mod tests {
         select! {
             _ = leaf_handle => assert!(with_crash, "leaf crashed when it wasn't supposed to"),
             _ = internal_handle => assert!(with_crash, "internal_2 crashed when it wasn't supposed to"),
-            _ = terminator.get_exit() => assert!(!with_crash, "exited when we expected internal crash"),
+            _ = terminator.get_exit().fuse() => assert!(!with_crash, "exited when we expected internal crash"),
         }
 
         let terminator_handle = terminator.terminate_sync().fuse();
