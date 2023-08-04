@@ -69,6 +69,12 @@ impl Terminator {
     /// Perform a synchronized shutdown
     pub async fn terminate_sync(self) {
         let self_termination = !self.parent_exit.is_terminated();
+        if self_termination {
+            debug!(
+                target: self.component_name,
+                "Terminator has not received exit from parent.",
+            );
+        }
 
         debug!(
             target: self.component_name,
