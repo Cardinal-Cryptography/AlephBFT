@@ -86,7 +86,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     terminal.register_post_insert_hook(Box::new(move |u| {
         if let Some(parents_for_creator_tx) = &parents_for_creator {
             if parents_for_creator_tx.unbounded_send(u.into()).is_err() {
-                warn!(target: "AlephBFT", "Channel to creator should be open.");
+                warn!(target: "AlephBFT", "Channel to creator was closed.");
                 parents_for_creator = None;
             }
         }
