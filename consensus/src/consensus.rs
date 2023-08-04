@@ -24,9 +24,7 @@ fn attach_panic_notifier<F: Future>(
         let result = task.await;
         // this allows us to handle panics of the given task
         // if the task panics, the receiver part will read an error
-        if panic_tx.send(()).is_err() {
-            debug!(target: "AlephBFT-consensus", "panic-notifier's parent task already exited.");
-        }
+        let _ = panic_tx.send(());
         result
     };
     let panic_handle = async move {
