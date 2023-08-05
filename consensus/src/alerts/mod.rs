@@ -80,7 +80,7 @@ impl<H: Hasher, D: Data, S: Signature> Alert<H, D, S> {
         self.proof.0.as_signable().creator()
     }
 
-    pub(crate) fn included_data(&self) -> Vec<D> {
+    pub fn included_data(&self) -> Vec<D> {
         // Only legit units might end up in the DAG, we can ignore the fork proof.
         self.legit_units
             .iter()
@@ -114,7 +114,7 @@ pub enum AlertMessage<H: Hasher, D: Data, S: Signature, MS: PartialMultisignatur
 }
 
 impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H, D, S, MS> {
-    pub(crate) fn included_data(&self) -> Vec<D> {
+    pub fn included_data(&self) -> Vec<D> {
         match self {
             Self::ForkAlert(unchecked_alert) => unchecked_alert.as_signable().included_data(),
             Self::RmcMessage(_, _) => Vec::new(),
