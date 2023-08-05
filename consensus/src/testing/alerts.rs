@@ -1,5 +1,5 @@
 use crate::{
-    alerts::{run, Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification},
+    alerts::{Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification, Service},
     units::{ControlHash, FullUnit, PreUnit},
     Index, Indexed, Keychain as _, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable,
     Signed, Terminator, UncheckedSigned,
@@ -215,7 +215,8 @@ impl TestCase {
         let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
         let (exit_alerter, exit) = oneshot::channel();
         let n_members = keychain.node_count();
-        tokio::spawn(run(
+
+        let mut alerter_service = Service::new(
             keychain,
             messages_for_network,
             messages_from_network,
@@ -225,8 +226,13 @@ impl TestCase {
                 n_members,
                 session_id: 0,
             },
-            Terminator::create_root(exit, "AlephBFT-alerter"),
-        ));
+        );
+
+        tokio::spawn(async move {
+            alerter_service
+                .run(Terminator::create_root(exit, "AlephBFT-alerter"))
+                .await
+        });
 
         use Input::*;
         use Output::*;
