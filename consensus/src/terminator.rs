@@ -56,9 +56,9 @@ impl Terminator {
         if let Some(returned) = self.returned_result {
             return returned;
         }
-        let result = (&mut self.parent_exit).await.map_err(|_| ());
-        self.returned_result = Some(result);
-        result
+        self.returned_result
+            .insert((&mut self.parent_exit).await.map_err(|_| ()))
+            .to_owned()
     }
 
     /// Add a connection to an offspring component/task
