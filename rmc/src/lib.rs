@@ -170,11 +170,11 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
 
 /// Reliable Multicast Box
 ///
-/// The instance of [`ReliableMulticast<'a, H, MK>`] reliably broadcasts hashes of type `H`,
+/// The instance of [`ReliableMulticast<H, MK>`] reliably broadcasts hashes of type `H`,
 /// and when a hash is successfully broadcasted, the multisigned hash `Multisigned<H, MK>`
 /// is asynchronously returned.
 ///
-/// A node with an instance of [`ReliableMulticast<'a, H, MK>`] can initiate broadcasting
+/// A node with an instance of [`ReliableMulticast<H, MK>`] can initiate broadcasting
 /// a message `msg: H` by calling the [`ReliableMulticast::start_rmc`] method. As a result,
 /// the node signs `msg` and starts broadcasting the signed message via the network.
 /// When sufficintly many nodes call [`ReliableMulticast::start_rmc`] with the same message `msg`
@@ -194,7 +194,7 @@ pub struct ReliableMulticast<H: Signable + Hash, MK: MultiKeychain> {
     multisigned_hashes_rx: UnboundedReceiver<Multisigned<H, MK>>,
 }
 
-impl<'a, H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMulticast<H, MK> {
+impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMulticast<H, MK> {
     pub fn new(
         network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
         network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,

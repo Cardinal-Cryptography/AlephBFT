@@ -54,32 +54,33 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
     ) {
         match self.handler.on_message(message) {
-            Some(AlerterResponse::ForkAlert(alert, recipient)) => {
+            Ok(Some(AlerterResponse::ForkAlert(alert, recipient))) => {
                 self.io.send_message_for_network(
                     AlertMessage::ForkAlert(alert),
                     recipient,
                     &mut self.handler.exiting,
                 );
             }
-            Some(AlerterResponse::AlertRequest(hash, peer)) => {
+            Ok(Some(AlerterResponse::AlertRequest(hash, peer))) => {
                 let message = AlertMessage::AlertRequest(self.handler.index(), hash);
                 self.io
                     .send_message_for_network(message, peer, &mut self.handler.exiting);
             }
-            Some(AlerterResponse::RmcMessage(message)) => {
+            Ok(Some(AlerterResponse::RmcMessage(message))) => {
                 if self.io.messages_for_rmc.unbounded_send(message).is_err() {
                     warn!(target: "AlephBFT-alerter", "{:?} Channel with messages for rmc should be open", self.handler.index());
                     self.handler.exiting = true;
                 }
             }
-            Some(AlerterResponse::ForkResponse(maybe_notification, hash)) => {
+            Ok(Some(AlerterResponse::ForkResponse(maybe_notification, hash))) => {
                 self.io.rmc.start_rmc(hash);
                 if let Some(notification) = maybe_notification {
                     self.io
                         .send_notification_for_units(notification, &mut self.handler.exiting);
                 }
             }
-            None => {}
+            Ok(None) => {}
+            Err(error) => debug!(target: "AlephBFT-alerter", "{}", error),
         }
     }
 
@@ -99,9 +100,11 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
     }
 
     pub fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
-        if let Some(notification) = self.handler.alert_confirmed(multisigned) {
-            self.io
-                .send_notification_for_units(notification, &mut self.handler.exiting);
+        match self.handler.alert_confirmed(multisigned) {
+            Ok(notification) => self
+                .io
+                .send_notification_for_units(notification, &mut self.handler.exiting),
+            Err(error) => warn!(target: "AlephBFT-alerter", "{}", error),
         }
     }
 

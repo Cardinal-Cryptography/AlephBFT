@@ -1,25 +1,76 @@
 use crate::{
     alerts::{Alert, AlertConfig, AlertMessage, AlerterResponse, ForkProof, ForkingNotification},
-    units::UncheckedSignedUnit,
     Data, Hasher, Keychain, MultiKeychain, Multisigned, NodeIndex, Recipient, SessionId, Signed,
     UncheckedSigned,
 };
-use log::{debug, error, trace, warn};
-use std::collections::{HashMap, HashSet};
+use aleph_bft_types::Round;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::{Display, Formatter},
+};
+
+#[derive(Debug, PartialEq)]
+pub enum Error {
+    // commitment validity related errors
+    IncorrectlySignedUnit(NodeIndex),
+    SameRound(Round, NodeIndex),
+    WrongCreator(NodeIndex),
+    // fork validity related errors
+    DifferentRounds(NodeIndex),
+    SingleUnit(NodeIndex),
+    WrongSession(NodeIndex),
+    // generic errors
+    IncorrectlySignedAlert,
+    RepeatedAlert(NodeIndex, NodeIndex),
+    UnknownAlertRequest,
+    UnknownAlertRMC,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::IncorrectlySignedUnit(sender) => write!(f, "Incorrect commitment from {:?}: Some unit is incorrectly signed", sender),
+            Error::SameRound(round, sender) => write!(f, "Incorrect commitment from {:?}: Two or more alerted units have the same round {:?}", sender, round),
+            Error::WrongCreator(sender) => write!(f, "Incorrect commitment from {:?}: Some unit has a wrong creator", sender),
+            Error::DifferentRounds(sender) => write!(f, "Incorrect fork alert from {:?}: Forking units come from different rounds", sender),
+            Error::SingleUnit(sender) => write!(f, "Incorrect fork alert from {:?}: Two copies of a single unit do not constitute a fork", sender),
+            Error::WrongSession(sender) => write!(f, "Incorrect fork alert from {:?}: Wrong session", sender),
+            Error::IncorrectlySignedAlert => write!(f, "Received an incorrectly signed alert"),
+            Error::RepeatedAlert(forker, sender) => write!(f, "We already know about an alert by {:?} about {:?}", sender, forker),
+            Error::UnknownAlertRequest => write!(f, "Received a request for an unknown alert"),
+            Error::UnknownAlertRMC => write!(f, "Completed an RMC for an unknown alert"),
+        }
+    }
+}
 
 type KnownAlerts<H, D, MK> =
     HashMap<<H as Hasher>::Hash, Signed<Alert<H, D, <MK as Keychain>::Signature>, MK>>;
-
-type NetworkAlert<H, D, MK> = Option<(
-    Option<ForkingNotification<H, D, <MK as Keychain>::Signature>>,
-    <H as Hasher>::Hash,
-)>;
 
 type OnOwnAlertResult<H, D, MK> = (
     AlertMessage<H, D, <MK as Keychain>::Signature, <MK as MultiKeychain>::PartialMultisignature>,
     Recipient,
     <H as Hasher>::Hash,
 );
+
+type OnNetworkAlertResult<H, D, MK> = Result<
+    (
+        Option<ForkingNotification<H, D, <MK as Keychain>::Signature>>,
+        <H as Hasher>::Hash,
+    ),
+    Error,
+>;
+
+type OnMessageResult<H, D, MK> = Result<
+    Option<
+        AlerterResponse<
+            H,
+            D,
+            <MK as Keychain>::Signature,
+            <MK as MultiKeychain>::PartialMultisignature,
+        >,
+    >,
+    Error,
+>;
 
 /// The component responsible for fork alerts in AlephBFT. We refer to the documentation
 /// https://cardinal-cryptography.github.io/AlephBFT/how_alephbft_does_it.html Section 2.5 and
@@ -69,67 +120,51 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     // Note that these units will have to be validated before being used in the consensus.
     // This is alright, if someone uses their alert to commit to incorrect units it's their own
     // problem.
-    pub fn correct_commitment(
-        &self,
-        forker: NodeIndex,
-        units: &[UncheckedSignedUnit<H, D, MK::Signature>],
-    ) -> bool {
+    pub fn verify_commitment(&self, alert: &Alert<H, D, MK::Signature>) -> Result<(), Error> {
         let mut rounds = HashSet::new();
-        for u in units {
+        for u in &alert.legit_units {
             let u = match u.clone().check(&self.keychain) {
                 Ok(u) => u,
-                Err(_) => {
-                    warn!(target: "AlephBFT-alerter", "{:?} One of the units is incorrectly signed.", self.index());
-                    return false;
-                }
+                Err(_) => return Err(Error::IncorrectlySignedUnit(alert.sender)),
             };
             let full_unit = u.as_signable();
-            if full_unit.creator() != forker {
-                warn!(target: "AlephBFT-alerter", "{:?} One of the units {:?} has wrong creator.", self.index(), full_unit);
-                return false;
+            if full_unit.creator() != alert.forker() {
+                return Err(Error::WrongCreator(alert.sender));
             }
             if rounds.contains(&full_unit.round()) {
-                warn!(target: "AlephBFT-alerter", "{:?} Two or more alerted units have the same round {:?}.", self.index(), full_unit.round());
-                return false;
+                return Err(Error::SameRound(full_unit.round(), alert.sender));
             }
             rounds.insert(full_unit.round());
         }
-        true
+        Ok(())
     }
 
-    pub fn who_is_forking(&self, proof: &ForkProof<H, D, MK::Signature>) -> Option<NodeIndex> {
-        let (u1, u2) = proof;
+    fn verify_fork(&self, alert: &Alert<H, D, MK::Signature>) -> Result<NodeIndex, Error> {
+        let (u1, u2) = &alert.proof;
         let (u1, u2) = {
             let u1 = u1.clone().check(&self.keychain);
             let u2 = u2.clone().check(&self.keychain);
             match (u1, u2) {
                 (Ok(u1), Ok(u2)) => (u1, u2),
-                _ => {
-                    warn!(target: "AlephBFT-alerter", "{:?} Invalid signatures in a proof.", self.index());
-                    return None;
-                }
+                _ => return Err(Error::IncorrectlySignedUnit(alert.sender)),
             }
         };
         let full_unit1 = u1.as_signable();
         let full_unit2 = u2.as_signable();
         if full_unit1.session_id() != self.session_id || full_unit2.session_id() != self.session_id
         {
-            warn!(target: "AlephBFT-alerter", "{:?} Alert from different session.", self.index());
-            return None;
+            return Err(Error::WrongSession(alert.sender));
         }
         if full_unit1 == full_unit2 {
-            warn!(target: "AlephBFT-alerter", "{:?} Two copies of the same unit do not constitute a fork.", self.index());
-            return None;
+            return Err(Error::SingleUnit(alert.sender));
         }
         if full_unit1.creator() != full_unit2.creator() {
-            warn!(target: "AlephBFT-alerter", "{:?} One of the units creators in proof does not match.", self.index());
-            return None;
+            return Err(Error::WrongCreator(alert.sender));
         }
         if full_unit1.round() != full_unit2.round() {
-            warn!(target: "AlephBFT-alerter", "{:?} The rounds in proof's units do not match.", self.index());
-            return None;
+            return Err(Error::DifferentRounds(alert.sender));
         }
-        Some(full_unit1.creator())
+        Ok(full_unit1.creator())
     }
 
     /// `rmc_alert()` registers the RMC but does not actually send it; the returned hash must be passed to `start_rmc()` separately
@@ -165,73 +200,65 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     pub fn on_network_alert(
         &mut self,
         alert: UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature>,
-    ) -> NetworkAlert<H, D, MK> {
+    ) -> OnNetworkAlertResult<H, D, MK> {
         let alert = match alert.check(&self.keychain) {
             Ok(alert) => alert,
-            Err(e) => {
-                warn!(target: "AlephBFT-alerter","{:?} We have received an incorrectly signed alert: {:?}.", self.index(), e);
-                return None;
+            Err(_) => {
+                return Err(Error::IncorrectlySignedAlert);
             }
         };
         let contents = alert.as_signable();
-        if let Some(forker) = self.who_is_forking(&contents.proof) {
-            if self.known_rmcs.contains_key(&(contents.sender, forker)) {
-                debug!(target: "AlephBFT-alerter","{:?} We already know about an alert by {:?} about {:?}.", self.index(), alert.as_signable().sender, forker);
-                self.known_alerts.insert(contents.hash(), alert);
-                return None;
-            }
-            let propagate_alert = if self.is_forker(forker) {
-                None
-            } else {
-                // We learn about this forker for the first time, need to send our own alert
-                self.on_new_forker_detected(forker, contents.proof.clone());
-                Some(ForkingNotification::Forker(contents.proof.clone()))
-            };
-            let hash_for_rmc = self.rmc_alert(forker, alert);
-            Some((propagate_alert, hash_for_rmc))
-        } else {
-            warn!(target: "AlephBFT-alerter","{:?} We have received an incorrect forking proof from {:?}.", self.index(), alert.as_signable().sender);
-            None
+        let forker = self.verify_fork(contents)?;
+        let sender = alert.as_signable().sender;
+        if self.known_rmcs.contains_key(&(contents.sender, forker)) {
+            self.known_alerts.insert(contents.hash(), alert);
+            return Err(Error::RepeatedAlert(sender, forker));
         }
+        let propagate_alert = if self.is_forker(forker) {
+            None
+        } else {
+            // We learn about this forker for the first time, need to send our own alert
+            self.on_new_forker_detected(forker, contents.proof.clone());
+            Some(ForkingNotification::Forker(contents.proof.clone()))
+        };
+        let hash_for_rmc = self.rmc_alert(forker, alert);
+        Ok((propagate_alert, hash_for_rmc))
     }
 
     /// `on_message()` may return an `AlerterResponse` which should be propagated
     pub fn on_message(
         &mut self,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
-    ) -> Option<AlerterResponse<H, D, MK::Signature, MK::PartialMultisignature>> {
+    ) -> OnMessageResult<H, D, MK> {
         use AlertMessage::*;
         match message {
             ForkAlert(alert) => {
-                trace!(target: "AlephBFT-alerter", "{:?} Fork alert received {:?}.", self.index(), alert);
+                // trace!(target: "AlephBFT-alerter", "{:?} Fork alert received {:?}.", self.index(), alert);
                 self.on_network_alert(alert)
-                    .map(|(n, h)| AlerterResponse::ForkResponse(n, h))
+                    .map(|(n, h)| Some(AlerterResponse::ForkResponse(n, h)))
             }
             RmcMessage(sender, message) => {
                 let hash = message.hash();
                 if let Some(alert) = self.known_alerts.get(hash) {
                     let alert_id = (alert.as_signable().sender, alert.as_signable().forker());
                     if self.known_rmcs.get(&alert_id) == Some(hash) || message.is_complete() {
-                        Some(AlerterResponse::RmcMessage(message))
+                        Ok(Some(AlerterResponse::RmcMessage(message)))
                     } else {
-                        None
+                        Ok(None)
                     }
                 } else {
-                    Some(AlerterResponse::AlertRequest(
+                    Ok(Some(AlerterResponse::AlertRequest(
                         *hash,
                         Recipient::Node(sender),
-                    ))
+                    )))
                 }
             }
             AlertRequest(node, hash) => match self.known_alerts.get(&hash) {
-                Some(alert) => Some(AlerterResponse::ForkAlert(
+                Some(alert) => Ok(Some(AlerterResponse::ForkAlert(
                     alert.clone().into_unchecked(),
                     Recipient::Node(node),
-                )),
-                None => {
-                    debug!(target: "AlephBFT-alerter", "{:?} Received request for unknown alert.", self.index());
-                    None
-                }
+                ))),
+                None => Err(Error::UnknownAlertRequest),
             },
         }
     }
@@ -240,21 +267,15 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     pub fn alert_confirmed(
         &mut self,
         multisigned: Multisigned<H::Hash, MK>,
-    ) -> Option<ForkingNotification<H, D, MK::Signature>> {
+    ) -> Result<ForkingNotification<H, D, MK::Signature>, Error> {
         let alert = match self.known_alerts.get(multisigned.as_signable()) {
             Some(alert) => alert.as_signable(),
-            None => {
-                error!(target: "AlephBFT-alerter", "{:?} Completed an RMC for an unknown alert.", self.index());
-                return None;
-            }
+            None => return Err(Error::UnknownAlertRMC),
         };
         let forker = alert.proof.0.as_signable().creator();
         self.known_rmcs.insert((alert.sender, forker), alert.hash());
-        if !self.correct_commitment(forker, &alert.legit_units) {
-            warn!(target: "AlephBFT-alerter","{:?} We have received an incorrect unit commitment from {:?}.", self.index(), alert.sender);
-            return None;
-        }
-        Some(ForkingNotification::Units(alert.legit_units.clone()))
+        self.verify_commitment(alert)?;
+        Ok(ForkingNotification::Units(alert.legit_units.clone()))
     }
 }
 
@@ -262,8 +283,9 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
 mod tests {
     use crate::{
         alerts::{
-            handler::Handler, Alert, AlertConfig, AlertMessage, AlerterResponse, ForkProof,
-            ForkingNotification, RmcMessage,
+            handler::{Error, Handler},
+            Alert, AlertConfig, AlertMessage, AlerterResponse, ForkProof, ForkingNotification,
+            RmcMessage,
         },
         units::{ControlHash, FullUnit, PreUnit},
         PartiallyMultisigned, Recipient, Round,
@@ -352,7 +374,7 @@ mod tests {
         let signed_alert = Signed::sign(alert, &this.keychain).into_unchecked();
         assert_eq!(
             this.on_network_alert(signed_alert),
-            Some((Some(ForkingNotification::Forker(fork_proof)), alert_hash)),
+            Ok((Some(ForkingNotification::Forker(fork_proof)), alert_hash)),
         );
     }
 
@@ -382,10 +404,10 @@ mod tests {
         let response = this.on_message(message);
         assert_eq!(
             response,
-            Some(AlerterResponse::AlertRequest(
+            Ok(Some(AlerterResponse::AlertRequest(
                 alert_hash,
                 Recipient::Node(alerter_index),
-            )),
+            ))),
         );
     }
 
@@ -393,10 +415,8 @@ mod tests {
     fn ignores_wrong_alert() {
         let n_members = NodeCount(7);
         let own_index = NodeIndex(0);
-        let alerter_index = NodeIndex(1);
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
-        let alerter_keychain = Keychain::new(n_members, alerter_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
         let mut this = Handler::new(
             own_keychain,
@@ -406,16 +426,16 @@ mod tests {
             },
         );
         let valid_unit = Signed::sign(
-            full_unit(n_members, alerter_index, 0, Some(0)),
-            &alerter_keychain,
+            full_unit(n_members, forker_index, 0, Some(0)),
+            &forker_keychain,
         )
         .into_unchecked();
         let wrong_fork_proof = (valid_unit.clone(), valid_unit);
-        let wrong_alert = Alert::new(forker_index, wrong_fork_proof, vec![]);
-        let signed_wrong_alert = Signed::sign(wrong_alert, &forker_keychain).into_unchecked();
+        let wrong_alert = Alert::new(own_index, wrong_fork_proof, vec![]);
+        let signed_wrong_alert = Signed::sign(wrong_alert, &own_keychain).into_unchecked();
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_wrong_alert)),
-            None,
+            Err(Error::SingleUnit(own_index)),
         );
     }
 
@@ -440,15 +460,16 @@ mod tests {
         );
         let alert_hash = Signable::hash(&alert);
         let signed_alert = Signed::sign(alert, &own_keychain).into_unchecked();
-        this.on_message(AlertMessage::ForkAlert(signed_alert.clone()));
+        this.on_message(AlertMessage::ForkAlert(signed_alert.clone()))
+            .unwrap();
         for i in 1..n_members.0 {
             let node_id = NodeIndex(i);
             assert_eq!(
                 this.on_message(AlertMessage::AlertRequest(node_id, alert_hash)),
-                Some(AlerterResponse::ForkAlert(
+                Ok(Some(AlerterResponse::ForkAlert(
                     signed_alert.clone(),
                     Recipient::Node(node_id),
-                )),
+                ))),
             );
         }
     }
@@ -484,15 +505,15 @@ mod tests {
             .into_partially_multisigned(&keychains[double_committer.0]);
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_empty_alert)),
-            Some(AlerterResponse::ForkResponse(
+            Ok(Some(AlerterResponse::ForkResponse(
                 Some(ForkingNotification::Forker(fork_proof.clone())),
                 empty_alert_hash,
-            )),
+            ))),
         );
         let message = RmcMessage::MultisignedHash(multisigned_empty_alert_hash.into_unchecked());
         assert_eq!(
             this.on_message(AlertMessage::RmcMessage(other_honest_node, message.clone())),
-            Some(AlerterResponse::RmcMessage(message)),
+            Ok(Some(AlerterResponse::RmcMessage(message))),
         );
         let forker_unit = fork_proof.0.clone();
         let nonempty_alert = Alert::new(double_committer, fork_proof, vec![forker_unit]);
@@ -521,11 +542,11 @@ mod tests {
         let message = RmcMessage::MultisignedHash(multisigned_nonempty_alert_hash.into_unchecked());
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_nonempty_alert)),
-            None,
+            Err(Error::RepeatedAlert(double_committer, forker_index)),
         );
         assert_eq!(
             this.on_message(AlertMessage::RmcMessage(other_honest_node, message.clone())),
-            Some(AlerterResponse::RmcMessage(message)),
+            Ok(Some(AlerterResponse::RmcMessage(message))),
         );
     }
 
@@ -553,10 +574,10 @@ mod tests {
             Signed::sign(empty_alert, &keychains[double_committer.0]).into_unchecked();
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_empty_alert)),
-            Some(AlerterResponse::ForkResponse(
+            Ok(Some(AlerterResponse::ForkResponse(
                 Some(ForkingNotification::Forker(fork_proof.clone())),
                 empty_alert_hash,
-            )),
+            ))),
         );
         let forker_unit = fork_proof.0.clone();
         let nonempty_alert = Alert::new(double_committer, fork_proof, vec![forker_unit]);
@@ -585,16 +606,16 @@ mod tests {
         let message = RmcMessage::MultisignedHash(multisigned_nonempty_alert_hash.into_unchecked());
         assert_eq!(
             this.on_message(AlertMessage::ForkAlert(signed_nonempty_alert)),
-            None,
+            Err(Error::RepeatedAlert(double_committer, forker_index)),
         );
         assert_eq!(
             this.on_message(AlertMessage::RmcMessage(other_honest_node, message.clone())),
-            Some(AlerterResponse::RmcMessage(message)),
+            Ok(Some(AlerterResponse::RmcMessage(message))),
         );
     }
 
     #[test]
-    fn who_is_forking_ok() {
+    fn verify_fork_ok() {
         let n_members = NodeCount(7);
         let own_index = NodeIndex(0);
         let forker_index = NodeIndex(6);
@@ -608,11 +629,12 @@ mod tests {
             },
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
-        assert_eq!(this.who_is_forking(&fork_proof), Some(forker_index));
+        let alert = Alert::new(own_index, fork_proof, vec![]);
+        assert_eq!(this.verify_fork(&alert), Ok(forker_index));
     }
 
     #[test]
-    fn who_is_forking_wrong_session() {
+    fn verify_fork_wrong_session() {
         let n_members = NodeCount(7);
         let own_index = NodeIndex(0);
         let forker_index = NodeIndex(6);
@@ -626,11 +648,15 @@ mod tests {
             },
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
-        assert_eq!(this.who_is_forking(&fork_proof), None);
+        let alert = Alert::new(own_index, fork_proof, vec![]);
+        assert_eq!(
+            this.verify_fork(&alert),
+            Err(Error::WrongSession(own_index))
+        );
     }
 
     #[test]
-    fn who_is_forking_different_creators() {
+    fn verify_fork_different_creators() {
         let n_members = NodeCount(7);
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
@@ -639,7 +665,7 @@ mod tests {
             keychains[0],
             AlertConfig {
                 n_members,
-                session_id: 1,
+                session_id: 0,
             },
         );
         let fork_proof = {
@@ -649,11 +675,13 @@ mod tests {
             let signed_unit_1 = Signed::sign(unit_1, &keychains[5]).into_unchecked();
             (signed_unit_0, signed_unit_1)
         };
-        assert_eq!(this.who_is_forking(&fork_proof), None);
+        let sender = NodeIndex(0);
+        let alert = Alert::new(sender, fork_proof, vec![]);
+        assert_eq!(this.verify_fork(&alert), Err(Error::WrongCreator(sender)));
     }
 
     #[test]
-    fn who_is_forking_different_rounds() {
+    fn verify_fork_different_rounds() {
         let n_members = NodeCount(7);
         let own_index = NodeIndex(0);
         let forker_index = NodeIndex(6);
@@ -673,7 +701,12 @@ mod tests {
             let signed_unit_1 = Signed::sign(unit_1, &forker_keychain).into_unchecked();
             (signed_unit_0, signed_unit_1)
         };
-        assert_eq!(this.who_is_forking(&fork_proof), None);
+        let sender = NodeIndex(0);
+        let alert = Alert::new(sender, fork_proof, vec![]);
+        assert_eq!(
+            this.verify_fork(&alert),
+            Err(Error::DifferentRounds(sender))
+        );
     }
 
     #[test]
@@ -718,7 +751,7 @@ mod tests {
         let alert_hash = Signable::hash(&alert);
         let signed_alert = Signed::sign(alert, &keychains[own_index.0]).into_unchecked();
         if make_known {
-            this.on_network_alert(signed_alert);
+            let _ = this.on_network_alert(signed_alert);
         }
         let signed_alert_hash =
             Signed::sign_with_index(alert_hash, &keychains[own_index.0]).into_unchecked();
@@ -742,10 +775,11 @@ mod tests {
             PartiallyMultisigned::Complete { multisigned } => multisigned,
             PartiallyMultisigned::Incomplete { .. } => unreachable!(),
         };
-        let expected = if make_known && good_commitment {
-            Some(ForkingNotification::Units(vec![]))
-        } else {
-            None
+        let expected = match (make_known, good_commitment) {
+            (true, true) => Ok(ForkingNotification::Units(vec![])),
+            (true, false) => Err(Error::UnknownAlertRMC),
+            (false, true) => Err(Error::UnknownAlertRMC),
+            (false, false) => Err(Error::UnknownAlertRMC),
         };
         assert_eq!(this.alert_confirmed(multisigned_alert_hash), expected);
     }
