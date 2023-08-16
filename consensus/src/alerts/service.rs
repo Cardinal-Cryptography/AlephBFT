@@ -49,7 +49,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         Service { handler, io }
     }
 
-    pub fn handle_message_from_network(
+    fn handle_message_from_network(
         &mut self,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
     ) {
@@ -84,14 +84,14 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         }
     }
 
-    pub fn handle_alert_from_runway(&mut self, alert: Alert<H, D, MK::Signature>) {
+    fn handle_alert_from_runway(&mut self, alert: Alert<H, D, MK::Signature>) {
         let (message, recipient, hash) = self.handler.on_own_alert(alert);
         self.io
             .send_message_for_network(message, recipient, &mut self.handler.exiting);
         self.io.rmc.start_rmc(hash);
     }
 
-    pub fn handle_message_from_rmc(
+    fn handle_message_from_rmc(
         &mut self,
         message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
@@ -99,7 +99,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             .rmc_message_to_network(message, &mut self.handler.exiting)
     }
 
-    pub fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
+    fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
         match self.handler.alert_confirmed(multisigned) {
             Ok(notification) => self
                 .io

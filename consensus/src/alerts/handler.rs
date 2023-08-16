@@ -19,7 +19,7 @@ pub enum Error {
     DifferentRounds(NodeIndex),
     SingleUnit(NodeIndex),
     WrongSession(NodeIndex),
-    // generic errors
+    // other errors
     IncorrectlySignedAlert,
     RepeatedAlert(NodeIndex, NodeIndex),
     UnknownAlertRequest,
@@ -701,11 +701,10 @@ mod tests {
             let signed_unit_1 = Signed::sign(unit_1, &forker_keychain).into_unchecked();
             (signed_unit_0, signed_unit_1)
         };
-        let sender = NodeIndex(0);
-        let alert = Alert::new(sender, fork_proof, vec![]);
+        let alert = Alert::new(own_index, fork_proof, vec![]);
         assert_eq!(
             this.verify_fork(&alert),
-            Err(Error::DifferentRounds(sender))
+            Err(Error::DifferentRounds(own_index))
         );
     }
 
