@@ -30,7 +30,6 @@ mod backup;
 mod collection;
 mod packer;
 
-use crate::alerts::Service;
 use backup::{UnitLoader, UnitSaver};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
@@ -887,17 +886,20 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
 
-    let mut alerter_service = Service::new(
-        alerter_keychain,
+    let mut alerter_service = crate::alerts::Service::new(
+        alerter_keychain.clone(),
         alert_messages_for_network,
         alert_messages_from_network,
         alert_notifications_for_units,
         alerts_from_units,
-        alert_config,
+        alert_config.n_members,
     );
+    let alerter_handler = crate::alerts::Handler::new(alerter_keychain, alert_config);
 
     let alerter_handle = spawn_handle.spawn_essential("runway/alerter", async move {
-        alerter_service.run(alerter_terminator).await;
+        alerter_service
+            .run(alerter_handler, alerter_terminator)
+            .await;
     });
     let mut alerter_handle = alerter_handle.fuse();
 

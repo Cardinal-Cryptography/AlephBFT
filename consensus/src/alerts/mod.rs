@@ -1,19 +1,17 @@
 use crate::{
     units::UncheckedSignedUnit, Data, Hasher, Index, Keychain, MultiKeychain, NodeCount, NodeIndex,
-    PartialMultisignature, Receiver, Recipient, Sender, SessionId, Signable, Signature,
-    UncheckedSigned,
+    PartialMultisignature, Recipient, SessionId, Signable, Signature, UncheckedSigned,
 };
-use aleph_bft_rmc::{Message as RmcMessage, ReliableMulticast};
+use aleph_bft_rmc::Message as RmcMessage;
 use codec::{Decode, Encode};
 use derivative::Derivative;
-use log::warn;
 use parking_lot::RwLock;
 use std::ops::Deref;
 
 mod handler;
-mod io;
 mod service;
 
+pub use handler::Handler;
 pub use service::Service;
 
 pub type ForkProof<H, D, S> = (UncheckedSignedUnit<H, D, S>, UncheckedSignedUnit<H, D, S>);

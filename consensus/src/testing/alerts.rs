@@ -1,5 +1,5 @@
 use crate::{
-    alerts::{Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification, Service},
+    alerts::{Alert, AlertConfig, AlertMessage, ForkProof, ForkingNotification, Handler, Service},
     units::{ControlHash, FullUnit, PreUnit},
     Index, Indexed, Keychain as _, NodeCount, NodeIndex, NodeMap, Recipient, Round, Signable,
     Signed, Terminator, UncheckedSigned,
@@ -222,6 +222,10 @@ impl TestCase {
             messages_from_network,
             notifications_for_units,
             alerts_from_units,
+            n_members,
+        );
+        let alerter_handler = Handler::new(
+            keychain,
             AlertConfig {
                 n_members,
                 session_id: 0,
@@ -230,7 +234,10 @@ impl TestCase {
 
         tokio::spawn(async move {
             alerter_service
-                .run(Terminator::create_root(exit, "AlephBFT-alerter"))
+                .run(
+                    alerter_handler,
+                    Terminator::create_root(exit, "AlephBFT-alerter"),
+                )
                 .await
         });
 

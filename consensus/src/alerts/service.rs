@@ -1,18 +1,26 @@
 use crate::{
     alerts::{
-        handler::Handler, io::IO, Alert, AlertConfig, AlertMessage, AlerterResponse,
-        ForkingNotification, NetworkMessage,
+        handler::Handler, Alert, AlertMessage, AlerterResponse, ForkingNotification, NetworkMessage,
     },
-    Data, Hasher, MultiKeychain, Multisigned, Receiver, Recipient, Sender, Terminator,
+    Data, Hasher, MultiKeychain, Multisigned, NodeCount, Receiver, Recipient, Sender, Terminator,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use futures::{channel::mpsc, FutureExt, StreamExt};
 use log::{debug, error, warn};
 use std::time;
 
+const LOG_TARGET: &str = "AlephBFT-alerter";
+
 pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
-    handler: Handler<H, D, MK>,
-    io: IO<H, D, MK>,
+    messages_for_network: Sender<(NetworkMessage<H, D, MK>, Recipient)>,
+    messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
+    notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
+    alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
+    rmc: ReliableMulticast<H::Hash, MK>,
+    messages_for_rmc: Sender<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    messages_from_rmc: Receiver<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    keychain: MK,
+    exiting: bool,
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
@@ -22,124 +30,183 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
         notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
         alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-        config: AlertConfig,
+        n_members: NodeCount,
     ) -> Service<H, D, MK> {
-        let n_members = config.n_members;
-        let handler = Handler::new(keychain.clone(), config);
         let (messages_for_rmc, messages_from_us) = mpsc::unbounded();
         let (messages_for_us, messages_from_rmc) = mpsc::unbounded();
 
-        let io = IO {
+        let rmc = ReliableMulticast::new(
+            messages_from_us,
+            messages_for_us,
+            keychain.clone(),
+            n_members,
+            DoublingDelayScheduler::new(time::Duration::from_millis(500)),
+        );
+
+        Service {
             messages_for_network,
             messages_from_network,
             notifications_for_units,
             alerts_from_units,
-            rmc: ReliableMulticast::new(
-                messages_from_us,
-                messages_for_us,
-                keychain,
-                n_members,
-                DoublingDelayScheduler::new(time::Duration::from_millis(500)),
-            ),
-            messages_from_rmc,
+            rmc,
             messages_for_rmc,
-            alerter_index: handler.index(),
-        };
-
-        Service { handler, io }
-    }
-
-    fn handle_message_from_network(
-        &mut self,
-        message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
-    ) {
-        match self.handler.on_message(message) {
-            Ok(Some(AlerterResponse::ForkAlert(alert, recipient))) => {
-                self.io.send_message_for_network(
-                    AlertMessage::ForkAlert(alert),
-                    recipient,
-                    &mut self.handler.exiting,
-                );
-            }
-            Ok(Some(AlerterResponse::AlertRequest(hash, peer))) => {
-                let message = AlertMessage::AlertRequest(self.handler.index(), hash);
-                self.io
-                    .send_message_for_network(message, peer, &mut self.handler.exiting);
-            }
-            Ok(Some(AlerterResponse::RmcMessage(message))) => {
-                if self.io.messages_for_rmc.unbounded_send(message).is_err() {
-                    warn!(target: "AlephBFT-alerter", "{:?} Channel with messages for rmc should be open", self.handler.index());
-                    self.handler.exiting = true;
-                }
-            }
-            Ok(Some(AlerterResponse::ForkResponse(maybe_notification, hash))) => {
-                self.io.rmc.start_rmc(hash);
-                if let Some(notification) = maybe_notification {
-                    self.io
-                        .send_notification_for_units(notification, &mut self.handler.exiting);
-                }
-            }
-            Ok(None) => {}
-            Err(error) => debug!(target: "AlephBFT-alerter", "{}", error),
+            messages_from_rmc,
+            keychain,
+            exiting: false,
         }
     }
 
-    fn handle_alert_from_runway(&mut self, alert: Alert<H, D, MK::Signature>) {
-        let (message, recipient, hash) = self.handler.on_own_alert(alert);
-        self.io
-            .send_message_for_network(message, recipient, &mut self.handler.exiting);
-        self.io.rmc.start_rmc(hash);
+    // methods related to message passing
+
+    pub fn rmc_message_to_network(
+        &mut self,
+        message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
+    ) {
+        self.send_message_for_network(
+            AlertMessage::RmcMessage(self.keychain.index(), message),
+            Recipient::Everyone,
+        );
+    }
+
+    pub fn send_notification_for_units(
+        &mut self,
+        notification: ForkingNotification<H, D, MK::Signature>,
+    ) {
+        if self
+            .notifications_for_units
+            .unbounded_send(notification)
+            .is_err()
+        {
+            warn!(
+                target: LOG_TARGET,
+                "{:?} Channel with forking notifications should be open",
+                self.keychain.index()
+            );
+            self.exiting = true;
+        }
+    }
+
+    pub fn send_message_for_network(
+        &mut self,
+        message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
+        recipient: Recipient,
+    ) {
+        if self
+            .messages_for_network
+            .unbounded_send((message, recipient))
+            .is_err()
+        {
+            warn!(
+                target: LOG_TARGET,
+                "{:?} Channel with notifications for network should be open",
+                self.keychain.index()
+            );
+            self.exiting = true;
+        }
+    }
+
+    // methods for event handling
+
+    fn handle_message_from_network(
+        &mut self,
+        handler: &mut Handler<H, D, MK>,
+        message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
+    ) {
+        match handler.on_message(message) {
+            Ok(Some(AlerterResponse::ForkAlert(alert, recipient))) => {
+                self.send_message_for_network(AlertMessage::ForkAlert(alert), recipient);
+            }
+            Ok(Some(AlerterResponse::AlertRequest(hash, peer))) => {
+                let message = AlertMessage::AlertRequest(self.keychain.index(), hash);
+                self.send_message_for_network(message, peer);
+            }
+            Ok(Some(AlerterResponse::RmcMessage(message))) => {
+                if self.messages_for_rmc.unbounded_send(message).is_err() {
+                    warn!(
+                        target: LOG_TARGET,
+                        "{:?} Channel with messages for rmc should be open",
+                        self.keychain.index()
+                    );
+                    self.exiting = true;
+                }
+            }
+            Ok(Some(AlerterResponse::ForkResponse(maybe_notification, hash))) => {
+                self.rmc.start_rmc(hash);
+                if let Some(notification) = maybe_notification {
+                    self.send_notification_for_units(notification);
+                }
+            }
+            Ok(None) => {}
+            Err(error) => debug!(target: LOG_TARGET, "{}", error),
+        }
+    }
+
+    fn handle_alert_from_runway(
+        &mut self,
+        handler: &mut Handler<H, D, MK>,
+        alert: Alert<H, D, MK::Signature>,
+    ) {
+        let (message, recipient, hash) = handler.on_own_alert(alert);
+        self.send_message_for_network(message, recipient);
+        self.rmc.start_rmc(hash);
     }
 
     fn handle_message_from_rmc(
         &mut self,
         message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
-        self.io
-            .rmc_message_to_network(message, &mut self.handler.exiting)
+        self.rmc_message_to_network(message)
     }
 
-    fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
-        match self.handler.alert_confirmed(multisigned) {
-            Ok(notification) => self
-                .io
-                .send_notification_for_units(notification, &mut self.handler.exiting),
-            Err(error) => warn!(target: "AlephBFT-alerter", "{}", error),
+    fn handle_multisigned(
+        &mut self,
+        handler: &mut Handler<H, D, MK>,
+        multisigned: Multisigned<H::Hash, MK>,
+    ) {
+        match handler.alert_confirmed(multisigned) {
+            Ok(notification) => self.send_notification_for_units(notification),
+            Err(error) => warn!(target: LOG_TARGET, "{}", error),
         }
     }
 
-    pub async fn run(&mut self, mut terminator: Terminator) {
+    // main loop
+
+    pub async fn run(&mut self, mut handler: Handler<H, D, MK>, mut terminator: Terminator) {
         loop {
             futures::select! {
-                message = self.io.messages_from_network.next() => match message {
-                    Some(message) => self.handle_message_from_network(message),
+                message = self.messages_from_network.next() => match message {
+                    Some(message) => self.handle_message_from_network(&mut handler, message),
                     None => {
-                        error!(target: "AlephBFT-alerter", "{:?} Message stream closed.", self.handler.index());
+                        error!(target: LOG_TARGET, "{:?} Message stream closed.", self.keychain.index());
                         break;
                     }
                 },
-                alert = self.io.alerts_from_units.next() => match alert {
-                    Some(alert) => self.handle_alert_from_runway(alert),
+                alert = self.alerts_from_units.next() => match alert {
+                    Some(alert) => self.handle_alert_from_runway(&mut handler, alert),
                     None => {
-                        error!(target: "AlephBFT-alerter", "{:?} Alert stream closed.", self.handler.index());
+                        error!(target: LOG_TARGET, "{:?} Alert stream closed.", self.keychain.index());
                         break;
                     }
                 },
-                message = self.io.messages_from_rmc.next() => match message {
+                message = self.messages_from_rmc.next() => match message {
                     Some(message) => self.handle_message_from_rmc(message),
                     None => {
-                        error!(target: "AlephBFT-alerter", "{:?} RMC message stream closed.", self.handler.index());
+                        error!(target: LOG_TARGET, "{:?} RMC message stream closed.", self.keychain.index());
                         break;
                     }
                 },
-                multisigned = self.io.rmc.next_multisigned_hash().fuse() => self.handle_multisigned(multisigned),
+                multisigned = self.rmc.next_multisigned_hash().fuse() => self.handle_multisigned(&mut handler, multisigned),
                 _ = terminator.get_exit().fuse() => {
-                    debug!(target: "AlephBFT-alerter", "{:?} received exit signal", self.handler.index());
-                    self.handler.exiting = true;
+                    debug!(target: LOG_TARGET, "{:?} received exit signal", self.keychain.index());
+                    self.exiting = true;
                 },
             }
-            if self.handler.exiting {
-                debug!(target: "AlephBFT-alerter", "{:?} Alerter decided to exit.", self.handler.index());
+            if self.exiting {
+                debug!(
+                    target: LOG_TARGET,
+                    "{:?} Alerter decided to exit.",
+                    self.keychain.index()
+                );
                 terminator.terminate_sync().await;
                 break;
             }

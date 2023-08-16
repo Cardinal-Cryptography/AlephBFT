@@ -82,7 +82,6 @@ pub struct Handler<H: Hasher, D: Data, MK: MultiKeychain> {
     known_forkers: HashMap<NodeIndex, ForkProof<H, D, MK::Signature>>,
     known_alerts: KnownAlerts<H, D, MK>,
     known_rmcs: HashMap<(NodeIndex, NodeIndex), H::Hash>,
-    pub exiting: bool,
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
@@ -93,15 +92,10 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
             known_forkers: HashMap::new(),
             known_alerts: HashMap::new(),
             known_rmcs: HashMap::new(),
-            exiting: false,
         }
     }
 
-    pub fn index(&self) -> NodeIndex {
-        self.keychain.index()
-    }
-
-    pub fn is_forker(&self, forker: NodeIndex) -> bool {
+    fn is_forker(&self, forker: NodeIndex) -> bool {
         self.known_forkers.contains_key(&forker)
     }
 
@@ -120,7 +114,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     // Note that these units will have to be validated before being used in the consensus.
     // This is alright, if someone uses their alert to commit to incorrect units it's their own
     // problem.
-    pub fn verify_commitment(&self, alert: &Alert<H, D, MK::Signature>) -> Result<(), Error> {
+    fn verify_commitment(&self, alert: &Alert<H, D, MK::Signature>) -> Result<(), Error> {
         let mut rounds = HashSet::new();
         for u in &alert.legit_units {
             let u = match u.clone().check(&self.keychain) {
@@ -168,7 +162,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     }
 
     /// `rmc_alert()` registers the RMC but does not actually send it; the returned hash must be passed to `start_rmc()` separately
-    pub fn rmc_alert(
+    fn rmc_alert(
         &mut self,
         forker: NodeIndex,
         alert: Signed<Alert<H, D, MK::Signature>, MK>,
@@ -232,11 +226,9 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     ) -> OnMessageResult<H, D, MK> {
         use AlertMessage::*;
         match message {
-            ForkAlert(alert) => {
-                // trace!(target: "AlephBFT-alerter", "{:?} Fork alert received {:?}.", self.index(), alert);
-                self.on_network_alert(alert)
-                    .map(|(n, h)| Some(AlerterResponse::ForkResponse(n, h)))
-            }
+            ForkAlert(alert) => self
+                .on_network_alert(alert)
+                .map(|(n, h)| Some(AlerterResponse::ForkResponse(n, h))),
             RmcMessage(sender, message) => {
                 let hash = message.hash();
                 if let Some(alert) = self.known_alerts.get(hash) {
