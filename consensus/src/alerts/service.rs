@@ -133,7 +133,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                     }
                 },
                 multisigned = self.io.rmc.next_multisigned_hash().fuse() => self.handle_multisigned(multisigned),
-                _ = &mut terminator.get_exit() => {
+                _ = terminator.get_exit().fuse() => {
                     debug!(target: "AlephBFT-alerter", "{:?} received exit signal", self.handler.index());
                     self.handler.exiting = true;
                 },

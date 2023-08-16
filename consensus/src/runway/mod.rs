@@ -749,7 +749,7 @@ where
                     status_ticker = Delay::new(status_ticker_delay).fuse();
                 },
 
-                _ = &mut terminator.get_exit() => {
+                _ = terminator.get_exit().fuse() => {
                     debug!(target: "AlephBFT-runway", "{:?} received exit signal", index);
                     self.exiting = true;
                 }
@@ -1071,7 +1071,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             _ = backup_loading_handle => {
                 debug!(target: "AlephBFT-runway", "{:?} Backup loading task terminated.", index);
             },
-            _ = &mut terminator.get_exit() => {
+            _ = terminator.get_exit().fuse() => {
                 break;
             }
         }
