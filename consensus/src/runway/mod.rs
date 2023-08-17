@@ -873,7 +873,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     UL: Read + Send + Sync + 'static,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
-    MK: MultiKeychain + Debug,
+    MK: MultiKeychain,
     SH: SpawnHandle,
 {
     let (tx_consensus, consensus_stream) = mpsc::unbounded();
@@ -929,7 +929,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let (backup_items_for_saver, incoming_backup_items) = mpsc::unbounded();
     let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
-    let (backup_items_for_alerter, _backup_items_from_alerter) = mpsc::unbounded();
+    let (backup_items_for_alerter, _backup_items_from_alerter) = mpsc::unbounded(); // todo: make use of backup in alerter
 
     let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
     let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {

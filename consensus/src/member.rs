@@ -422,10 +422,10 @@ where
 
     /// Most tasks use `requests_interval` (see [crate::DelayConfig]) as their delay.
     ///
-    /// The first exception is [Task::UnitBroadcast] - this one picks a random delay between
+    /// The first exception is [UnitBroadcast] - this one picks a random delay between
     /// `unit_rebroadcast_interval_min` and `unit_rebroadcast_interval_max`.
     ///
-    /// The other exception is [Task::CoordRequest] - this one uses the configurable
+    /// The other exception is [CoordRequest] - this one uses the configurable
     /// `coord_request_delay` schedule.
     fn delay(&self, task: &Task<H, D, S>, counter: usize) -> Duration {
         match task {
@@ -577,7 +577,7 @@ pub async fn run_session<
     UL: Read + Send + Sync + 'static,
     N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
-    MK: MultiKeychain + Debug,
+    MK: MultiKeychain,
 >(
     config: Config,
     local_io: LocalIO<D, DP, FH, US, UL>,
