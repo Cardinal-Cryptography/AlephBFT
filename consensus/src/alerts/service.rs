@@ -165,8 +165,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         }
     }
 
-    // main loop
-
     pub async fn run(&mut self, mut handler: Handler<H, D, MK>, mut terminator: Terminator) {
         loop {
             futures::select! {

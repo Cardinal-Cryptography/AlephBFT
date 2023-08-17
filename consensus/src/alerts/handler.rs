@@ -161,7 +161,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         Ok(())
     }
 
-    /// `rmc_alert()` registers the RMC but does not actually send it; the returned hash must be passed to `start_rmc()` separately
+    /// Registers the RMC but does not actually send it; the returned hash must be passed to `start_rmc()` separately
     fn rmc_alert(
         &mut self,
         forker: NodeIndex,
@@ -174,7 +174,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         hash
     }
 
-    /// `on_own_alert()` registers RMCs and messages but does not actually send them; make sure the returned values are forwarded to IO
+    /// Registers RMCs and messages but does not actually send them; make sure the returned values are forwarded to IO
     pub fn on_own_alert(
         &mut self,
         alert: Alert<H, D, MK::Signature>,
@@ -190,7 +190,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         )
     }
 
-    /// `on_network_alert()` may return a `ForkingNotification`, which should be propagated
+    /// May return a `ForkingNotification`, which should be propagated
     pub fn on_network_alert(
         &mut self,
         alert: UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature>,
@@ -220,7 +220,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         Ok((propagate_alert, hash_for_rmc))
     }
 
-    /// `on_message()` may return an `AlerterResponse` which should be propagated
+    /// May return an `AlerterResponse` which should be propagated
     pub fn on_message(
         &mut self,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
@@ -256,7 +256,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         }
     }
 
-    /// `alert_confirmed()` may return a `ForkingNotification`, which should be propagated
+    /// May return a `ForkingNotification`, which should be propagated
     pub fn alert_confirmed(
         &mut self,
         multisigned: Multisigned<H::Hash, MK>,
