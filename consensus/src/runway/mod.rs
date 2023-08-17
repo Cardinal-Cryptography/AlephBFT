@@ -876,9 +876,22 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     MK: MultiKeychain,
     SH: SpawnHandle,
 {
-    let (tx_consensus, consensus_stream) = mpsc::unbounded();
-    let (consensus_sink, rx_consensus) = mpsc::unbounded();
-    let (ordered_batch_tx, ordered_batch_rx) = mpsc::unbounded();
+    let (backup_items_for_saver, incoming_backup_items) = mpsc::unbounded();
+    let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
+    let (backup_items_for_alerter, backup_items_from_saver) = mpsc::unbounded();
+
+    let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
+    let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {
+        backup::run_saving_mechanism(
+            runway_io.backup_writer,
+            incoming_backup_items,
+            backup_units_for_runway,
+            backup_items_for_alerter,
+            backup_saver_terminator,
+        )
+        .await;
+    });
+    let mut backup_saver_handle = backup_saver_handle.fuse();
 
     let (alert_notifications_for_units, notifications_from_alerter) = mpsc::unbounded();
     let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
@@ -898,6 +911,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         alert_notifications_for_units,
         alerts_from_units,
         alert_config.n_members,
+        backup_items_for_saver.clone(),
+        backup_items_from_saver,
     );
     let alerter_handler = crate::alerts::Handler::new(alerter_keychain, alert_config);
 
@@ -907,6 +922,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             .await;
     });
     let mut alerter_handle = alerter_handle.fuse();
+
+    let (tx_consensus, consensus_stream) = mpsc::unbounded();
+    let (consensus_sink, rx_consensus) = mpsc::unbounded();
+    let (ordered_batch_tx, ordered_batch_rx) = mpsc::unbounded();
 
     let consensus_terminator = terminator.add_offspring_connection("AlephBFT-consensus");
     let consensus_config = config.clone();
@@ -926,23 +945,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         .await
     });
     let mut consensus_handle = consensus_handle.fuse();
-
-    let (backup_items_for_saver, incoming_backup_items) = mpsc::unbounded();
-    let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
-    let (backup_items_for_alerter, _backup_items_from_alerter) = mpsc::unbounded(); // todo: make use of backup in alerter
-
-    let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
-    let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {
-        backup::run_saving_mechanism(
-            runway_io.backup_writer,
-            incoming_backup_items,
-            backup_units_for_runway,
-            backup_items_for_alerter,
-            backup_saver_terminator,
-        )
-        .await;
-    });
-    let mut backup_saver_handle = backup_saver_handle.fuse();
 
     let index = keychain.index();
     let threshold = (keychain.node_count() * 2) / 3 + NodeCount(1);
