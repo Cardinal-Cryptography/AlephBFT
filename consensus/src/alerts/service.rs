@@ -56,8 +56,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         }
     }
 
-    // methods related to message passing
-
     fn rmc_message_to_network(
         &mut self,
         message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
@@ -104,8 +102,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             self.exiting = true;
         }
     }
-
-    // methods for event handling
 
     fn handle_message_from_network(
         &mut self,

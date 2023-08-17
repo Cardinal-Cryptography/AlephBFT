@@ -11,11 +11,11 @@ use std::{
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
-    // commitment validity related errors
+    // commitment validity errors
     IncorrectlySignedUnit(NodeIndex),
     SameRound(Round, NodeIndex),
     WrongCreator(NodeIndex),
-    // fork validity related errors
+    // fork validity errors
     DifferentRounds(NodeIndex),
     SingleUnit(NodeIndex),
     WrongSession(NodeIndex),
@@ -133,7 +133,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         Ok(())
     }
 
-    fn verify_fork(&self, alert: &Alert<H, D, MK::Signature>) -> Result<NodeIndex, Error> {
+    fn verify_fork(&self, alert: &Alert<H, D, MK::Signature>) -> Result<(), Error> {
         let (u1, u2) = &alert.proof;
         let (u1, u2) = {
             let u1 = u1.clone().check(&self.keychain);
@@ -158,7 +158,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         if full_unit1.round() != full_unit2.round() {
             return Err(Error::DifferentRounds(alert.sender));
         }
-        Ok(full_unit1.creator())
+        Ok(())
     }
 
     /// `rmc_alert()` registers the RMC but does not actually send it; the returned hash must be passed to `start_rmc()` separately
@@ -202,7 +202,8 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
             }
         };
         let contents = alert.as_signable();
-        let forker = self.verify_fork(contents)?;
+        self.verify_fork(contents)?;
+        let forker = contents.forker();
         let sender = alert.as_signable().sender;
         if self.known_rmcs.contains_key(&(contents.sender, forker)) {
             self.known_alerts.insert(contents.hash(), alert);
@@ -622,7 +623,7 @@ mod tests {
         );
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(own_index, fork_proof, vec![]);
-        assert_eq!(this.verify_fork(&alert), Ok(forker_index));
+        assert_eq!(this.verify_fork(&alert), Ok(()));
     }
 
     #[test]
