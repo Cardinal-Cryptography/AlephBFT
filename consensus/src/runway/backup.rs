@@ -2,8 +2,9 @@ use crate::{
     alerts::Alert,
     units::{UncheckedSignedUnit, UnitCoord},
     Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Round, Sender, SessionId,
-    Terminator,
+    Terminator, UncheckedSigned,
 };
+use aleph_bft_types::Recipient;
 use codec::{Decode, Encode, Error as CodecError};
 use futures::{channel::oneshot, FutureExt, StreamExt};
 use log::{debug, error, info, warn};
@@ -20,7 +21,11 @@ const LOG_TARGET: &str = "AlephBFT-backup";
 #[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub enum BackupItem<H: Hasher, D: Data, MK: MultiKeychain> {
     Unit(UncheckedSignedUnit<H, D, MK::Signature>),
-    Alert(Alert<H, D, MK::Signature>),
+    OwnAlert(Alert<H, D, MK::Signature>),
+    NetworkAlert(
+        UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature>,
+        Recipient,
+    ),
     MultiSignature(Multisigned<H::Hash, MK>),
 }
 
@@ -267,9 +272,9 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, R:
     }
 }
 
-/// A task responsible for saving units into backup.
-/// It waits for units to appear in `backup_units_from_runway`, and writes them to backup.
-/// It announces a successful write through `backup_units_for_runway`.
+/// A task responsible for saving units, alerts and multi signatures into backup.
+/// It waits for items to appear in `incoming_backup_items`, and writes them to backup.
+/// It announces a successful write through `outgoing_units_for_runway` or `outgoing_items_for_alerter`.
 pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, W: Write>(
     mut backup_writer: BackupWriter<W, H, D, MK>,
     mut incoming_backup_items: Receiver<BackupItem<H, D, MK>>,

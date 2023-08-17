@@ -215,6 +215,7 @@ impl TestCase {
         let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
         let (exit_alerter, exit) = oneshot::channel();
         let n_members = keychain.node_count();
+        let (dummy_backup_tx, dummy_backup_rx) = mpsc::unbounded();
 
         let mut alerter_service = Service::new(
             keychain,
@@ -223,6 +224,8 @@ impl TestCase {
             notifications_for_units,
             alerts_from_units,
             n_members,
+            dummy_backup_tx,
+            dummy_backup_rx, // todo: include the actual backup service in the test
         );
         let alerter_handler = Handler::new(
             keychain,
