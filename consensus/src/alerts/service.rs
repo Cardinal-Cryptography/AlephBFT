@@ -58,7 +58,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     // methods related to message passing
 
-    pub fn rmc_message_to_network(
+    fn rmc_message_to_network(
         &mut self,
         message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
@@ -68,7 +68,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         );
     }
 
-    pub fn send_notification_for_units(
+    fn send_notification_for_units(
         &mut self,
         notification: ForkingNotification<H, D, MK::Signature>,
     ) {
@@ -86,7 +86,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         }
     }
 
-    pub fn send_message_for_network(
+    fn send_message_for_network(
         &mut self,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
         recipient: Recipient,
