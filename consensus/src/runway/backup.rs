@@ -1,6 +1,8 @@
 use crate::{
+    alerts::Alert,
     units::{UncheckedSignedUnit, UnitCoord},
-    Data, Hasher, NodeIndex, Receiver, Round, Sender, SessionId, Signature, Terminator,
+    Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Round, Sender, SessionId,
+    Terminator,
 };
 use codec::{Decode, Encode, Error as CodecError};
 use futures::{channel::oneshot, FutureExt, StreamExt};
@@ -8,23 +10,31 @@ use log::{debug, error, info, warn};
 use std::{
     collections::HashSet,
     fmt,
+    fmt::Debug,
     io::{Read, Write},
     marker::PhantomData,
 };
 
+#[derive(Clone, Debug, Decode, Encode, PartialEq)]
+pub enum BackupItem<H: Hasher, D: Data, MK: MultiKeychain> {
+    Unit(UncheckedSignedUnit<H, D, MK::Signature>),
+    Alert(Alert<H, D, MK::Signature>),
+    MultiSignature(Multisigned<H::Hash, MK>),
+}
+
 /// Backup load error. Could be either caused by io error from Reader, or by decoding.
 #[derive(Debug)]
-pub enum LoaderError {
+pub enum BackupReadError {
     IO(std::io::Error),
     Codec(CodecError),
     InconsistentData(UnitCoord),
     WrongSession(UnitCoord, SessionId, SessionId),
 }
 
-impl fmt::Display for LoaderError {
+impl fmt::Display for BackupReadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LoaderError::IO(err) => {
+            BackupReadError::IO(err) => {
                 write!(
                     f,
                     "Received IO error while reading from backup source: {}",
@@ -32,11 +42,11 @@ impl fmt::Display for LoaderError {
                 )
             }
 
-            LoaderError::Codec(err) => {
+            BackupReadError::Codec(err) => {
                 write!(f, "Received Codec error while decoding backup: {}", err)
             }
 
-            LoaderError::InconsistentData(coord) => {
+            BackupReadError::InconsistentData(coord) => {
                 write!(
                     f,
                     "Inconsistent backup data. Unit from round {:?} of creator {:?} is missing a parent in backup.",
@@ -44,7 +54,7 @@ impl fmt::Display for LoaderError {
                 )
             }
 
-            LoaderError::WrongSession(coord, expected_session, actual_session) => {
+            BackupReadError::WrongSession(coord, expected_session, actual_session) => {
                 write!(
                     f,
                     "Unit from round {:?} of creator {:?} has a wrong session id in backup. Expected: {:?} got: {:?}",
@@ -55,31 +65,31 @@ impl fmt::Display for LoaderError {
     }
 }
 
-impl From<std::io::Error> for LoaderError {
+impl From<std::io::Error> for BackupReadError {
     fn from(err: std::io::Error) -> Self {
         Self::IO(err)
     }
 }
 
-impl From<CodecError> for LoaderError {
+impl From<CodecError> for BackupReadError {
     fn from(err: CodecError) -> Self {
         Self::Codec(err)
     }
 }
 
-/// Abstraction over Unit backup saving mechanism
-pub struct UnitSaver<W: Write, H: Hasher, D: Data, S: Signature> {
+/// Abstraction over backup writing mechanism
+pub struct BackupWriter<W: Write, H: Hasher, D: Data, MK: MultiKeychain> {
     inner: W,
-    _phantom: PhantomData<(H, D, S)>,
+    _phantom: PhantomData<(H, D, MK)>,
 }
 
-/// Abstraction over Unit backup loading mechanism
-pub struct UnitLoader<R: Read, H: Hasher, D: Data, S: Signature> {
+/// Abstraction over backup reading mechanism
+pub struct BackupReader<R: Read, H: Hasher, D: Data, MK: MultiKeychain> {
     inner: R,
-    _phantom: PhantomData<(H, D, S)>,
+    _phantom: PhantomData<(H, D, MK)>,
 }
 
-impl<W: Write, H: Hasher, D: Data, S: Signature> UnitSaver<W, H, D, S> {
+impl<W: Write, H: Hasher, D: Data, MK: MultiKeychain> BackupWriter<W, H, D, MK> {
     pub fn new(write: W) -> Self {
         Self {
             inner: write,
@@ -87,14 +97,14 @@ impl<W: Write, H: Hasher, D: Data, S: Signature> UnitSaver<W, H, D, S> {
         }
     }
 
-    pub fn save(&mut self, unit: UncheckedSignedUnit<H, D, S>) -> Result<(), std::io::Error> {
-        self.inner.write_all(&unit.encode())?;
+    pub fn save(&mut self, item: BackupItem<H, D, MK>) -> Result<(), std::io::Error> {
+        self.inner.write_all(&item.encode())?;
         self.inner.flush()?;
         Ok(())
     }
 }
 
-impl<R: Read, H: Hasher, D: Data, S: Signature> UnitLoader<R, H, D, S> {
+impl<R: Read, H: Hasher, D: Data, MK: MultiKeychain> BackupReader<R, H, D, MK> {
     pub fn new(read: R) -> Self {
         Self {
             inner: read,
@@ -102,31 +112,35 @@ impl<R: Read, H: Hasher, D: Data, S: Signature> UnitLoader<R, H, D, S> {
         }
     }
 
-    fn load(mut self) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
+    fn load(mut self) -> Result<Vec<BackupItem<H, D, MK>>, BackupReadError> {
         let mut buf = Vec::new();
         self.inner.read_to_end(&mut buf)?;
         let input = &mut &buf[..];
         let mut result = Vec::new();
         while !input.is_empty() {
-            result.push(<UncheckedSignedUnit<H, D, S>>::decode(input)?);
+            result.push(<BackupItem<H, D, MK>>::decode(input)?);
         }
         Ok(result)
     }
 }
 
-fn load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
-    unit_loader: UnitLoader<R, H, D, S>,
+fn load_backup<H: Hasher, D: Data, MK: MultiKeychain, R: Read>(
+    backup_reader: BackupReader<R, H, D, MK>,
     session_id: SessionId,
-) -> Result<Vec<UncheckedSignedUnit<H, D, S>>, LoaderError> {
-    let loaded_units = unit_loader.load()?;
+) -> Result<Vec<BackupItem<H, D, MK>>, BackupReadError> {
+    // for now ignore alerts and multi signatures
+    let loaded_items: Vec<_> = backup_reader.load()?;
     let mut already_loaded_coords = HashSet::new();
 
-    for unit in loaded_units.iter() {
+    for unit in loaded_items.iter().filter_map(|item| match item {
+        BackupItem::Unit(unit) => Some(unit),
+        _ => None,
+    }) {
         let full_unit = unit.as_signable();
         let coord = full_unit.coord();
 
         if full_unit.session_id() != session_id {
-            return Err(LoaderError::WrongSession(
+            return Err(BackupReadError::WrongSession(
                 coord,
                 session_id,
                 full_unit.session_id(),
@@ -139,14 +153,14 @@ fn load_backup<H: Hasher, D: Data, S: Signature, R: Read>(
         for parent_id in parent_ids.elements() {
             let parent = UnitCoord::new(coord.round() - 1, parent_id);
             if !already_loaded_coords.contains(&parent) {
-                return Err(LoaderError::InconsistentData(coord));
+                return Err(BackupReadError::InconsistentData(coord));
             }
         }
 
         already_loaded_coords.insert(coord);
     }
 
-    Ok(loaded_units)
+    Ok(loaded_items)
 }
 
 fn on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
@@ -160,16 +174,17 @@ fn on_shutdown(starting_round_tx: oneshot::Sender<Option<Round>>) {
 /// If loaded Units are compatible with the unit collection result (meaning the highest unit is from at least
 /// round from unit collection + 1) it sends `Some(starting_round)` by
 /// `starting_round_tx`. If Units are not compatible it sends `None` by `starting_round_tx`
-pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read>(
-    unit_loader: UnitLoader<R, H, D, S>,
+pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain + Debug, R: Read>(
+    unit_loader: BackupReader<R, H, D, MK>,
     index: NodeIndex,
     session_id: SessionId,
-    loaded_unit_tx: oneshot::Sender<Vec<UncheckedSignedUnit<H, D, S>>>,
+    loaded_items_tx: oneshot::Sender<Vec<BackupItem<H, D, MK>>>,
     starting_round_tx: oneshot::Sender<Option<Round>>,
     next_round_collection_rx: oneshot::Receiver<Round>,
 ) {
-    let units = match load_backup(unit_loader, session_id) {
-        Ok(units) => units,
+    // for now ignore alerts and multi signatures
+    let items = match load_backup(unit_loader, session_id) {
+        Ok(items) => items,
         Err(e) => {
             error!(target: "AlephBFT-unit-backup", "unable to load unit backup: {}", e);
             on_shutdown(starting_round_tx);
@@ -177,8 +192,12 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
         }
     };
 
-    let next_round_backup: Round = units
+    let next_round_backup: Round = items
         .iter()
+        .filter_map(|item| match item {
+            BackupItem::Unit(unit) => Some(unit),
+            _ => None,
+        })
         .filter(|u| u.as_signable().creator() == index)
         .map(|u| u.as_signable().round())
         .max()
@@ -187,11 +206,11 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
 
     info!(
         target: "AlephBFT-unit-backup", "Loaded {:?} units from backup. Able to continue from round: {:?}.",
-        units.len(),
+        items.len(),
         next_round_backup
     );
 
-    if let Err(e) = loaded_unit_tx.send(units) {
+    if let Err(e) = loaded_items_tx.send(items) {
         error!(target: "AlephBFT-unit-backup", "Could not send loaded units: {:?}", e);
         on_shutdown(starting_round_tx);
         return;
@@ -238,32 +257,42 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, S: Signature, R: Read
 /// A task responsible for saving units into backup.
 /// It waits for units to appear in `backup_units_from_runway`, and writes them to backup.
 /// It announces a successful write through `backup_units_for_runway`.
-pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write>(
-    mut unit_saver: UnitSaver<W, H, D, S>,
-    mut backup_units_from_runway: Receiver<UncheckedSignedUnit<H, D, S>>,
-    backup_units_for_runway: Sender<UncheckedSignedUnit<H, D, S>>,
+pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, W: Write>(
+    mut backup_writer: BackupWriter<W, H, D, MK>,
+    mut incoming_backup_items: Receiver<BackupItem<H, D, MK>>,
+    outgoing_items_for_runway: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
+    outgoing_items_for_alerter: Sender<BackupItem<H, D, MK>>,
     mut terminator: Terminator,
 ) {
     let mut terminator_exit = false;
     loop {
         futures::select! {
-            unit_to_save = backup_units_from_runway.next() => {
-                let unit_to_save = match unit_to_save {
-                    Some(unit) => unit,
+            item_to_save = incoming_backup_items.next() => {
+                let item_to_save = match item_to_save {
+                    Some(item) => item,
                     None => {
                         error!(target: "AlephBFT-backup-saver", "Receiver of units to save closed early.");
                         break;
                     },
                 };
-
-                if let Err(e) = unit_saver.save(unit_to_save.clone()) {
+                if let Err(e) = backup_writer.save(item_to_save.clone()) {
                     error!(target: "AlephBFT-backup-saver", "Couldn't save unit to backup: {:?}", e);
                     break;
                 }
-                if backup_units_for_runway.unbounded_send(unit_to_save).is_err() {
-                    error!(target: "AlephBFT-backup-saver", "Couldn't respond with saved unit.");
-                    break;
-                }
+                match item_to_save {
+                    BackupItem::Unit(unit) => {
+                        if outgoing_items_for_runway.unbounded_send(unit).is_err() {
+                            error!(target: "AlephBFT-backup-saver", "Couldn't respond with saved unit to runway");
+                            break;
+                        }
+                    },
+                    item => {
+                        if outgoing_items_for_alerter.unbounded_send(item).is_err() {
+                            error!(target: "AlephBFT-backup-saver", "Couldn't respond with saved item to alerter");
+                            break;
+                        }
+                    },
+                };
             },
             _ = terminator.get_exit().fuse() => {
                 debug!(target: "AlephBFT-backup-saver", "Backup saver received exit signal.");
@@ -281,8 +310,9 @@ pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, S: Signature, W: Write
 
 #[cfg(test)]
 mod tests {
-    use super::{run_loading_mechanism, UnitLoader};
+    use super::{run_loading_mechanism, BackupReader};
     use crate::{
+        runway::backup::BackupItem,
         units::{
             create_units, creator_set, preunit_to_unchecked_signed_unit, preunit_to_unit,
             UncheckedSignedUnit as GenericUncheckedSignedUnit,
@@ -294,6 +324,7 @@ mod tests {
     use futures::channel::oneshot;
 
     type UncheckedSignedUnit = GenericUncheckedSignedUnit<Hasher64, Data, Signature>;
+    type TestBackupItem = BackupItem<Hasher64, Data, Keychain>;
 
     const SESSION_ID: SessionId = 43;
     const NODE_ID: NodeIndex = NodeIndex(0);
@@ -342,19 +373,19 @@ mod tests {
             .collect()
     }
 
-    fn encode_all(units: Vec<UncheckedSignedUnit>) -> Vec<Vec<u8>> {
-        units.iter().map(|u| u.encode()).collect()
+    fn encode_all(items: Vec<TestBackupItem>) -> Vec<Vec<u8>> {
+        items.iter().map(|u| u.encode()).collect()
     }
 
     fn prepare_test(
         encoded_units: Vec<u8>,
     ) -> (
         impl futures::Future,
-        oneshot::Receiver<Vec<UncheckedSignedUnit>>,
+        oneshot::Receiver<Vec<TestBackupItem>>,
         oneshot::Sender<Round>,
         oneshot::Receiver<Option<Round>>,
     ) {
-        let unit_loader = UnitLoader::new(Loader::new(encoded_units));
+        let unit_loader = BackupReader::new(Loader::new(encoded_units));
         let (loaded_unit_tx, loaded_unit_rx) = oneshot::channel();
         let (starting_round_tx, starting_round_rx) = oneshot::channel();
         let (highest_response_tx, highest_response_rx) = oneshot::channel();
@@ -394,10 +425,14 @@ mod tests {
     #[tokio::test]
     async fn something_loaded_nothing_collected_succeeds() {
         let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
-        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let encoded_items = encode_all(items.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -408,16 +443,20 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(Some(5)));
-        assert_eq!(loaded_unit_rx.await, Ok(units));
+        assert_eq!(loaded_unit_rx.await, Ok(items));
     }
 
     #[tokio::test]
     async fn something_loaded_something_collected_succeeds() {
         let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
-        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let encoded_items = encode_all(items.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -428,7 +467,7 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(Some(5)));
-        assert_eq!(loaded_unit_rx.await, Ok(units));
+        assert_eq!(loaded_unit_rx.await, Ok(items));
     }
 
     #[tokio::test]
@@ -451,10 +490,14 @@ mod tests {
     #[tokio::test]
     async fn loaded_smaller_then_collected_fails() {
         let units: Vec<_> = produce_units(3, SESSION_ID).into_iter().flatten().collect();
-        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let encoded_items = encode_all(items.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -465,16 +508,20 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(None));
-        assert_eq!(loaded_unit_rx.await, Ok(units));
+        assert_eq!(loaded_unit_rx.await, Ok(items));
     }
 
     #[tokio::test]
     async fn dropped_collection_fails() {
         let units: Vec<_> = produce_units(3, SESSION_ID).into_iter().flatten().collect();
-        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let encoded_items = encode_all(items.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -485,19 +532,23 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(None));
-        assert_eq!(loaded_unit_rx.await, Ok(units));
+        assert_eq!(loaded_unit_rx.await, Ok(items));
     }
 
     #[tokio::test]
     async fn backup_with_corrupted_encoding_fails() {
-        let units = produce_units(5, SESSION_ID).into_iter().flatten().collect();
-        let mut unit_encodings = encode_all(units);
-        let unit2_encoding_len = unit_encodings[2].len();
-        unit_encodings[2].resize(unit2_encoding_len - 1, 0); // remove the last byte
-        let encoded_units = unit_encodings.into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let mut item_encodings = encode_all(items);
+        let unit2_encoding_len = item_encodings[2].len();
+        item_encodings[2].resize(unit2_encoding_len - 1, 0); // remove the last byte
+        let encoded_items = item_encodings.into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
         let handle = tokio::spawn(async {
             task.await;
         });
@@ -512,12 +563,16 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_missing_parent_fails() {
-        let mut units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
-        units.remove(2); // it is a parent of all units of round 3
-        let encoded_units = encode_all(units).into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
+        let mut items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        items.remove(2); // it is a parent of all units of round 3
+        let encoded_items = encode_all(items).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
         let handle = tokio::spawn(async {
             task.await;
         });
@@ -532,10 +587,14 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_duplicate_unit_succeeds() {
-        let mut units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
-        let unit2_duplicate = units[2].clone();
-        units.insert(3, unit2_duplicate);
-        let encoded_units = encode_all(units.clone()).into_iter().flatten().collect();
+        let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
+        let mut items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let item2_duplicate = items[2].clone();
+        items.insert(3, item2_duplicate);
+        let encoded_units = encode_all(items.clone()).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
             prepare_test(encoded_units);
@@ -549,16 +608,20 @@ mod tests {
         handle.await.unwrap();
 
         assert_eq!(starting_round_rx.await, Ok(Some(5)));
-        assert_eq!(loaded_unit_rx.await, Ok(units));
+        assert_eq!(loaded_unit_rx.await, Ok(items));
     }
 
     #[tokio::test]
     async fn backup_with_units_of_one_creator_fails() {
         let units = units_of_creator(produce_units(5, SESSION_ID), NodeIndex(NODE_ID.0 + 1));
-        let encoded_units = encode_all(units).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let encoded_items = encode_all(items).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
 
         let handle = tokio::spawn(async {
             task.await;
@@ -574,14 +637,18 @@ mod tests {
 
     #[tokio::test]
     async fn backup_with_wrong_session_fails() {
-        let units = produce_units(5, SESSION_ID + 1)
+        let units: Vec<_> = produce_units(5, SESSION_ID + 1)
             .into_iter()
             .flatten()
             .collect();
-        let encoded_units = encode_all(units).into_iter().flatten().collect();
+        let items: Vec<_> = units
+            .into_iter()
+            .map(BackupItem::Unit)
+            .collect();
+        let encoded_items = encode_all(items).into_iter().flatten().collect();
 
         let (task, loaded_unit_rx, highest_response_tx, starting_round_rx) =
-            prepare_test(encoded_units);
+            prepare_test(encoded_items);
 
         let handle = tokio::spawn(async {
             task.await;

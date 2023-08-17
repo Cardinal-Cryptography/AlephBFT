@@ -577,7 +577,7 @@ pub async fn run_session<
     UL: Read + Send + Sync + 'static,
     N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
-    MK: MultiKeychain,
+    MK: MultiKeychain + Debug,
 >(
     config: Config,
     local_io: LocalIO<D, DP, FH, US, UL>,
