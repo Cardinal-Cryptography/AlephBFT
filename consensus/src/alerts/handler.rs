@@ -99,7 +99,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         self.known_forkers.contains_key(&forker)
     }
 
-    pub fn on_new_forker_detected(
+    fn on_new_forker_detected(
         &mut self,
         forker: NodeIndex,
         proof: ForkProof<H, D, MK::Signature>,
@@ -191,7 +191,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     }
 
     /// May return a `ForkingNotification`, which should be propagated
-    pub fn on_network_alert(
+    fn on_network_alert(
         &mut self,
         alert: UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature>,
     ) -> OnNetworkAlertResult<H, D, MK> {
