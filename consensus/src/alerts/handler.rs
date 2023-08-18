@@ -99,11 +99,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         self.known_forkers.contains_key(&forker)
     }
 
-    fn on_new_forker_detected(
-        &mut self,
-        forker: NodeIndex,
-        proof: ForkProof<H, D, MK::Signature>,
-    ) {
+    fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, MK::Signature>) {
         self.known_forkers.insert(forker, proof);
     }
 
