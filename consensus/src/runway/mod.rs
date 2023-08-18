@@ -172,9 +172,19 @@ impl<'a, H: Hasher> RunwayStatus<'a, H> {
     }
 }
 
+fn short_report(rounds_behind: Round, missing_coords: usize) -> String {
+    if rounds_behind <= 2 && missing_coords == 0 {
+        "Healthy".to_string()
+    } else if missing_coords == 0 {
+        format!("Behind by {rounds_behind} rounds")
+    } else {
+        format!("Syncing - misses {missing_coords} units and is behind by {rounds_behind} rounds")
+    }
+}
+
 impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Runway status report: ")?;
+        write!(f, "Runway status report: {}", short_report(self.status.rounds_behind(), self.missing_coords.len()))?;
         write!(f, "{}", self.status)?;
         if !self.missing_coords.is_empty() {
             let mut v_coords: Vec<(usize, Round)> = self
@@ -660,7 +670,7 @@ where
 
     fn status_report(&self) {
         let runway_status: RunwayStatus<H> = RunwayStatus::new(
-            self.store.get_status(),
+            self.store.get_status(self.index()),
             &self.missing_coords,
             &self.missing_parents,
         );
