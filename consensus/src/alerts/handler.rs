@@ -1,5 +1,5 @@
 use crate::{
-    alerts::{Alert, AlertConfig, AlertMessage, AlerterResponse, ForkProof, ForkingNotification},
+    alerts::{Alert, AlertMessage, AlerterResponse, ForkProof, ForkingNotification},
     Data, Hasher, Keychain, MultiKeychain, Multisigned, NodeIndex, Recipient, SessionId, Signed,
     UncheckedSigned,
 };
@@ -85,9 +85,9 @@ pub struct Handler<H: Hasher, D: Data, MK: MultiKeychain> {
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
-    pub fn new(keychain: MK, config: AlertConfig) -> Self {
+    pub fn new(keychain: MK, session_id: SessionId) -> Self {
         Self {
-            session_id: config.session_id,
+            session_id,
             keychain,
             known_forkers: HashMap::new(),
             known_alerts: HashMap::new(),
@@ -273,8 +273,7 @@ mod tests {
     use crate::{
         alerts::{
             handler::{Error, Handler},
-            Alert, AlertConfig, AlertMessage, AlerterResponse, ForkProof, ForkingNotification,
-            RmcMessage,
+            Alert, AlertMessage, AlerterResponse, ForkProof, ForkingNotification, RmcMessage,
         },
         units::{ControlHash, FullUnit, PreUnit},
         PartiallyMultisigned, Recipient, Round,
@@ -322,13 +321,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(own_keychain, 0);
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(own_index, fork_proof, vec![]);
         let signed_alert = Signed::sign(alert.clone(), &this.keychain).into_unchecked();
@@ -350,13 +343,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(own_keychain, 0);
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(own_index, fork_proof.clone(), vec![]);
         let alert_hash = Signable::hash(&alert);
@@ -376,13 +363,7 @@ mod tests {
         let own_keychain = Keychain::new(n_members, own_index);
         let alerter_keychain = Keychain::new(n_members, alerter_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut this: Handler<Hasher64, Data, _> = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this: Handler<Hasher64, Data, _> = Handler::new(own_keychain, 0);
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(alerter_index, fork_proof, vec![]);
         let alert_hash = Signable::hash(&alert);
@@ -407,13 +388,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(own_keychain, 0);
         let valid_unit = Signed::sign(
             full_unit(n_members, forker_index, 0, Some(0)),
             &forker_keychain,
@@ -435,13 +410,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let mut this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(own_keychain, 0);
         let alert = Alert::new(
             own_index,
             make_fork_proof(forker_index, &forker_keychain, 0, n_members),
@@ -473,13 +442,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let mut this = Handler::new(
-            keychains[own_index.0],
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(keychains[own_index.0], 0);
         let fork_proof = make_fork_proof(forker_index, &keychains[forker_index.0], 0, n_members);
         let empty_alert = Alert::new(double_committer, fork_proof.clone(), vec![]);
         let empty_alert_hash = Signable::hash(&empty_alert);
@@ -549,13 +512,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let mut this = Handler::new(
-            keychains[own_index.0],
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(keychains[own_index.0], 0);
         let fork_proof = make_fork_proof(forker_index, &keychains[forker_index.0], 0, n_members);
         let empty_alert = Alert::new(double_committer, fork_proof.clone(), vec![]);
         let empty_alert_hash = Signable::hash(&empty_alert);
@@ -610,13 +567,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let this = Handler::new(own_keychain, 0);
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(own_index, fork_proof, vec![]);
         assert_eq!(this.verify_fork(&alert), Ok(()));
@@ -629,13 +580,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 1,
-            },
-        );
+        let this = Handler::new(own_keychain, 1);
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(own_index, fork_proof, vec![]);
         assert_eq!(
@@ -650,13 +595,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let this = Handler::new(
-            keychains[0],
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let this = Handler::new(keychains[0], 0);
         let fork_proof = {
             let unit_0 = full_unit(n_members, NodeIndex(6), 0, Some(0));
             let unit_1 = full_unit(n_members, NodeIndex(5), 0, Some(0));
@@ -676,13 +615,7 @@ mod tests {
         let forker_index = NodeIndex(6);
         let own_keychain = Keychain::new(n_members, own_index);
         let forker_keychain = Keychain::new(n_members, forker_index);
-        let this = Handler::new(
-            own_keychain,
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let this = Handler::new(own_keychain, 0);
         let fork_proof = {
             let unit_0 = full_unit(n_members, forker_index, 0, Some(0));
             let unit_1 = full_unit(n_members, forker_index, 1, Some(0));
@@ -719,13 +652,7 @@ mod tests {
         let keychains: Vec<_> = (0..n_members.0)
             .map(|i| Keychain::new(n_members, NodeIndex(i)))
             .collect();
-        let mut this = Handler::new(
-            keychains[own_index.0],
-            AlertConfig {
-                n_members,
-                session_id: 0,
-            },
-        );
+        let mut this = Handler::new(keychains[own_index.0], 0);
         let fork_proof = if good_commitment {
             make_fork_proof(forker_index, &keychains[forker_index.0], 0, n_members)
         } else {

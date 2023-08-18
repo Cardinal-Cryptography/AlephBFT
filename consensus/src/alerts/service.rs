@@ -3,7 +3,7 @@ use crate::{
         handler::Handler, Alert, AlertMessage, AlerterResponse, ForkingNotification, NetworkMessage,
     },
     runway::BackupItem,
-    Data, Hasher, MultiKeychain, NodeCount, Receiver, Recipient, Sender, Terminator,
+    Data, Hasher, MultiKeychain, Receiver, Recipient, Sender, Terminator,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use futures::{channel::mpsc, FutureExt, StreamExt};
@@ -33,7 +33,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
         notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
         alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-        n_members: NodeCount,
         items_for_backup: Sender<BackupItem<H, D, MK>>,
         responses_from_backup: Receiver<BackupItem<H, D, MK>>,
     ) -> Service<H, D, MK> {
@@ -44,7 +43,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             messages_from_us,
             messages_for_us,
             keychain.clone(),
-            n_members,
             DoublingDelayScheduler::new(time::Duration::from_millis(500)),
         );
 

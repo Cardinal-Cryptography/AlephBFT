@@ -1,5 +1,5 @@
 use crate::{
-    alerts::{Alert, AlertConfig, ForkProof, ForkingNotification, NetworkMessage},
+    alerts::{Alert, ForkProof, ForkingNotification, NetworkMessage},
     consensus, handle_task_termination,
     member::UnitMessage,
     units::{
@@ -895,10 +895,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let (alert_notifications_for_units, notifications_from_alerter) = mpsc::unbounded();
     let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
-    let alert_config = AlertConfig {
-        session_id: config.session_id(),
-        n_members: config.n_members(),
-    };
+
     let alerter_terminator = terminator.add_offspring_connection("AlephBFT-alerter");
     let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
@@ -910,11 +907,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         alert_messages_from_network,
         alert_notifications_for_units,
         alerts_from_units,
-        alert_config.n_members,
         backup_items_for_saver.clone(),
         backup_items_from_saver,
     );
-    let alerter_handler = crate::alerts::Handler::new(alerter_keychain, alert_config);
+    let alerter_handler = crate::alerts::Handler::new(alerter_keychain, config.session_id());
 
     let alerter_handle = spawn_handle.spawn_essential("runway/alerter", async move {
         alerter_service
