@@ -2,7 +2,8 @@ use crate::{
     alerts::{
         handler::Handler, Alert, AlertMessage, AlerterResponse, ForkingNotification, NetworkMessage,
     },
-    Data, Hasher, MultiKeychain, Multisigned, NodeCount, Receiver, Recipient, Sender, Terminator,
+    Data, Hasher, MultiKeychain, Multisigned, NodeCount, NodeIndex, Receiver, Recipient, Sender,
+    Terminator,
 };
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use futures::{channel::mpsc, FutureExt, StreamExt};
@@ -19,7 +20,7 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     rmc: ReliableMulticast<H::Hash, MK>,
     messages_for_rmc: Sender<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
     messages_from_rmc: Receiver<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    keychain: MK,
+    node_index: NodeIndex,
     exiting: bool,
 }
 
@@ -51,7 +52,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             rmc,
             messages_for_rmc,
             messages_from_rmc,
-            keychain,
+            node_index: keychain.index(),
             exiting: false,
         }
     }
@@ -61,7 +62,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
         self.send_message_for_network(
-            AlertMessage::RmcMessage(self.keychain.index(), message),
+            AlertMessage::RmcMessage(self.node_index, message),
             Recipient::Everyone,
         );
     }
@@ -77,8 +78,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         {
             warn!(
                 target: LOG_TARGET,
-                "{:?} Channel with forking notifications should be open",
-                self.keychain.index()
+                "{:?} Channel with forking notifications should be open", self.node_index
             );
             self.exiting = true;
         }
@@ -96,8 +96,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         {
             warn!(
                 target: LOG_TARGET,
-                "{:?} Channel with notifications for network should be open",
-                self.keychain.index()
+                "{:?} Channel with notifications for network should be open", self.node_index
             );
             self.exiting = true;
         }
@@ -113,15 +112,14 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 self.send_message_for_network(AlertMessage::ForkAlert(alert), recipient);
             }
             Ok(Some(AlerterResponse::AlertRequest(hash, peer))) => {
-                let message = AlertMessage::AlertRequest(self.keychain.index(), hash);
+                let message = AlertMessage::AlertRequest(self.node_index, hash);
                 self.send_message_for_network(message, peer);
             }
             Ok(Some(AlerterResponse::RmcMessage(message))) => {
                 if self.messages_for_rmc.unbounded_send(message).is_err() {
                     warn!(
                         target: LOG_TARGET,
-                        "{:?} Channel with messages for rmc should be open",
-                        self.keychain.index()
+                        "{:?} Channel with messages for rmc should be open", self.node_index
                     );
                     self.exiting = true;
                 }
@@ -171,35 +169,34 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 message = self.messages_from_network.next() => match message {
                     Some(message) => self.handle_message_from_network(&mut handler, message),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} Message stream closed.", self.keychain.index());
+                        error!(target: LOG_TARGET, "{:?} Message stream closed.", self.node_index);
                         break;
                     }
                 },
                 alert = self.alerts_from_units.next() => match alert {
                     Some(alert) => self.handle_alert_from_runway(&mut handler, alert),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} Alert stream closed.", self.keychain.index());
+                        error!(target: LOG_TARGET, "{:?} Alert stream closed.", self.node_index);
                         break;
                     }
                 },
                 message = self.messages_from_rmc.next() => match message {
                     Some(message) => self.handle_message_from_rmc(message),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} RMC message stream closed.", self.keychain.index());
+                        error!(target: LOG_TARGET, "{:?} RMC message stream closed.", self.node_index);
                         break;
                     }
                 },
                 multisigned = self.rmc.next_multisigned_hash().fuse() => self.handle_multisigned(&mut handler, multisigned),
                 _ = terminator.get_exit().fuse() => {
-                    debug!(target: LOG_TARGET, "{:?} received exit signal", self.keychain.index());
+                    debug!(target: LOG_TARGET, "{:?} received exit signal", self.node_index);
                     self.exiting = true;
                 },
             }
             if self.exiting {
                 debug!(
                     target: LOG_TARGET,
-                    "{:?} Alerter decided to exit.",
-                    self.keychain.index()
+                    "{:?} Alerter decided to exit.", self.node_index
                 );
                 terminator.terminate_sync().await;
                 break;
