@@ -1,6 +1,6 @@
 ## 5 AlephBFT Internals
 
-To explain the inner workings of AlephBFT it is instructive to follow the path of a unit: from the very start when it is created to the moment when its round is decided and it's data is placed in one of the output batches. Here we give a brief overview and subsequently go more into details of specific components in dedicated subsections.
+To explain the inner workings of AlephBFT it is instructive to follow the path of a unit: from the very start when it is created to the moment when its round is decided and its data is placed in one of the output batches. Here we give a brief overview and subsequently go more into details of specific components in dedicated subsections.
 
 1. The unit is created by one of the node's `Creator` component -- implemented in `src/creator.rs`. Creator sends a notification to an outer component.
 2. The newly created unit is filled with data, session information and a signature. This is done in `src/runway.rs` which then sends it to `src/member.rs` Subsequently a recurring task of broadcasting this unit is put in the task queue. The unit will be broadcast to all other nodes a few times (with some delays in between).
@@ -29,10 +29,10 @@ The `Terminal` receives legit units, yet there might be two issues with such uni
 1. A unit `U` might have a "wrong" control hash. From the perspective of the `Terminal` this means that naively picking `U`'s parents as units from previous round determined by `U.parent_map` results in a failed control hash check. Note that in case `U.creator` is honest and there are no forkers among `U` parents creators then this cannot happen and the control hash check always succeeds. Fail can happen because:
    a) either `U`'s one or multiple parents are forks and the `Terminal` either does not have the correct variants yet, or just has them but performed the naive check on different variants (note that guessing the correct variants might require exponential time so there is no point for the terminal to even try it),
    b) or `U`'s creator is dishonest and just put a control hash in the unit that does not "unhash" to anything meaningful.
-   In any case the terminal triggers a request to `Member` to download the full list of `U`'s parent hashes, so that the ambiguity is resolved. Once a correct reponse is received by `Member` then it is passed back to the terminal so that it can "decode" the parents and proceed.
+   In any case the terminal triggers a request to `Member` to download the full list of `U`'s parent hashes, so that the ambiguity is resolved. Once a correct response is received by `Member` then it is passed back to the terminal so that it can "decode" the parents and proceed.
 2. A unit `U` might have parents that are not legit. Before adding a unit `U` to the Dag, the terminal waits for all parents of `U` to be added to the Dag first.
 
-There is often a situation where the terminal receives a unit `U` and for some reason there is no unit yet for a particular slot in `U`'s parents, i.e., `U`'s parent map says that one of the parents was created by node `i` but terminal has no unit with "coordinates" `(U.round - 1, i)` (`UnitCoord` type in the implementation -- means a pair consising of `(V.round, V.creator)` for some unit `V`). In such a case terminal makes a request to the `Member` to get such a unit, which is then followed by `Member` sending a series of requests to random nodes in order to fetch such a unit.
+There is often a situation where the terminal receives a unit `U` and for some reason there is no unit yet for a particular slot in `U`'s parents, i.e., `U`'s parent map says that one of the parents was created by node `i` but terminal has no unit with "coordinates" `(U.round - 1, i)` (`UnitCoord` type in the implementation -- means a pair consisting of `(V.round, V.creator)` for some unit `V`). In such a case terminal makes a request to the `Member` to get such a unit, which is then followed by `Member` sending a series of requests to random nodes in order to fetch such a unit.
 
 ### 5.4 Extender
 
