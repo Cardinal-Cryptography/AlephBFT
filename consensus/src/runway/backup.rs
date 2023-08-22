@@ -21,7 +21,7 @@ const LOG_TARGET: &str = "AlephBFT-backup";
 #[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub enum BackupItem<H: Hasher, D: Data, MK: MultiKeychain> {
     Unit(UncheckedSignedUnit<H, D, MK::Signature>),
-    AlertData(AlertData<H, D, MK>)
+    AlertData(AlertData<H, D, MK>),
 }
 
 #[derive(Clone, Debug, Decode, Encode, PartialEq)]
