@@ -21,9 +21,14 @@ const LOG_TARGET: &str = "AlephBFT-backup";
 #[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub enum BackupItem<H: Hasher, D: Data, MK: MultiKeychain> {
     Unit(UncheckedSignedUnit<H, D, MK::Signature>),
+    AlertData(AlertData<H, D, MK>)
+}
+
+#[derive(Clone, Debug, Decode, Encode, PartialEq)]
+pub enum AlertData<H: Hasher, D: Data, MK: MultiKeychain> {
     OwnAlert(Alert<H, D, MK::Signature>),
     NetworkAlert(Alert<H, D, MK::Signature>),
-    MultiSignature(Multisigned<H::Hash, MK>),
+    MultisignedHash(Multisigned<H::Hash, MK>),
 }
 
 /// Backup load error. Could be either caused by io error from Reader, or by decoding.
@@ -41,24 +46,24 @@ impl fmt::Display for BackupReadError {
             BackupReadError::IO(err) => {
                 write!(
                     f,
-                    "Received IO error while reading from backup source: {}",
+                    "received IO error while reading from backup source: {}",
                     err
                 )
             }
             BackupReadError::Codec(err) => {
-                write!(f, "Received Codec error while decoding backup: {}", err)
+                write!(f, "received Codec error while decoding backup: {}", err)
             }
             BackupReadError::InconsistentData(coord) => {
                 write!(
                     f,
-                    "Inconsistent backup data. Unit from round {:?} of creator {:?} is missing a parent in backup.",
+                    "inconsistent backup data. Unit from round {:?} of creator {:?} is missing a parent in backup.",
                     coord.round(), coord.creator()
                 )
             }
             BackupReadError::WrongSession(coord, expected_session, actual_session) => {
                 write!(
                     f,
-                    "Unit from round {:?} of creator {:?} has a wrong session id in backup. Expected: {:?} got: {:?}",
+                    "unit from round {:?} of creator {:?} has a wrong session id in backup. Expected: {:?} got: {:?}",
                     coord.round(), coord.creator(), expected_session, actual_session
                 )
             }
@@ -129,7 +134,7 @@ fn load_backup<H: Hasher, D: Data, MK: MultiKeychain, R: Read>(
     backup_reader: BackupReader<R, H, D, MK>,
     session_id: SessionId,
 ) -> Result<Vec<BackupItem<H, D, MK>>, BackupReadError> {
-    // todo: perform some processing of alerts and multi signatures
+    // TODO(A0-544): perform some processing of alerts and multisignatures
     let loaded_items: Vec<_> = backup_reader.load()?;
     let units = loaded_items.iter().filter_map(|item| match item {
         BackupItem::Unit(unit) => Some(unit),
@@ -184,7 +189,7 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, R:
     starting_round_tx: oneshot::Sender<Option<Round>>,
     next_round_collection_rx: oneshot::Receiver<Round>,
 ) {
-    // todo: perform some processing of alerts and multi signatures
+    // TODO(A0-544): perform some processing of alerts and multisignatures
     let items = match load_backup(backup_reader, session_id) {
         Ok(items) => items,
         Err(e) => {
@@ -266,14 +271,14 @@ pub async fn run_loading_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, R:
     }
 }
 
-/// A task responsible for saving units, alerts and multi signatures into backup.
+/// A task responsible for saving units and alert data into backup.
 /// It waits for items to appear in `incoming_backup_items`, and writes them to backup.
 /// It announces a successful write through `outgoing_units_for_runway` or `outgoing_items_for_alerter`.
 pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, W: Write>(
     mut backup_writer: BackupWriter<W, H, D, MK>,
     mut incoming_backup_items: Receiver<BackupItem<H, D, MK>>,
     outgoing_units_for_runway: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    outgoing_items_for_alerter: Sender<BackupItem<H, D, MK>>,
+    outgoing_items_for_alerter: Sender<AlertData<H, D, MK>>,
     mut terminator: Terminator,
 ) {
     let mut terminator_exit = false;
@@ -298,7 +303,7 @@ pub async fn run_saving_mechanism<'a, H: Hasher, D: Data, MK: MultiKeychain, W: 
                             break;
                         }
                     },
-                    item => {
+                    BackupItem::AlertData(item) => {
                         if outgoing_items_for_alerter.unbounded_send(item).is_err() {
                             error!(target: LOG_TARGET, "Couldn't respond with saved item to alerter");
                             break;

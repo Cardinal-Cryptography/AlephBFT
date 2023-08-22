@@ -224,7 +224,7 @@ where
         let RunwayConfig {
             max_round,
             finalization_handler,
-            backup_items_for_saver: backup_units_for_saver,
+            backup_items_for_saver,
             backup_units_from_saver,
             alerts_for_alerter,
             notifications_from_alerter,
@@ -255,7 +255,7 @@ where
             rx_consensus,
             ordered_batch_rx,
             finalization_handler,
-            backup_items_for_saver: backup_units_for_saver,
+            backup_items_for_saver,
             backup_units_from_saver,
             responses_for_collection,
             preunits_for_packer,
@@ -820,15 +820,15 @@ pub struct RunwayIO<
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    US: Write + Send + Sync + 'static,
-    UL: Read + Send + Sync + 'static,
+    W: Write + Send + Sync + 'static,
+    R: Read + Send + Sync + 'static,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
 > {
     pub data_provider: DP,
     pub finalization_handler: FH,
-    pub backup_writer: BackupWriter<US, H, D, MK>,
-    pub backup_reader: BackupReader<UL, H, D, MK>,
+    pub backup_writer: BackupWriter<W, H, D, MK>,
+    pub backup_reader: BackupReader<R, H, D, MK>,
     _phantom: PhantomData<(H, D, MK::Signature)>,
 }
 
@@ -836,23 +836,23 @@ impl<
         H: Hasher,
         D: Data,
         MK: MultiKeychain,
-        US: Write + Send + Sync + 'static,
-        UL: Read + Send + Sync + 'static,
+        W: Write + Send + Sync + 'static,
+        R: Read + Send + Sync + 'static,
         DP: DataProvider<D>,
         FH: FinalizationHandler<D>,
-    > RunwayIO<H, D, MK, US, UL, DP, FH>
+    > RunwayIO<H, D, MK, W, R, DP, FH>
 {
     pub fn new(
         data_provider: DP,
         finalization_handler: FH,
-        unit_saver: US,
-        unit_loader: UL,
+        backup_write: W,
+        backup_read: R,
     ) -> Self {
         RunwayIO {
             data_provider,
             finalization_handler,
-            backup_writer: BackupWriter::new(unit_saver),
-            backup_reader: BackupReader::new(unit_loader),
+            backup_writer: BackupWriter::new(backup_write),
+            backup_reader: BackupReader::new(backup_read),
             _phantom: PhantomData,
         }
     }
@@ -928,7 +928,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let (backup_items_for_saver, incoming_backup_items) = mpsc::unbounded();
     let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
-    let (backup_items_for_alerter, _backup_items_from_alerter) = mpsc::unbounded(); // todo: make use of backup in alerter
+    let (backup_items_for_alerter, _backup_items_from_saver) = mpsc::unbounded(); // TODO(A0-544): make use of backup in alerter
 
     let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
     let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {
