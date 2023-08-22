@@ -9,7 +9,6 @@ use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulti
 use futures::{channel::mpsc, FutureExt, StreamExt};
 use log::{debug, error, warn};
 use std::time;
-use crate::runway::BackupItem;
 
 const LOG_TARGET: &str = "AlephBFT-alerter";
 
@@ -21,8 +20,6 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     rmc: ReliableMulticast<H::Hash, MK>,
     messages_for_rmc: Sender<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
     messages_from_rmc: Receiver<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    items_for_backup: Sender<BackupItem<H, D, MK>>,
-    responses_from_backup: Receiver<BackupItem<H, D, MK>>,
     node_index: NodeIndex,
     exiting: bool,
 }
@@ -34,8 +31,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
         notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
         alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-        items_for_backup: Sender<BackupItem<H, D, MK>>,
-        responses_from_backup: Receiver<BackupItem<H, D, MK>>,
+        n_members: NodeCount,
     ) -> Service<H, D, MK> {
         let (messages_for_rmc, messages_from_us) = mpsc::unbounded();
         let (messages_for_us, messages_from_rmc) = mpsc::unbounded();
@@ -44,6 +40,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             messages_from_us,
             messages_for_us,
             keychain.clone(),
+            n_members,
             DoublingDelayScheduler::new(time::Duration::from_millis(500)),
         );
 
@@ -55,8 +52,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             rmc,
             messages_for_rmc,
             messages_from_rmc,
-            items_for_backup,
-            responses_from_backup,
             node_index: keychain.index(),
             exiting: false,
         }
@@ -112,23 +107,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         handler: &mut Handler<H, D, MK>,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
     ) {
-
-        match message {
-            AlertMessage::ForkAlert(alert) => {
-                match handler.on_network_alert(alert) {
-                    Ok(AlerterResponse::ForkResponse(maybe_notification, hash))) => {}
-                    Err(_) => {}
-                    _ => {}
-                }
-            },
-            AlertMessage::ForkAlertRmcMessage(sender, message) => {
-
-            },
-            AlertMessage::ForkAlertAlertRequest(node, hash) => {
-
-            },
-        }
-
         match handler.on_message(message) {
             Ok(Some(AlerterResponse::ForkAlert(alert, recipient))) => {
                 self.send_message_for_network(AlertMessage::ForkAlert(alert), recipient);

@@ -1,6 +1,6 @@
 use crate::{
-    units::UncheckedSignedUnit, Data, Hasher, Index, Keychain, MultiKeychain, NodeIndex,
-    PartialMultisignature, Recipient, Signable, Signature, UncheckedSigned,
+    units::UncheckedSignedUnit, Data, Hasher, Index, Keychain, MultiKeychain, NodeCount, NodeIndex,
+    PartialMultisignature, Recipient, SessionId, Signable, Signature, UncheckedSigned,
 };
 use aleph_bft_rmc::Message as RmcMessage;
 use codec::{Decode, Encode};
@@ -154,4 +154,10 @@ pub enum AlerterResponse<H: Hasher, D: Data, S: Signature, MS: PartialMultisigna
 pub enum ForkingNotification<H: Hasher, D: Data, S: Signature> {
     Forker(ForkProof<H, D, S>),
     Units(Vec<UncheckedSignedUnit<H, D, S>>),
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Debug, Default)]
+pub struct AlertConfig {
+    pub n_members: NodeCount,
+    pub session_id: SessionId,
 }
