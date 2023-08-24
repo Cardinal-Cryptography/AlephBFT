@@ -31,7 +31,7 @@ pub enum AlertData<H: Hasher, D: Data, MK: MultiKeychain> {
     MultisignedHash(Multisigned<H::Hash, MK>),
 }
 
-/// Backup load error. Could be either caused by io error from Reader, or by decoding.
+/// Backup read error. Could be either caused by io error from `BackupReader`, or by decoding.
 #[derive(Debug)]
 pub enum BackupReadError {
     IO(std::io::Error),
@@ -135,7 +135,7 @@ fn load_backup<H: Hasher, D: Data, MK: MultiKeychain, R: Read>(
     session_id: SessionId,
 ) -> Result<Vec<BackupItem<H, D, MK>>, BackupReadError> {
     // TODO(A0-544): perform some processing of alerts and multisignatures
-    let loaded_items: Vec<_> = backup_reader.load()?;
+    let loaded_items = backup_reader.load()?;
     let units = loaded_items.iter().filter_map(|item| match item {
         BackupItem::Unit(unit) => Some(unit),
         _ => None,
