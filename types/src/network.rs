@@ -35,9 +35,10 @@ pub trait Network<D>: Send {
     /// Send a message to a single node or everyone, depending on the value of the recipient
     /// argument.
     ///
-    /// Note on the implementation: this function should be implemented in a non-blocking manner.
-    /// Otherwise, the performance might be affected negatively or the execution may end up in a deadlock.
-    fn send(&self, data: D, recipient: Recipient);
+    /// Note on the implementation: this function should only block to handle back-pressure and needs to return
+    /// eventually to prevent deadlocks. Otherwise, this function should return quickly or the
+    /// performance might be affected negatively.
+    async fn send(&self, data: D, recipient: Recipient);
     /// Receive a message from the network.
     async fn next_event(&mut self) -> Option<D>;
 }

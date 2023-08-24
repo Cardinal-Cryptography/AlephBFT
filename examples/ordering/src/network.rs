@@ -80,7 +80,7 @@ impl Network {
 
 #[async_trait::async_trait]
 impl aleph_bft::Network<NetworkData> for Network {
-    fn send(&self, data: NetworkData, recipient: Recipient) {
+    async fn send(&self, data: NetworkData, recipient: Recipient) {
         match recipient {
             Recipient::Everyone => {
                 for r in 0..self.addresses.len() {

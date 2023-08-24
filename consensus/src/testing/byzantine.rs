@@ -77,12 +77,12 @@ impl<'a> MaliciousMember<'a> {
         }
     }
 
-    fn send_legit_unit(&mut self, su: SignedUnit<Hasher64, Data, Keychain>) {
+    async fn send_legit_unit(&mut self, su: SignedUnit<Hasher64, Data, Keychain>) {
         let message = Self::unit_to_data(su);
-        self.network.send(message, Recipient::Everyone);
+        self.network.send(message, Recipient::Everyone).await;
     }
 
-    fn send_two_variants(
+    async fn send_two_variants(
         &mut self,
         su0: SignedUnit<Hasher64, Data, Keychain>,
         su1: SignedUnit<Hasher64, Data, Keychain>,
@@ -95,15 +95,17 @@ impl<'a> MaliciousMember<'a> {
             let node_ix = NodeIndex(ix);
             if ix % 2 == 0 {
                 self.network
-                    .send(message0.clone(), Recipient::Node(node_ix));
+                    .send(message0.clone(), Recipient::Node(node_ix))
+                    .await;
             } else {
                 self.network
-                    .send(message1.clone(), Recipient::Node(node_ix));
+                    .send(message1.clone(), Recipient::Node(node_ix))
+                    .await;
             }
         }
     }
 
-    fn create_if_possible(&mut self, round: Round) -> bool {
+    async fn create_if_possible(&mut self, round: Round) -> bool {
         if let Some(parents) = self.pick_parents(round) {
             debug!(target: "malicious-member", "Creating a legit unit for round {}.", round);
             let control_hash = ControlHash::<Hasher64>::new(&parents);
@@ -112,7 +114,7 @@ impl<'a> MaliciousMember<'a> {
                 let full_unit = FullUnit::new(new_preunit, Some(0), self.session_id);
                 let signed_unit = Signed::sign(full_unit, self.keychain);
                 self.on_unit_received(signed_unit.clone());
-                self.send_legit_unit(signed_unit);
+                self.send_legit_unit(signed_unit).await;
             } else {
                 // FORKING HAPPENS HERE!
                 debug!(target: "malicious-member", "Creating forks for round {}.", round);
@@ -122,7 +124,8 @@ impl<'a> MaliciousMember<'a> {
                     let signed = Signed::sign(full_unit, self.keychain);
                     variants.push(signed);
                 }
-                self.send_two_variants(variants[0].clone(), variants[1].clone());
+                self.send_two_variants(variants[0].clone(), variants[1].clone())
+                    .await;
             }
             return true;
         }
@@ -154,7 +157,7 @@ impl<'a> MaliciousMember<'a> {
     pub async fn run_session(mut self, mut exit: oneshot::Receiver<()>) {
         let mut round: Round = 0;
         loop {
-            if self.create_if_possible(round) {
+            if self.create_if_possible(round).await {
                 round += 1;
             }
             tokio::select! {

@@ -52,7 +52,7 @@ impl<D: Debug> Network<D> {
 
 #[async_trait::async_trait]
 impl<D: Clone + Send + Debug> NetworkT<D> for Network<D> {
-    fn send(&self, data: D, recipient: Recipient) {
+    async fn send(&self, data: D, recipient: Recipient) {
         use Recipient::*;
         match recipient {
             Node(node) => self
@@ -61,8 +61,9 @@ impl<D: Clone + Send + Debug> NetworkT<D> for Network<D> {
                 .expect("send on channel should work"),
             Everyone => {
                 for peer in self.peers.iter() {
+                    let data = data.clone();
                     if *peer != self.index {
-                        self.send(data.clone(), Node(*peer));
+                        self.send(data, Node(*peer)).await;
                     }
                 }
             }

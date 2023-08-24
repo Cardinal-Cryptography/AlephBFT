@@ -81,7 +81,7 @@ pub struct Network {
 
 #[async_trait::async_trait]
 impl aleph_bft::Network<NetworkData> for Network {
-    fn send(&self, data: NetworkData, recipient: Recipient) {
+    async fn send(&self, data: NetworkData, recipient: Recipient) {
         if let Err(e) = self.msg_to_manager_tx.unbounded_send((data, recipient)) {
             warn!(target: "Blockchain-network", "Failed network send: {:?}", e);
         }

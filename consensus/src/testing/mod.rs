@@ -75,7 +75,7 @@ pub fn spawn_honest_member(
     node_index: NodeIndex,
     n_members: NodeCount,
     units: Vec<u8>,
-    network: impl 'static + NetworkT<NetworkData>,
+    network: impl 'static + NetworkT<NetworkData> + Sync,
 ) -> HonestMember {
     let data_provider = DataProvider::new();
     let (finalization_handler, finalization_rx) = FinalizationHandler::new();

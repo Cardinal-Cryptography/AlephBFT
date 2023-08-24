@@ -214,7 +214,7 @@ pub fn gen_config(node_ix: NodeIndex, n_members: NodeCount, delay_config: DelayC
 pub fn spawn_honest_member_with_config(
     spawner: impl SpawnHandle + Sync,
     config: Config,
-    network: impl 'static + NetworkT<FuzzNetworkData>,
+    network: impl 'static + NetworkT<FuzzNetworkData> + Sync,
     mk: Keychain,
 ) -> (oneshot::Sender<()>, UReceiver<Data>) {
     let unit_loader = Loader::new(vec![]);
@@ -334,10 +334,10 @@ impl<I, C> PlaybackNetwork<I, C> {
 }
 
 #[async_trait::async_trait]
-impl<I: Iterator<Item = FuzzNetworkData> + Send, C: FnOnce() + Send> NetworkT<FuzzNetworkData>
-    for PlaybackNetwork<I, C>
+impl<I: Iterator<Item = FuzzNetworkData> + Send + Sync, C: FnOnce() + Send + Sync>
+    NetworkT<FuzzNetworkData> for PlaybackNetwork<I, C>
 {
-    fn send(&self, _: FuzzNetworkData, _: Recipient) {}
+    async fn send(&self, _: FuzzNetworkData, _: Recipient) {}
 
     async fn next_event(&mut self) -> Option<FuzzNetworkData> {
         match self.data.next() {
@@ -428,7 +428,7 @@ async fn execute_generate_fuzz<'a, W: Write + Send + 'static>(
 }
 
 async fn execute_fuzz(
-    data: impl Iterator<Item = FuzzNetworkData> + Send + 'static,
+    data: impl Iterator<Item = FuzzNetworkData> + Send + Sync + 'static,
     n_members: usize,
     n_batches: Option<usize>,
 ) {
@@ -502,7 +502,11 @@ pub fn generate_fuzz<W: Write + Send + 'static>(output: W, n_members: usize, n_b
     runtime.block_on(execute_generate_fuzz(output, n_members, n_batches));
 }
 
-pub fn check_fuzz(input: impl Read + Send + 'static, n_members: usize, n_batches: Option<usize>) {
+pub fn check_fuzz(
+    input: impl Read + Send + Sync + 'static,
+    n_members: usize,
+    n_batches: Option<usize>,
+) {
     init_log();
     let data_iter = NetworkDataIterator::new(input);
     let runtime = get_runtime();

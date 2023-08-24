@@ -76,8 +76,8 @@ impl<
         }
     }
 
-    fn send(&self, data: NetworkData<H, D, S, MS>, recipient: Recipient) {
-        self.network.send(data, recipient);
+    async fn send(&self, data: NetworkData<H, D, S, MS>, recipient: Recipient) {
+        self.network.send(data, recipient).await;
     }
 
     fn handle_incoming(&self, network_data: NetworkData<H, D, S, MS>) {
@@ -103,14 +103,14 @@ impl<
             use NetworkDataInner::*;
             futures::select! {
                 unit_message = self.units_to_send.next() => match unit_message {
-                    Some((unit_message, recipient)) => self.send(NetworkData(Units(unit_message)), recipient),
+                    Some((unit_message, recipient)) => self.send(NetworkData(Units(unit_message)), recipient).await,
                     None => {
                         error!(target: "AlephBFT-network-hub", "Outgoing units stream closed.");
                         break;
                     }
                 },
                 alert_message = self.alerts_to_send.next() => match alert_message {
-                    Some((alert_message, recipient)) => self.send(NetworkData(Alert(alert_message)), recipient),
+                    Some((alert_message, recipient)) => self.send(NetworkData(Alert(alert_message)), recipient).await,
                     None => {
                         error!(target: "AlephBFT-network-hub", "Outgoing alerts stream closed.");
                         break;

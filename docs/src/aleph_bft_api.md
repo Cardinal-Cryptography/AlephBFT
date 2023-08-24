@@ -31,7 +31,7 @@ The Network trait defines the functionality we expect the network layer to satis
 
 ```rust
 pub trait Network<H: Hasher, D: Data, S: Encode + Decode>: Send {
-    fn send(&self, data: NetworkData<H, D, S>, recipient: Recipient);
+    async fn send(&self, data: NetworkData<H, D, S>, recipient: Recipient);
     async fn next_event(&mut self) -> Option<NetworkData<H, D, S>>;
 }
 ```

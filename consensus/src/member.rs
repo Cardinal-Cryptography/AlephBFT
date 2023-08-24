@@ -575,7 +575,7 @@ pub async fn run_session<
     FH: FinalizationHandler<D>,
     US: Write + Send + Sync + 'static,
     UL: Read + Send + Sync + 'static,
-    N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
+    N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + Sync + 'static,
     SH: SpawnHandle,
     MK: MultiKeychain,
 >(
