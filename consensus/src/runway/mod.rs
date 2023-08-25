@@ -30,8 +30,8 @@ mod backup;
 mod collection;
 mod packer;
 
+use crate::runway::backup::{BackupLoader, BackupSaver, LoadedData};
 pub use backup::BackupItem;
-use backup::{BackupReader, BackupWriter};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
 pub use collection::{NewestUnitResponse, Salt};
@@ -146,7 +146,7 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     finalization_handler: FH,
-    backup_items_for_saver: Sender<BackupItem<H, D, MK>>,
+    backup_units_for_saver: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
     backup_units_from_saver: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     preunits_for_packer: Sender<PreUnit<H>>,
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
@@ -197,7 +197,7 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
 struct RunwayConfig<H: Hasher, D: Data, FH: FinalizationHandler<D>, MK: MultiKeychain> {
     max_round: Round,
     finalization_handler: FH,
-    backup_items_for_saver: Sender<BackupItem<H, D, MK>>,
+    backup_units_for_saver: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
     backup_units_from_saver: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
@@ -224,7 +224,7 @@ where
         let RunwayConfig {
             max_round,
             finalization_handler,
-            backup_items_for_saver,
+            backup_units_for_saver,
             backup_units_from_saver,
             alerts_for_alerter,
             notifications_from_alerter,
@@ -255,7 +255,7 @@ where
             rx_consensus,
             ordered_batch_rx,
             finalization_handler,
-            backup_items_for_saver,
+            backup_units_for_saver,
             backup_units_from_saver,
             responses_for_collection,
             preunits_for_packer,
@@ -555,8 +555,8 @@ where
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
                     if self
-                        .backup_items_for_saver
-                        .unbounded_send(BackupItem::Unit(su.into()))
+                        .backup_units_for_saver
+                        .unbounded_send(su.into())
                         .is_err()
                     {
                         error!(target: "AlephBFT-runway", "{:?} A unit couldn't be sent to backup: {:?}.", self.index(), h);
@@ -670,22 +670,19 @@ where
 
     async fn run(
         mut self,
-        items_from_backup: oneshot::Receiver<Vec<BackupItem<H, D, MK>>>,
+        data_from_backup: oneshot::Receiver<LoadedData<H, D, MK>>,
         mut terminator: Terminator,
     ) {
         let index = self.index();
-        let items_from_backup = items_from_backup.fuse();
-        pin_mut!(items_from_backup);
+        let data_from_backup = data_from_backup.fuse();
+        pin_mut!(data_from_backup);
 
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
 
-        match items_from_backup.await {
-            Ok(items) => {
-                for unit in items.into_iter().filter_map(|item| match item {
-                    BackupItem::Unit(unit) => Some(unit),
-                    _ => None,
-                }) {
+        match data_from_backup.await {
+            Ok((units, _alert_data)) => {
+                for unit in units {
                     self.on_unit_received(unit, false);
                 }
             }
@@ -827,8 +824,8 @@ pub struct RunwayIO<
 > {
     pub data_provider: DP,
     pub finalization_handler: FH,
-    pub backup_writer: BackupWriter<W, H, D, MK>,
-    pub backup_reader: BackupReader<R, H, D, MK>,
+    pub backup_write: W,
+    pub backup_read: R,
     _phantom: PhantomData<(H, D, MK::Signature)>,
 }
 
@@ -851,8 +848,8 @@ impl<
         RunwayIO {
             data_provider,
             finalization_handler,
-            backup_writer: BackupWriter::new(backup_write),
-            backup_reader: BackupReader::new(backup_read),
+            backup_write,
+            backup_read,
             _phantom: PhantomData,
         }
     }
@@ -926,20 +923,23 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     });
     let mut consensus_handle = consensus_handle.fuse();
 
-    let (backup_items_for_saver, incoming_backup_items) = mpsc::unbounded();
+    let (backup_units_for_saver, backup_units_from_runway) = mpsc::unbounded();
     let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
-    let (backup_items_for_alerter, _backup_items_from_saver) = mpsc::unbounded(); // TODO(A0-544): make use of backup in alerter
+    let (_alert_data_for_saver, alert_data_from_alerter) = mpsc::unbounded();
+    let (alert_data_for_alerter, _alert_data_from_saver) = mpsc::unbounded();
 
     let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
-    let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", async move {
-        backup::run_saving_mechanism(
-            runway_io.backup_writer,
-            incoming_backup_items,
+    let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", {
+        let mut backup_saver: BackupSaver<_, _, MK, _> = BackupSaver::new(
+            backup_units_from_runway,
+            alert_data_from_alerter,
             backup_units_for_runway,
-            backup_items_for_alerter,
-            backup_saver_terminator,
-        )
-        .await;
+            alert_data_for_alerter,
+            runway_io.backup_write,
+        );
+        async move {
+            backup_saver.run(backup_saver_terminator).await;
+        }
     });
     let mut backup_saver_handle = backup_saver_handle.fuse();
 
@@ -953,20 +953,21 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     );
     let (responses_for_collection, responses_from_runway) = mpsc::unbounded();
     let (unit_collections_sender, unit_collection_result) = oneshot::channel();
-    let (loaded_units_tx, loaded_units_rx) = oneshot::channel();
+    let (loaded_data_tx, loaded_data_rx) = oneshot::channel();
     let session_id = config.session_id();
 
     let backup_loading_handle = spawn_handle
-        .spawn_essential("runway/loading", async move {
-            backup::run_loading_mechanism(
-                runway_io.backup_reader,
-                index,
-                session_id,
-                loaded_units_tx,
-                starting_round_sender,
-                unit_collection_result,
-            )
-            .await
+        .spawn_essential("runway/loading", {
+            let mut backup_loader = BackupLoader::new(runway_io.backup_read, index, session_id);
+            async move {
+                backup_loader
+                    .run(
+                        loaded_data_tx,
+                        starting_round_sender,
+                        unit_collection_result,
+                    )
+                    .await
+            }
         })
         .fuse();
     pin_mut!(backup_loading_handle);
@@ -1003,7 +1004,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         .spawn_essential("runway", {
             let runway_config = RunwayConfig {
                 finalization_handler,
-                backup_items_for_saver,
+                backup_units_for_saver,
                 backup_units_from_saver,
                 alerts_for_alerter,
                 notifications_from_alerter,
@@ -1023,7 +1024,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             let keychain = keychain.clone();
             let runway = Runway::new(runway_config, keychain, validator);
 
-            async move { runway.run(loaded_units_rx, runway_terminator).await }
+            async move { runway.run(loaded_data_rx, runway_terminator).await }
         })
         .fuse();
     pin_mut!(runway_handle);
