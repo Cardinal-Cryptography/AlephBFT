@@ -34,45 +34,34 @@ pub enum AlertData<H: Hasher, D: Data, MK: MultiKeychain> {
 
 /// Backup read error. Could be either caused by io error from `BackupReader`, or by decoding.
 #[derive(Debug)]
-enum ReadError {
+enum LoaderError {
     IO(std::io::Error),
     Codec(CodecError),
-}
-
-#[derive(Debug)]
-enum IncorrectBackupError {
     InconsistentData(UnitCoord),
     WrongSession(UnitCoord, SessionId, SessionId),
 }
 
-impl fmt::Display for ReadError {
+impl fmt::Display for LoaderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ReadError::IO(err) => {
+            LoaderError::IO(err) => {
                 write!(
                     f,
                     "received IO error while reading from backup source: {}",
                     err
                 )
             }
-            ReadError::Codec(err) => {
+            LoaderError::Codec(err) => {
                 write!(f, "received Codec error while decoding backup: {}", err)
             }
-        }
-    }
-}
-
-impl fmt::Display for IncorrectBackupError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            IncorrectBackupError::InconsistentData(coord) => {
+            LoaderError::InconsistentData(coord) => {
                 write!(
                     f,
                     "inconsistent backup data. Unit from round {:?} of creator {:?} is missing a parent in backup.",
                     coord.round(), coord.creator()
                 )
             }
-            IncorrectBackupError::WrongSession(coord, expected_session, actual_session) => {
+            LoaderError::WrongSession(coord, expected_session, actual_session) => {
                 write!(
                     f,
                     "unit from round {:?} of creator {:?} has a wrong session id in backup. Expected: {:?} got: {:?}",
@@ -83,13 +72,13 @@ impl fmt::Display for IncorrectBackupError {
     }
 }
 
-impl From<std::io::Error> for ReadError {
+impl From<std::io::Error> for LoaderError {
     fn from(err: std::io::Error) -> Self {
         Self::IO(err)
     }
 }
 
-impl From<CodecError> for ReadError {
+impl From<CodecError> for LoaderError {
     fn from(err: CodecError) -> Self {
         Self::Codec(err)
     }
@@ -117,7 +106,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
         }
     }
 
-    fn load(&mut self) -> Result<Vec<BackupItem<H, D, MK>>, ReadError> {
+    fn load(&mut self) -> Result<Vec<BackupItem<H, D, MK>>, LoaderError> {
         let mut buf = Vec::new();
         self.backup.read_to_end(&mut buf)?;
         let input = &mut &buf[..];
@@ -131,7 +120,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
     fn verify_units(
         &self,
         units: &Vec<UncheckedSignedUnit<H, D, MK::Signature>>,
-    ) -> Result<(), IncorrectBackupError> {
+    ) -> Result<(), LoaderError> {
         let mut already_loaded_coords = HashSet::new();
 
         for unit in units {
@@ -139,7 +128,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
             let coord = full_unit.coord();
 
             if full_unit.session_id() != self.session_id {
-                return Err(IncorrectBackupError::WrongSession(
+                return Err(LoaderError::WrongSession(
                     coord,
                     self.session_id,
                     full_unit.session_id(),
@@ -152,7 +141,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
             for parent_id in parent_ids.elements() {
                 let parent = UnitCoord::new(coord.round() - 1, parent_id);
                 if !already_loaded_coords.contains(&parent) {
-                    return Err(IncorrectBackupError::InconsistentData(coord));
+                    return Err(LoaderError::InconsistentData(coord));
                 }
             }
 
@@ -168,18 +157,12 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
         }
     }
 
-    pub async fn run(
-        &mut self,
-        loaded_data: oneshot::Sender<LoadedData<H, D, MK>>,
-        starting_round: oneshot::Sender<Option<Round>>,
-        next_round_collection: oneshot::Receiver<Round>,
-    ) {
+    fn load_and_verify(&mut self) -> Option<LoadedData<H, D, MK>> {
         let items = match self.load() {
             Ok(items) => items,
             Err(e) => {
                 error!(target: LOG_TARGET, "unable to load backup data: {}", e);
-                self.on_shutdown(starting_round);
-                return;
+                return None;
             }
         };
 
@@ -191,9 +174,54 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
 
         if let Err(e) = self.verify_units(&units) {
             error!(target: LOG_TARGET, "incorrect backup data: {}", e);
-            self.on_shutdown(starting_round);
-            return;
+            return None;
         }
+
+        Some((units, alert_data))
+    }
+
+    fn verify_backup_and_collection_rounds(
+        &self,
+        next_round_backup: Round,
+        next_round_collection: Round,
+    ) -> Option<Round> {
+        if next_round_backup < next_round_collection {
+            // Our newest unit doesn't appear in the backup. This indicates a serious issue, for example
+            // a different node running with the same pair of keys. It's safer not to continue.
+            error!(
+                target: LOG_TARGET, "Backup state behind unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
+                next_round_collection,
+                next_round_backup,
+            );
+            return None;
+        };
+
+        if next_round_collection < next_round_backup {
+            // Our newest unit didn't reach any peer, but it resides in our backup. One possible reason
+            // is that our node was taken down after saving the unit, but before broadcasting it.
+            warn!(
+                target: LOG_TARGET, "Backup state ahead of than unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
+                next_round_backup,
+                next_round_collection
+            );
+        }
+
+        Some(next_round_backup)
+    }
+
+    pub async fn run(
+        &mut self,
+        loaded_data: oneshot::Sender<LoadedData<H, D, MK>>,
+        starting_round: oneshot::Sender<Option<Round>>,
+        next_round_collection: oneshot::Receiver<Round>,
+    ) {
+        let (units, alert_data) = match self.load_and_verify() {
+            Some((units, alert_data)) => (units, alert_data),
+            None => {
+                self.on_shutdown(starting_round);
+                return;
+            }
+        };
 
         let next_round_backup: Round = units
             .iter()
@@ -233,29 +261,17 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
             "Next round inferred from collection: {:?}", next_round_collection
         );
 
-        if next_round_backup < next_round_collection {
-            // Our newest unit doesn't appear in the backup. This indicates a serious issue, for example
-            // a different node running with the same pair of keys. It's safer not to continue.
-            error!(
-            target: LOG_TARGET, "Backup state behind unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
-            next_round_collection,
-            next_round_backup,
-        );
-            self.on_shutdown(starting_round);
-            return;
+        let next_round = match self
+            .verify_backup_and_collection_rounds(next_round_backup, next_round_collection)
+        {
+            Some(next_round) => next_round,
+            None => {
+                self.on_shutdown(starting_round);
+                return;
+            }
         };
 
-        if next_round_collection < next_round_backup {
-            // Our newest unit didn't reach any peer, but it resides in our backup. One possible reason
-            // is that our node was taken down after saving the unit, but before broadcasting it.
-            warn!(
-                target: LOG_TARGET, "Backup state ahead of than unit collection state. Next round inferred from: collection: {:?}, backup: {:?}",
-                next_round_backup,
-                next_round_collection
-            );
-        }
-
-        if let Err(e) = starting_round.send(Some(next_round_backup)) {
+        if let Err(e) = starting_round.send(Some(next_round)) {
             error!(target: LOG_TARGET, "Could not send starting round: {:?}", e);
         }
     }
