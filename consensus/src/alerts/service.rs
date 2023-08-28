@@ -239,7 +239,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             AlertData::MultisignedHash(multisigned) => {
                 if let Some(notification) = self
                     .multisigned_notifications
-                    .remove(&multisigned.as_signable())
+                    .remove(multisigned.as_signable())
                 {
                     self.send_notification_for_units(notification);
                 }
