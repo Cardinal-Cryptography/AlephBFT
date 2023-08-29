@@ -91,7 +91,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         {
             warn!(
                 target: LOG_TARGET,
-                "{:?} Channel with forking notifications should be open", self.node_index
+                "Channel with forking notifications should be open"
             );
             self.exiting = true;
         }
@@ -109,7 +109,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         {
             warn!(
                 target: LOG_TARGET,
-                "{:?} Channel with notifications for network should be open", self.node_index
+                "Channel with notifications for network should be open"
             );
             self.exiting = true;
         }
@@ -132,7 +132,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                     {
                         error!(
                             target: LOG_TARGET,
-                            "{:?} network alert couldn't be sent to backup", self.node_index,
+                            "network alert couldn't be sent to backup",
                         );
                     }
                 }
@@ -144,8 +144,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                         if self.messages_for_rmc.unbounded_send(message).is_err() {
                             warn!(
                                 target: LOG_TARGET,
-                                "{:?} Channel with messages for rmc should be open",
-                                self.node_index
+                                "Channel with messages for rmc should be open",
                             );
                             self.exiting = true;
                         }
@@ -180,7 +179,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         {
             error!(
                 target: LOG_TARGET,
-                "{:?} own alert couldn't be sent to backup.", self.node_index
+                "own alert couldn't be sent to backup."
             );
         }
     }
@@ -208,7 +207,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 {
                     error!(
                         target: LOG_TARGET,
-                        "{:?} multisigned hash couldn't be sent to backup.", self.node_index
+                        "multisigned hash couldn't be sent to backup."
                     );
                 }
             }
@@ -219,29 +218,29 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
     fn handle_data_from_backup(&mut self, data: AlertData<H, D, MK>) {
         match data {
             AlertData::OwnAlert(alert) => {
-                if let Some((message, recipient, hash)) =
-                    self.own_alert_responses.remove(&alert.hash())
-                {
-                    self.send_message_for_network(message, recipient);
-                    self.rmc.start_rmc(hash);
+                match self.own_alert_responses.remove(&alert.hash()) {
+                    Some((message, recipient, hash)) => {
+                        self.send_message_for_network(message, recipient);
+                        self.rmc.start_rmc(hash);
+                    },
+                    None => warn!(target: LOG_TARGET, "alert response missing from storage.")
                 }
             }
             AlertData::NetworkAlert(alert) => {
-                if let Some((maybe_notification, hash)) =
-                    self.network_alert_responses.remove(&alert.hash())
-                {
-                    self.rmc.start_rmc(hash);
-                    if let Some(notification) = maybe_notification {
-                        self.send_notification_for_units(notification);
-                    }
+                match self.network_alert_responses.remove(&alert.hash()) {
+                    Some((maybe_notification, hash)) => {
+                        self.rmc.start_rmc(hash);
+                        if let Some(notification) = maybe_notification {
+                            self.send_notification_for_units(notification);
+                        }
+                    },
+                    None => warn!(target: LOG_TARGET, "network alert response missing from storage.")
                 }
             }
             AlertData::MultisignedHash(multisigned) => {
-                if let Some(notification) = self
-                    .multisigned_notifications
-                    .remove(multisigned.as_signable())
-                {
-                    self.send_notification_for_units(notification);
+                match self.multisigned_notifications.remove(multisigned.as_signable()) {
+                    Some(notification) => self.send_notification_for_units(notification),
+                    None => warn!(target: LOG_TARGET, "multisigned response missing from storage.")
                 }
             }
         }
@@ -253,21 +252,21 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 message = self.messages_from_network.next() => match message {
                     Some(message) => self.handle_message_from_network(&mut handler, message),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} message stream closed.", self.node_index);
+                        error!(target: LOG_TARGET, "message stream closed.");
                         break;
                     }
                 },
                 alert = self.alerts_from_units.next() => match alert {
                     Some(alert) => self.handle_alert_from_runway(&mut handler, alert),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} alert stream closed.", self.node_index);
+                        error!(target: LOG_TARGET, "alert stream closed.");
                         break;
                     }
                 },
                 message = self.messages_from_rmc.next() => match message {
                     Some(message) => self.handle_message_from_rmc(message),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} RMC message stream closed.", self.node_index);
+                        error!(target: LOG_TARGET, "RMC message stream closed.");
                         break;
                     }
                 },
@@ -275,19 +274,19 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 item = self.responses_from_backup.next() => match item {
                     Some(item) => self.handle_data_from_backup(item),
                     None => {
-                        error!(target: LOG_TARGET, "{:?} backup responses stream closed.", self.node_index);
+                        error!(target: LOG_TARGET, "backup responses stream closed.");
                         break;
                     }
                 },
                 _ = terminator.get_exit().fuse() => {
-                    debug!(target: LOG_TARGET, "{:?} received exit signal", self.node_index);
+                    debug!(target: LOG_TARGET, "received exit signal.");
                     self.exiting = true;
                 },
             }
             if self.exiting {
                 debug!(
                     target: LOG_TARGET,
-                    "{:?} Alerter decided to exit.", self.node_index
+                    "Alerter decided to exit."
                 );
                 terminator.terminate_sync().await;
                 break;
