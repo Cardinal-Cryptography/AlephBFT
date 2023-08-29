@@ -177,10 +177,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             .unbounded_send(AlertData::OwnAlert(alert))
             .is_err()
         {
-            error!(
-                target: LOG_TARGET,
-                "own alert couldn't be sent to backup."
-            );
+            error!(target: LOG_TARGET, "own alert couldn't be sent to backup.");
         }
     }
 
@@ -217,15 +214,13 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     fn handle_data_from_backup(&mut self, data: AlertData<H, D, MK>) {
         match data {
-            AlertData::OwnAlert(alert) => {
-                match self.own_alert_responses.remove(&alert.hash()) {
-                    Some((message, recipient, hash)) => {
-                        self.send_message_for_network(message, recipient);
-                        self.rmc.start_rmc(hash);
-                    },
-                    None => warn!(target: LOG_TARGET, "alert response missing from storage.")
+            AlertData::OwnAlert(alert) => match self.own_alert_responses.remove(&alert.hash()) {
+                Some((message, recipient, hash)) => {
+                    self.send_message_for_network(message, recipient);
+                    self.rmc.start_rmc(hash);
                 }
-            }
+                None => warn!(target: LOG_TARGET, "alert response missing from storage."),
+            },
             AlertData::NetworkAlert(alert) => {
                 match self.network_alert_responses.remove(&alert.hash()) {
                     Some((maybe_notification, hash)) => {
@@ -233,14 +228,23 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                         if let Some(notification) = maybe_notification {
                             self.send_notification_for_units(notification);
                         }
-                    },
-                    None => warn!(target: LOG_TARGET, "network alert response missing from storage.")
+                    }
+                    None => warn!(
+                        target: LOG_TARGET,
+                        "network alert response missing from storage."
+                    ),
                 }
             }
             AlertData::MultisignedHash(multisigned) => {
-                match self.multisigned_notifications.remove(multisigned.as_signable()) {
+                match self
+                    .multisigned_notifications
+                    .remove(multisigned.as_signable())
+                {
                     Some(notification) => self.send_notification_for_units(notification),
-                    None => warn!(target: LOG_TARGET, "multisigned response missing from storage.")
+                    None => warn!(
+                        target: LOG_TARGET,
+                        "multisigned response missing from storage."
+                    ),
                 }
             }
         }
@@ -284,10 +288,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 },
             }
             if self.exiting {
-                debug!(
-                    target: LOG_TARGET,
-                    "Alerter decided to exit."
-                );
+                debug!(target: LOG_TARGET, "Alerter decided to exit.");
                 terminator.terminate_sync().await;
                 break;
             }
