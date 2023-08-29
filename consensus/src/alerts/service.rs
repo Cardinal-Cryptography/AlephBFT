@@ -8,11 +8,9 @@ use crate::{
 use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulticast};
 use futures::{channel::mpsc, FutureExt, StreamExt};
 use log::{debug, error, warn};
-use lru::LruCache;
-use std::{num::NonZeroUsize, time};
+use std::{collections::HashMap, time};
 
 const LOG_TARGET: &str = "AlephBFT-alerter";
-const LRU_CAPACITY: usize = 1024;
 
 pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     messages_for_network: Sender<(NetworkMessage<H, D, MK>, Recipient)>,
@@ -26,9 +24,9 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     data_for_backup: Sender<AlertData<H, D, MK>>,
     responses_from_backup: Receiver<AlertData<H, D, MK>>,
 
-    own_alert_responses: LruCache<H::Hash, OnOwnAlertResponse<H, D, MK>>,
-    network_alert_responses: LruCache<H::Hash, OnNetworkAlertResponse<H, D, MK>>,
-    multisigned_notifications: LruCache<H::Hash, ForkingNotification<H, D, MK::Signature>>,
+    own_alert_responses: HashMap<H::Hash, OnOwnAlertResponse<H, D, MK>>,
+    network_alert_responses: HashMap<H::Hash, OnNetworkAlertResponse<H, D, MK>>,
+    multisigned_notifications: HashMap<H::Hash, ForkingNotification<H, D, MK::Signature>>,
 
     node_index: NodeIndex,
     exiting: bool,
@@ -64,9 +62,9 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             messages_from_rmc,
             data_for_backup,
             responses_from_backup,
-            own_alert_responses: LruCache::new(NonZeroUsize::new(LRU_CAPACITY).unwrap()),
-            network_alert_responses: LruCache::new(NonZeroUsize::new(LRU_CAPACITY).unwrap()),
-            multisigned_notifications: LruCache::new(NonZeroUsize::new(LRU_CAPACITY).unwrap()),
+            own_alert_responses: HashMap::new(),
+            network_alert_responses: HashMap::new(),
+            multisigned_notifications: HashMap::new(),
             node_index: keychain.index(),
             exiting: false,
         }
@@ -126,7 +124,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             AlertMessage::ForkAlert(alert) => match handler.on_network_alert(alert.clone()) {
                 Ok(response) => {
                     let alert = alert.as_signable().clone();
-                    self.network_alert_responses.put(alert.hash(), response);
+                    self.network_alert_responses.insert(alert.hash(), response);
                     if self
                         .data_for_backup
                         .unbounded_send(AlertData::NetworkAlert(alert))
@@ -173,7 +171,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         alert: Alert<H, D, MK::Signature>,
     ) {
         let response = handler.on_own_alert(alert.clone());
-        self.own_alert_responses.put(alert.hash(), response);
+        self.own_alert_responses.insert(alert.hash(), response);
         if self
             .data_for_backup
             .unbounded_send(AlertData::OwnAlert(alert))
@@ -198,7 +196,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         match handler.alert_confirmed(multisigned.clone()) {
             Ok(notification) => {
                 self.multisigned_notifications
-                    .put(*multisigned.as_signable(), notification);
+                    .insert(*multisigned.as_signable(), notification);
                 if self
                     .data_for_backup
                     .unbounded_send(AlertData::MultisignedHash(multisigned))
@@ -216,7 +214,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     fn handle_data_from_backup(&mut self, data: AlertData<H, D, MK>) {
         match data {
-            AlertData::OwnAlert(alert) => match self.own_alert_responses.pop(&alert.hash()) {
+            AlertData::OwnAlert(alert) => match self.own_alert_responses.remove(&alert.hash()) {
                 Some((message, recipient, hash)) => {
                     self.send_message_for_network(message, recipient);
                     self.rmc.start_rmc(hash);
@@ -224,7 +222,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 None => warn!(target: LOG_TARGET, "Alert response missing from storage."),
             },
             AlertData::NetworkAlert(alert) => {
-                match self.network_alert_responses.pop(&alert.hash()) {
+                match self.network_alert_responses.remove(&alert.hash()) {
                     Some((maybe_notification, hash)) => {
                         self.rmc.start_rmc(hash);
                         if let Some(notification) = maybe_notification {
@@ -240,7 +238,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             AlertData::MultisignedHash(multisigned) => {
                 match self
                     .multisigned_notifications
-                    .pop(multisigned.as_signable())
+                    .remove(multisigned.as_signable())
                 {
                     Some(notification) => self.send_notification_for_units(notification),
                     None => warn!(
