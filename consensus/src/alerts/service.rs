@@ -9,8 +9,7 @@ use aleph_bft_rmc::{DoublingDelayScheduler, Message as RmcMessage, ReliableMulti
 use futures::{channel::mpsc, FutureExt, StreamExt};
 use log::{debug, error, warn};
 use lru::LruCache;
-use std::time;
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, time};
 
 const LOG_TARGET: &str = "AlephBFT-alerter";
 const LRU_CAPACITY: usize = 1024;
