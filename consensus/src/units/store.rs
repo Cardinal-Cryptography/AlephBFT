@@ -33,13 +33,14 @@ impl<'a> UnitStoreStatus<'a> {
     }
 
     pub fn rounds_behind(&self) -> Round {
-        self.height.saturating_sub( self.top_row.get(self.index).cloned().unwrap_or(0))
+        self.height
+            .saturating_sub(self.top_row.get(self.index).cloned().unwrap_or(0))
     }
 }
 
 impl<'a> fmt::Display for UnitStoreStatus<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "DAG size - {}; DAG height - {}",self.size ,self.height)?;
+        write!(f, "DAG size - {}; DAG height - {}", self.size, self.height)?;
         if self.first_missing_rounds.item_count() > 0 {
             write!(
                 f,

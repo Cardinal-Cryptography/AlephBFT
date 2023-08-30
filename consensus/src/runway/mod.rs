@@ -16,6 +16,7 @@ use futures::{
     pin_mut, Future, FutureExt, StreamExt,
 };
 use futures_timer::Delay;
+use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use std::{
     collections::HashSet,
@@ -179,13 +180,48 @@ fn short_report(rounds_behind: Round, missing_coords: usize) -> String {
     } else if missing_coords == 0 {
         format!("Behind by {rounds_behind} rounds")
     } else {
-        format!("Syncing - misses {missing_coords} units and is behind by {rounds_behind} rounds")
+        format!("Syncing - missing {missing_coords} units. Behind by {rounds_behind} rounds")
     }
+}
+
+fn format_missing_coords(c: &[(usize, Round)]) -> String {
+    c.iter()
+        .group_by(|(creator, _)| *creator)
+        .into_iter()
+        .map(|(creator, rounds)| {
+            // compress consecutive rounds into one interval to shorten logs
+            let mut intervals: Vec<(Round, Round)> = Vec::new();
+            for (_, round) in rounds {
+                if !intervals.is_empty() && intervals.last().unwrap().1 == round - 1 {
+                    intervals.last_mut().unwrap().1 = *round;
+                } else {
+                    intervals.push((*round, *round));
+                }
+            }
+
+            let intervals_str = intervals
+                .into_iter()
+                .map(|(begin, end)| {
+                    if begin == end {
+                        format!("{}", begin)
+                    } else {
+                        format!("[{}-{}]", begin, end)
+                    }
+                })
+                .format(" ");
+
+            format!("({creator}: {intervals_str})")
+        })
+        .join(", ")
 }
 
 impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Runway status report: {}", short_report(self.status.rounds_behind(), self.missing_coords.len()))?;
+        write!(
+            f,
+            "Runway status report: {}",
+            short_report(self.status.rounds_behind(), self.missing_coords.len())
+        )?;
         write!(f, "{}", self.status)?;
         if !self.missing_coords.is_empty() {
             let mut v_coords: Vec<(usize, Round)> = self
@@ -194,7 +230,7 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
                 .map(|uc| (uc.creator().into(), uc.round()))
                 .collect();
             v_coords.sort();
-            write!(f, "; missing coords - {:?}", v_coords)?;
+            write!(f, "; missing coords - {}", format_missing_coords(&v_coords))?;
         }
         if !self.missing_parents.is_empty() {
             write!(f, "; missing parents - {:?}", self.missing_parents)?;
@@ -1110,4 +1146,24 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     .await;
 
     debug!(target: "AlephBFT-runway", "{:?} Runway ended.", index);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::runway::format_missing_coords;
+
+    #[test]
+    pub fn formats_missing_coords() {
+        assert_eq!(format_missing_coords(&[]), "");
+        assert_eq!(format_missing_coords(&[(0, 13)]), "(0: 13)");
+        assert_eq!(format_missing_coords(&[(0, 1), (0, 2)]), "(0: [1-2])");
+        assert_eq!(
+            format_missing_coords(&[(0, 1), (0, 3), (0, 4), (0, 5), (0, 6), (0, 9)]),
+            "(0: 1 [3-6] 9)"
+        );
+        assert_eq!(
+            format_missing_coords(&[(0, 1), (1, 1), (1, 3), (3, 0)]),
+            "(0: 1), (1: 1 3), (3: 0)"
+        );
+    }
 }
