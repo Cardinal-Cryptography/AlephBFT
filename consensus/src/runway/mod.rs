@@ -174,13 +174,13 @@ impl<'a, H: Hasher> RunwayStatus<'a, H> {
 
 fn short_report(rounds_behind: Round, missing_coords: usize) -> String {
     if rounds_behind <= 2 && missing_coords == 0 {
-        "Healthy".to_string()
+        "healthy".to_string()
     } else if missing_coords == 0 {
-        format!("Behind by {rounds_behind} rounds")
+        format!("behind by {rounds_behind} rounds")
     } else if rounds_behind == 0 {
-        format!("Syncing - missing {missing_coords} unit(s)")
+        format!("syncing - missing {missing_coords} unit(s)")
     } else {
-        format!("Syncing - missing {missing_coords} unit(s) and behind by {rounds_behind} rounds")
+        format!("syncing - missing {missing_coords} unit(s) and behind by {rounds_behind} rounds")
     }
 }
 
