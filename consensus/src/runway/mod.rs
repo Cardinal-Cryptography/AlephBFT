@@ -179,8 +179,10 @@ fn short_report(rounds_behind: Round, missing_coords: usize) -> String {
         "Healthy".to_string()
     } else if missing_coords == 0 {
         format!("Behind by {rounds_behind} rounds")
+    } else if rounds_behind == 0 {
+        format!("Syncing - missing {missing_coords} unit(s)")
     } else {
-        format!("Syncing - missing {missing_coords} units. Behind by {rounds_behind} rounds")
+        format!("Syncing - missing {missing_coords} unit(s) and behind by {rounds_behind} rounds")
     }
 }
 
@@ -208,9 +210,9 @@ fn format_missing_coords(c: &[(usize, Round)]) -> String {
                         format!("[{}-{}]", begin, end)
                     }
                 })
-                .format(" ");
+                .format(",");
 
-            format!("({creator}: {intervals_str})")
+            format!("{{Creator {creator}: {intervals_str}}}")
         })
         .join(", ")
 }
@@ -222,7 +224,7 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
             "Runway status report: {}",
             short_report(self.status.rounds_behind(), self.missing_coords.len())
         )?;
-        write!(f, "{}", self.status)?;
+        write!(f, "; {}", self.status)?;
         if !self.missing_coords.is_empty() {
             let mut v_coords: Vec<(usize, Round)> = self
                 .missing_coords
@@ -1155,15 +1157,18 @@ mod tests {
     #[test]
     pub fn formats_missing_coords() {
         assert_eq!(format_missing_coords(&[]), "");
-        assert_eq!(format_missing_coords(&[(0, 13)]), "(0: 13)");
-        assert_eq!(format_missing_coords(&[(0, 1), (0, 2)]), "(0: [1-2])");
+        assert_eq!(format_missing_coords(&[(0, 13)]), "{Creator 0: 13}");
+        assert_eq!(
+            format_missing_coords(&[(0, 1), (0, 2)]),
+            "{Creator 0: [1-2]}"
+        );
         assert_eq!(
             format_missing_coords(&[(0, 1), (0, 3), (0, 4), (0, 5), (0, 6), (0, 9)]),
-            "(0: 1 [3-6] 9)"
+            "{Creator 0: 1,[3-6],9}"
         );
         assert_eq!(
             format_missing_coords(&[(0, 1), (1, 1), (1, 3), (3, 0)]),
-            "(0: 1), (1: 1 3), (3: 0)"
+            "{Creator 0: 1}, {Creator 1: 1,3}, {Creator 3: 0}"
         );
     }
 }
