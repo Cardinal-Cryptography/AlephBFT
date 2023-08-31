@@ -186,6 +186,7 @@ fn short_report(rounds_behind: Round, missing_coords: usize) -> String {
 
 fn format_missing_coords(c: &[(usize, Round)]) -> String {
     c.iter()
+        .sorted()
         .group_by(|(creator, _)| *creator)
         .into_iter()
         .map(|(creator, rounds)| {
@@ -224,12 +225,11 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
         )?;
         write!(f, "; {}", self.status)?;
         if !self.missing_coords.is_empty() {
-            let mut v_coords: Vec<(usize, Round)> = self
+            let v_coords: Vec<(usize, Round)> = self
                 .missing_coords
                 .iter()
                 .map(|uc| (uc.creator().into(), uc.round()))
                 .collect();
-            v_coords.sort();
             write!(f, "; missing coords - {}", format_missing_coords(&v_coords))?;
         }
         if !self.missing_parents.is_empty() {
@@ -1165,7 +1165,7 @@ mod tests {
             "{Creator 0: 1,[3-6],9}"
         );
         assert_eq!(
-            format_missing_coords(&[(0, 1), (1, 1), (1, 3), (3, 0)]),
+            format_missing_coords(&[(1, 3), (0, 1), (1, 1), (3, 0)]),
             "{Creator 0: 1}, {Creator 1: 1,3}, {Creator 3: 0}"
         );
     }
