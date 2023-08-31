@@ -83,7 +83,7 @@ impl<H: Hasher, D: Data, K: Keychain> UnitStore<H, D, K> {
         }
     }
 
-    pub fn get_status(&self, wrt: NodeIndex) -> UnitStoreStatus {
+    pub fn get_status_of(&self, node: NodeIndex) -> UnitStoreStatus {
         let n_nodes: NodeCount = self.is_forker.size().into();
         let gm = self
             .by_coord
@@ -104,7 +104,7 @@ impl<H: Hasher, D: Data, K: Keychain> UnitStore<H, D, K> {
                 .collect(),
         );
         UnitStoreStatus::new(
-            wrt,
+            node,
             &self.is_forker,
             self.by_coord.len(),
             self.by_coord.keys().map(|k| k.round).max().unwrap_or(0),
