@@ -204,11 +204,11 @@ fn format_missing_coords(c: &[(usize, Round)]) -> String {
                 .into_iter()
                 .map(|(begin, end)| {
                     if begin == end {
-                        format!("{}", begin)
+                        format!("{begin}")
                     } else if begin + 1 == end {
-                        format!("{}, {}", begin, end)
+                        format!("{begin}, {end}")
                     } else {
-                        format!("[{}-{}]", begin, end)
+                        format!("[{begin}-{end}]")
                     }
                 })
                 .format(", ");
