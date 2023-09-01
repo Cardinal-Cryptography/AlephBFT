@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_proper_relative_response_ordering() {
+    async fn test_proper_relative_responses_ordering() {
         let PrepareSaverResponse {
             task,
             units_for_saver,
