@@ -128,6 +128,11 @@ mod tests {
         exit_tx: oneshot::Sender<()>,
     }
 
+    enum Item {
+        Alert,
+        Unit,
+    }
+
     fn prepare_saver() -> PrepareSaverResponse<impl futures::Future> {
         let (units_for_saver, units_from_runway) = mpsc::unbounded();
         let (units_for_runway, units_from_saver) = mpsc::unbounded();
@@ -198,20 +203,29 @@ mod tests {
             })
             .collect();
 
-        let backup_save_ordering = vec![0, 1, 1, 1, 0, 0, 1, 0, 1, 0];
-        let mut ui = 0;
-        let mut ai = 0;
+        let backup_save_ordering = vec![
+            Item::Unit,
+            Item::Alert,
+            Item::Alert,
+            Item::Alert,
+            Item::Unit,
+            Item::Unit,
+            Item::Alert,
+            Item::Unit,
+            Item::Alert,
+            Item::Unit,
+        ];
+        let mut units_iter = units.iter();
+        let mut alerts_iter = alerts.iter();
+
         for i in backup_save_ordering {
-            if i == 0 {
-                units_for_saver
-                    .unbounded_send(units.get(ui).unwrap().clone())
-                    .unwrap();
-                ui += 1;
-            } else {
-                alerts_for_saver
-                    .unbounded_send(alerts.get(ai).unwrap().clone())
-                    .unwrap();
-                ai += 1;
+            match i {
+                Item::Unit => units_for_saver
+                    .unbounded_send(units_iter.next().unwrap().clone())
+                    .unwrap(),
+                Item::Alert => alerts_for_saver
+                    .unbounded_send(alerts_iter.next().unwrap().clone())
+                    .unwrap(),
             }
         }
 
