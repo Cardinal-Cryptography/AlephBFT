@@ -107,7 +107,6 @@ impl<T> DoublingDelayScheduler<T> {
         DoublingDelayScheduler::with_tasks(vec![], initial_delay)
     }
 
-    /// Choose `delta >> 0` to prevent the tasks from bunching.
     pub fn with_tasks(initial_tasks: Vec<T>, initial_delay: Duration) -> Self {
         let mut scheduler = DoublingDelayScheduler {
             initial_delay,
