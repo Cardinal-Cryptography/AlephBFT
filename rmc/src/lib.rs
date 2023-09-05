@@ -614,9 +614,10 @@ mod tests {
 
     #[tokio::test]
     async fn asking_empty_scheduler_for_next_task_blocks() {
-        let mut scheduler: DoublingDelayScheduler<u32> = DoublingDelayScheduler::new(Duration::from_millis(25));
+        let mut scheduler: DoublingDelayScheduler<u32> =
+            DoublingDelayScheduler::new(Duration::from_millis(25));
         let future = tokio::time::timeout(Duration::from_millis(30), scheduler.next_task());
         let result = future.await;
-        assert!(matches!(result, Err(_))); // elapsed
+        assert!(result.is_err()); // elapsed
     }
 }
