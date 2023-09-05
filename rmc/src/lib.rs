@@ -17,8 +17,7 @@ use std::{
     collections::{BinaryHeap, HashMap},
     fmt::Formatter,
     hash::Hash,
-    time,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// Abstraction of a task-scheduling logic
@@ -61,21 +60,21 @@ pub enum Task<H: Signable, MK: MultiKeychain> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ScheduledTask<T> {
     task: T,
-    delay: time::Duration,
+    delay: Duration,
 }
 
 impl<T> ScheduledTask<T> {
-    fn new(task: T, delay: time::Duration) -> Self {
+    fn new(task: T, delay: Duration) -> Self {
         ScheduledTask { task, delay }
     }
 }
 
 #[derive(Ord, PartialOrd, Eq, PartialEq)]
-struct IndexedInstant(time::Instant, usize);
+struct IndexedInstant(Instant, usize);
 
 impl IndexedInstant {
     fn now(i: usize) -> Self {
-        let curr_time = time::Instant::now();
+        let curr_time = Instant::now();
         IndexedInstant(curr_time, i)
     }
 }
@@ -125,7 +124,7 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
     async fn next_task(&mut self) -> Option<T> {
         let delay: futures::future::Fuse<_> = match self.scheduled_instants.peek() {
             Some(&Reverse(IndexedInstant(instant, _))) => {
-                let now = time::Instant::now();
+                let now = Instant::now();
                 if now > instant {
                     Delay::new(Duration::new(0, 0)).fuse()
                 } else {
@@ -310,7 +309,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMultica
 
 #[cfg(test)]
 mod tests {
-    use crate::{DoublingDelayScheduler, Message, ReliableMulticast, Task, TaskScheduler};
+    use crate::{DoublingDelayScheduler, Message, ReliableMulticast, TaskScheduler};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
     use futures::{
