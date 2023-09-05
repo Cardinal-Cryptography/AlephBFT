@@ -8,6 +8,7 @@ use codec::{Decode, Encode};
 use core::fmt::Debug;
 use futures::{
     channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+    future::pending,
     FutureExt, StreamExt,
 };
 use futures_timer::Delay;
@@ -140,19 +141,15 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
     }
 
     async fn next_task(&mut self) -> Option<T> {
-        let delay: futures::future::Fuse<_> = match self.scheduled_instants.peek() {
+        match self.scheduled_instants.peek() {
             Some(&Reverse(IndexedInstant(instant, _))) => {
                 let now = Instant::now();
-                if now > instant {
-                    Delay::new(Duration::new(0, 0)).fuse()
-                } else {
-                    Delay::new(instant - now).fuse()
+                if now < instant {
+                    Delay::new(instant - now).await;
                 }
             }
-            None => futures::future::Fuse::terminated(),
-        };
-
-        delay.await;
+            None => pending().await,
+        }
 
         let Reverse(IndexedInstant(instant, i)) = self
             .scheduled_instants
