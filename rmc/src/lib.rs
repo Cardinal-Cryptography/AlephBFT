@@ -17,6 +17,7 @@ use std::{
     collections::{BinaryHeap, HashMap},
     fmt::Formatter,
     hash::Hash,
+    ops::{Add, Mul},
     time::{Duration, Instant},
 };
 
@@ -77,6 +78,10 @@ impl IndexedInstant {
         let curr_time = Instant::now();
         IndexedInstant(curr_time, i)
     }
+
+    fn at(instant: Instant, i: usize) -> Self {
+        IndexedInstant(instant, i)
+    }
 }
 
 /// A basic task scheduler scheduling tasks with an exponential slowdown
@@ -108,6 +113,20 @@ impl<T> DoublingDelayScheduler<T> {
             scheduled_instants: BinaryHeap::new(),
             scheduled_tasks: Vec::new(),
         }
+    }
+
+    /// Choose `delta >> 0` to prevent task bunching.
+    pub fn new_with_tasks(initial_tasks: Vec<T>, initial_delay: Duration, delta: Duration) -> Self {
+        let mut scheduler = DoublingDelayScheduler::new(initial_delay);
+        for task in initial_tasks {
+            let i = scheduler.scheduled_tasks.len();
+            let instant = Instant::now().add(delta.mul(i as u32));
+            let indexed_instant = IndexedInstant::at(instant, i);
+            scheduler.scheduled_instants.push(Reverse(indexed_instant));
+            let scheduled_task = ScheduledTask::new(task, initial_delay);
+            scheduler.scheduled_tasks.push(scheduled_task);
+        }
+        scheduler
     }
 }
 
@@ -319,7 +338,12 @@ mod tests {
         FutureExt, StreamExt,
     };
     use rand::Rng;
-    use std::{collections::HashMap, pin::Pin, time::Duration};
+    use std::{
+        collections::HashMap,
+        ops::{Add, Mul},
+        pin::Pin,
+        time::{Duration, Instant},
+    };
 
     type TestMessage = Message<Signable, Signature, PartialMultisignature>;
 
@@ -559,5 +583,37 @@ mod tests {
         assert_eq!(task, Some(1));
         let task = scheduler.next_task().await;
         assert_eq!(task, Some(2));
+    }
+
+    #[tokio::test]
+    async fn scheduler_properly_handler_initial_bunch_of_tasks() {
+        let tasks = (0..5).collect();
+        let before = Instant::now();
+        let mut scheduler = DoublingDelayScheduler::new_with_tasks(
+            tasks,
+            Duration::from_millis(100),
+            Duration::from_millis(20),
+        );
+
+        for i in 0..5 {
+            let task = scheduler.next_task().await;
+            assert_eq!(task, Some(i));
+            let now = Instant::now();
+            // 0, 20, 40, 60, 80
+            assert!(now - before >= Duration::from_millis(20).mul(i));
+        }
+
+        for i in 0..5 {
+            let task = scheduler.next_task().await;
+            assert_eq!(task, Some(i));
+            let now = Instant::now();
+            // 100, 120, 140, 160, 180
+            assert!(
+                now - before
+                    >= Duration::from_millis(20)
+                        .mul(i)
+                        .add(Duration::from_millis(100))
+            );
+        }
     }
 }
