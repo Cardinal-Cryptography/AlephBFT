@@ -117,8 +117,7 @@ impl<T> DoublingDelayScheduler<T> {
             return scheduler;
         }
         let delta = initial_delay.div((initial_tasks.len()) as u32); // safety: len is non-zero
-        for task in initial_tasks {
-            let i = scheduler.scheduled_tasks.len();
+        for (i, task) in initial_tasks.into_iter().enumerate() {
             scheduler.add_task_after(task, delta.mul(i as u32));
         }
         scheduler
@@ -555,10 +554,10 @@ mod tests {
 
     #[tokio::test]
     async fn scheduler_yields_proper_order_of_tasks() {
-        let mut scheduler = DoublingDelayScheduler::new(Duration::from_millis(100));
+        let mut scheduler = DoublingDelayScheduler::new(Duration::from_millis(25));
 
         scheduler.add_task(0);
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(2)).await;
         scheduler.add_task(1);
 
         let task = scheduler.next_task().await;
@@ -570,7 +569,7 @@ mod tests {
         let task = scheduler.next_task().await;
         assert_eq!(task, Some(1));
 
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::time::sleep(Duration::from_millis(2)).await;
         scheduler.add_task(2);
 
         let task = scheduler.next_task().await;
@@ -589,27 +588,35 @@ mod tests {
     async fn scheduler_properly_handles_initial_bunch_of_tasks() {
         let tasks = (0..5).collect();
         let before = Instant::now();
-        let mut scheduler = DoublingDelayScheduler::with_tasks(tasks, Duration::from_millis(100));
+        let mut scheduler = DoublingDelayScheduler::with_tasks(tasks, Duration::from_millis(25));
 
         for i in 0..5 {
             let task = scheduler.next_task().await;
             assert_eq!(task, Some(i));
             let now = Instant::now();
-            // 0, 20, 40, 60, 80
-            assert!(now - before >= Duration::from_millis(20).mul(i));
+            // 0, 5, 10, 15, 20
+            assert!(now - before >= Duration::from_millis(5).mul(i));
         }
 
         for i in 0..5 {
             let task = scheduler.next_task().await;
             assert_eq!(task, Some(i));
             let now = Instant::now();
-            // 100, 120, 140, 160, 180
+            // 25, 30, 35, 40, 45
             assert!(
                 now - before
-                    >= Duration::from_millis(20)
+                    >= Duration::from_millis(5)
                         .mul(i)
-                        .add(Duration::from_millis(100))
+                        .add(Duration::from_millis(25))
             );
         }
+    }
+
+    #[tokio::test]
+    async fn asking_empty_scheduler_for_next_task_blocks() {
+        let mut scheduler: DoublingDelayScheduler<u32> = DoublingDelayScheduler::new(Duration::from_millis(25));
+        let future = tokio::time::timeout(Duration::from_millis(30), scheduler.next_task());
+        let result = future.await;
+        assert!(matches!(result, Err(_))); // elapsed
     }
 }
