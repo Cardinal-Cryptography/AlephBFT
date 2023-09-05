@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scheduler_properly_handler_initial_bunch_of_tasks() {
+    async fn scheduler_properly_handles_initial_bunch_of_tasks() {
         let tasks = (0..5).collect();
         let before = Instant::now();
         let mut scheduler = DoublingDelayScheduler::new_with_tasks(
