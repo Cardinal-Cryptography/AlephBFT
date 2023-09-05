@@ -17,7 +17,7 @@ use std::{
     collections::{BinaryHeap, HashMap},
     fmt::Formatter,
     hash::Hash,
-    ops::{Add, Mul},
+    ops::{Add, Div, Mul},
     time::{Duration, Instant},
 };
 
@@ -74,11 +74,6 @@ impl<T> ScheduledTask<T> {
 struct IndexedInstant(Instant, usize);
 
 impl IndexedInstant {
-    fn now(i: usize) -> Self {
-        let curr_time = Instant::now();
-        IndexedInstant(curr_time, i)
-    }
-
     fn at(instant: Instant, i: usize) -> Self {
         IndexedInstant(instant, i)
     }
@@ -108,36 +103,41 @@ impl<T> Debug for DoublingDelayScheduler<T> {
 
 impl<T> DoublingDelayScheduler<T> {
     pub fn new(initial_delay: Duration) -> Self {
-        DoublingDelayScheduler {
+        DoublingDelayScheduler::with_tasks(vec![], initial_delay)
+    }
+
+    /// Choose `delta >> 0` to prevent the tasks from bunching.
+    pub fn with_tasks(initial_tasks: Vec<T>, initial_delay: Duration) -> Self {
+        let mut scheduler = DoublingDelayScheduler {
             initial_delay,
             scheduled_instants: BinaryHeap::new(),
             scheduled_tasks: Vec::new(),
+        };
+        if initial_tasks.is_empty() {
+            return scheduler;
         }
-    }
-
-    /// Choose `delta >> 0` to prevent task bunching.
-    pub fn new_with_tasks(initial_tasks: Vec<T>, initial_delay: Duration, delta: Duration) -> Self {
-        let mut scheduler = DoublingDelayScheduler::new(initial_delay);
+        let delta = initial_delay.div((initial_tasks.len()) as u32); // safety: len is non-zero
         for task in initial_tasks {
             let i = scheduler.scheduled_tasks.len();
-            let instant = Instant::now().add(delta.mul(i as u32));
-            let indexed_instant = IndexedInstant::at(instant, i);
-            scheduler.scheduled_instants.push(Reverse(indexed_instant));
-            let scheduled_task = ScheduledTask::new(task, initial_delay);
-            scheduler.scheduled_tasks.push(scheduled_task);
+            scheduler.add_task_after(task, delta.mul(i as u32));
         }
         scheduler
+    }
+
+    fn add_task_after(&mut self, task: T, delta: Duration) {
+        let i = self.scheduled_tasks.len();
+        let instant = Instant::now().add(delta);
+        let indexed_instant = IndexedInstant::at(instant, i);
+        self.scheduled_instants.push(Reverse(indexed_instant));
+        let scheduled_task = ScheduledTask::new(task, self.initial_delay);
+        self.scheduled_tasks.push(scheduled_task);
     }
 }
 
 #[async_trait]
 impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
     fn add_task(&mut self, task: T) {
-        let i = self.scheduled_tasks.len();
-        let indexed_instant = IndexedInstant::now(i);
-        self.scheduled_instants.push(Reverse(indexed_instant));
-        let scheduled_task = ScheduledTask::new(task, self.initial_delay);
-        self.scheduled_tasks.push(scheduled_task);
+        self.add_task_after(task, Duration::ZERO);
     }
 
     async fn next_task(&mut self) -> Option<T> {
@@ -589,11 +589,7 @@ mod tests {
     async fn scheduler_properly_handles_initial_bunch_of_tasks() {
         let tasks = (0..5).collect();
         let before = Instant::now();
-        let mut scheduler = DoublingDelayScheduler::new_with_tasks(
-            tasks,
-            Duration::from_millis(100),
-            Duration::from_millis(20),
-        );
+        let mut scheduler = DoublingDelayScheduler::with_tasks(tasks, Duration::from_millis(100));
 
         for i in 0..5 {
             let task = scheduler.next_task().await;
