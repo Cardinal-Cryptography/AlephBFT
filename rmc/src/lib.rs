@@ -148,7 +148,6 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
             .push(Reverse(IndexedInstant(instant + scheduled_task.delay, i)));
 
         scheduled_task.delay *= 2;
-
         Some(task)
     }
 }
@@ -311,7 +310,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMultica
 
 #[cfg(test)]
 mod tests {
-    use crate::{DoublingDelayScheduler, Message, ReliableMulticast};
+    use crate::{DoublingDelayScheduler, Message, ReliableMulticast, Task, TaskScheduler};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
     use futures::{
@@ -529,5 +528,37 @@ mod tests {
             assert_eq!(multisignatures.len(), 1);
             assert_eq!(multisignatures[0].as_signable(), &hash);
         }
+    }
+
+    #[tokio::test]
+    async fn scheduler_yields_proper_order_of_tasks() {
+        let mut scheduler = DoublingDelayScheduler::new(Duration::from_millis(100));
+
+        scheduler.add_task(0);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        scheduler.add_task(1);
+
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(0));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(1));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(0));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(1));
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        scheduler.add_task(2);
+
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(2));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(2));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(0));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(1));
+        let task = scheduler.next_task().await;
+        assert_eq!(task, Some(2));
     }
 }
