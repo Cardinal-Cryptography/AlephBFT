@@ -1,198 +1,158 @@
-//! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
-mod handler;
-mod service;
-
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
     Signable, Signature, Signed, UncheckedSigned,
 };
-use async_trait::async_trait;
-use codec::{Decode, Encode};
 use core::fmt::Debug;
-use futures::{
-    channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-    future::pending,
-    FutureExt, StreamExt,
-};
-use futures_timer::Delay;
-use log::{debug, warn};
+use futures::{channel::mpsc::{UnboundedReceiver, UnboundedSender}, FutureExt, StreamExt};
+use log::{debug, error, warn};
 use std::{
-    cmp::Reverse,
-    collections::{BinaryHeap, HashMap},
-    fmt::Formatter,
     hash::Hash,
-    ops::{Add, Div, Mul},
-    time::{Duration, Instant},
 };
+use crate::{Message, Task, TaskScheduler};
+use crate::handler::Handler;
 
-/// Abstraction of a task-scheduling logic
+
+/// Reliable Multicast Service
 ///
-/// Because the network can be faulty, the task of sending a message must be performed multiple
-/// times to ensure that the recipient receives each message.
-/// The trait [`TaskScheduler<T>`] describes in what intervals some abstract task of type `T`
-/// should be performed.
-#[async_trait::async_trait]
-pub trait TaskScheduler<T>: Send + Sync {
-    fn add_task(&mut self, task: T);
-    async fn next_task(&mut self) -> Option<T>;
+/// The instance of [`Service<H, MK>`] reliably broadcasts hashes of type `H`,
+/// and when a hash is successfully broadcasted, it passes multisigned hash `Multisigned<H, MK>`
+/// through `multisigned_hashes_tx`
+///
+/// A node with an instance of [`Service<H, MK>`] can initiate broadcasting
+/// a message `msg: H` by passing it to `hashes_for_rmc` receiver. As a result,
+/// the node signs `msg` and starts broadcasting the signed message via the network.
+/// When sufficintly many nodes initiate broadcasts with the same message `msg`
+/// and a node collects enough signatures to form a complete multisignature under the message,
+/// the multisigned message is yielded by the instance of [`Service`].
+/// The multisigned messages are passed through `multisigned_hashes_tx`.
+///
+/// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/reliable_broadcast.html
+/// for a high-level description of this protocol and how it is used for fork alerts.
+pub struct Service<H: Signable + Hash, MK: MultiKeychain> {
+    keychain: MK,
+    network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
+    network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
+    multisigned_hashes_tx: UnboundedSender<Multisigned<H, MK>>,
+    hashes_for_rmc: UnboundedReceiver<H>,
+    scheduler: Box<dyn TaskScheduler<Task<H, MK>>>,
 }
 
-/// An RMC message consisting of either a signed (indexed) hash, or a multisigned hash.
-#[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, Hash)]
-pub enum Message<H: Signable, S: Signature, M: PartialMultisignature> {
-    StartRmc(UncheckedSigned<Indexed<H>, S>),
-    SignedHash(UncheckedSigned<Indexed<H>, S>),
-    MultisignedHash(UncheckedSigned<H, M>),
-}
-
-impl<H: Signable, S: Signature, M: PartialMultisignature> Message<H, S, M> {
-    pub fn hash(&self) -> &H {
-        match self {
-            Message::StartRmc(unchecked) => unchecked.as_signable_strip_index(),
-            Message::SignedHash(unchecked) => unchecked.as_signable_strip_index(),
-            Message::MultisignedHash(unchecked) => unchecked.as_signable(),
+impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> {
+    pub fn new(
+        keychain: MK,
+        network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
+        network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
+        multisigned_hashes_tx: UnboundedSender<Multisigned<H, MK>>,
+        hashes_for_rmc: UnboundedReceiver<H>,
+        scheduler: Box<dyn TaskScheduler<Task<H, MK>>>,
+    ) -> Service<H, MK> {
+        Self {
+            keychain,
+            network_tx,
+            network_rx,
+            multisigned_hashes_tx,
+            hashes_for_rmc,
+            scheduler,
         }
     }
-    pub fn is_complete(&self) -> bool {
-        matches!(self, Message::MultisignedHash(_))
-    }
-}
 
-/// A task of brodcasting a message.
-#[derive(Clone)]
-pub enum Task<H: Signable, MK: MultiKeychain> {
-    BroadcastMessage(Message<H, MK::Signature, MK::PartialMultisignature>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ScheduledTask<T> {
-    task: T,
-    delay: Duration,
-}
-
-impl<T> ScheduledTask<T> {
-    fn new(task: T, delay: Duration) -> Self {
-        ScheduledTask { task, delay }
-    }
-}
-
-#[derive(Ord, PartialOrd, Eq, PartialEq)]
-struct IndexedInstant(Instant, usize);
-
-impl IndexedInstant {
-    fn at(instant: Instant, i: usize) -> Self {
-        IndexedInstant(instant, i)
-    }
-}
-
-/// A basic task scheduler scheduling tasks with an exponential slowdown
-///
-/// A scheduler parameterized by a duration `initial_delay`. When a task is added to the scheduler
-/// it is first scheduled immediately, then it is scheduled indefinitely, where the first delay is
-/// `initial_delay`, and each following delay for that task is two times longer than the previous
-/// one.
-pub struct DoublingDelayScheduler<T> {
-    initial_delay: Duration,
-    scheduled_instants: BinaryHeap<Reverse<IndexedInstant>>,
-    scheduled_tasks: Vec<ScheduledTask<T>>,
-}
-
-impl<T> Debug for DoublingDelayScheduler<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("DoublingDelayScheduler")
-            .field("initial delay", &self.initial_delay)
-            .field("scheduled instant count", &self.scheduled_instants.len())
-            .field("scheduled task count", &self.scheduled_tasks.len())
-            .finish()
-    }
-}
-
-impl<T> DoublingDelayScheduler<T> {
-    pub fn new(initial_delay: Duration) -> Self {
-        DoublingDelayScheduler::with_tasks(vec![], initial_delay)
+    fn do_task(&self, task: Task<H, MK>) {
+        let Task::BroadcastMessage(message) = task;
+        self.network_tx
+            .unbounded_send(message)
+            .expect("Sending message should succeed");
     }
 
-    pub fn with_tasks(initial_tasks: Vec<T>, initial_delay: Duration) -> Self {
-        let mut scheduler = DoublingDelayScheduler {
-            initial_delay,
-            scheduled_instants: BinaryHeap::new(),
-            scheduled_tasks: Vec::new(),
+    fn announce_multisigned(&mut self, multisigned: Multisigned<H, MK>, task: Task<H, MK>) {
+        if self.multisigned_hashes_tx.unbounded_send(multisigned).is_err() {
+            error!(target: "AlephBFT-rmc", "multisigned hashes receiver closed.");
+            return;
+        }
+        self.scheduler.add_task(task);
+    }
+
+    fn handle_signed_hash(&mut self, unchecked: UncheckedSigned<Indexed<H>, MK::Signature>, hash: H, handler: &mut Handler<H, MK>) {
+        let signed_hash = match unchecked.check(&self.keychain) {
+            Ok(signed_hash) => signed_hash,
+            Err(_) => {
+                warn!(target: "AlephBFT-rmc", "Received a hash with a bad signature");
+                return;
+            }
         };
-        if initial_tasks.is_empty() {
-            return scheduler;
+        if let Some((multisigned, task)) = handler.on_signature(signed_hash, hash) {
+            self.announce_multisigned(multisigned, task);
         }
-        let delta = initial_delay.div((initial_tasks.len()) as u32); // safety: len is non-zero
-        for (i, task) in initial_tasks.into_iter().enumerate() {
-            scheduler.add_task_after(task, delta.mul(i as u32));
+    }
+
+    fn handle_message(&mut self, message: Message<H, MK::Signature, MK::PartialMultisignature>, mut handler: &mut Handler<H, MK>) {
+        if handler.is_rmc_complete(&message) {
+            return;
         }
-        scheduler
+        let hash = message.hash().clone();
+        match message {
+            Message::StartRmc(unchecked) => {
+
+            }
+            Message::SignedHash(unchecked) => {
+                self.handle_signed_hash(unchecked, hash, &mut handler);
+            }
+            Message::MultisignedHash(unchecked) => match unchecked.check_multi(&self.keychain) {
+                Ok(multisigned) => {
+                    let task = handler.on_complete_multisignature(&multisigned);
+                    self.announce_multisigned(multisigned, task);
+                }
+                Err(_) => {
+                    warn!(target: "AlephBFT-rmc", "Received a hash with a bad multisignature");
+                }
+            },
+        }
     }
 
-    fn add_task_after(&mut self, task: T, delta: Duration) {
-        let i = self.scheduled_tasks.len();
-        let instant = Instant::now().add(delta);
-        let indexed_instant = IndexedInstant::at(instant, i);
-        self.scheduled_instants.push(Reverse(indexed_instant));
-        let scheduled_task = ScheduledTask::new(task, self.initial_delay);
-        self.scheduled_tasks.push(scheduled_task);
-    }
-}
-
-#[async_trait]
-impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
-    fn add_task(&mut self, task: T) {
-        self.add_task_after(task, Duration::ZERO);
+    /// Initiate a new instance of RMC for `hash`.
+    pub fn handle_start_rmc(&mut self, hash: H, handler: &mut Handler<H, MK>) {
+        debug!(target: "AlephBFT-rmc", "starting rmc for {:?}", hash);
+        let signed_hash = Signed::sign_with_index(hash, &self.keychain);
+        let message = Message::SignedHash(signed_hash.into_unchecked());
+        self.handle_message(message.clone(), handler);
+        if !handler.is_rmc_complete(&message) {
+            let task = Task::BroadcastMessage(message);
+            self.scheduler.add_task(task);
+        }
     }
 
-    async fn next_task(&mut self) -> Option<T> {
-        match self.scheduled_instants.peek() {
-            Some(&Reverse(IndexedInstant(instant, _))) => {
-                let now = Instant::now();
-                if now < instant {
-                    Delay::new(instant - now).await;
+    pub async fn run(&mut self, mut handler: Handler<H, MK>) -> Multisigned<H, MK> {
+        loop {
+            futures::select! {
+                hash = self.hashes_for_rmc.next() => {
+                    if let Some(hash) = hash {
+                        self.handle_start_rmc(hash, &mut handler);
+                    } else {
+                        debug!(target: "AlephBFT-rmc", "rmc hashes stream closed.");
+                    }
+                }
+                incoming_message = self.network_rx.next() => {
+                    if let Some(incoming_message) = incoming_message {
+                        self.handle_message(incoming_message, &mut handler);
+                    } else {
+                        debug!(target: "AlephBFT-rmc", "Network connection closed");
+                    }
+                }
+                task = self.scheduler.next_task().fuse() => {
+                    if let Some(task) = task {
+                        self.do_task(task);
+                    } else {
+                        debug!(target: "AlephBFT-rmc", "Tasks ended");
+                    }
                 }
             }
-            None => pending().await,
         }
-
-        let Reverse(IndexedInstant(instant, i)) = self
-            .scheduled_instants
-            .pop()
-            .expect("By the logic of the function, there is an instant available");
-        let scheduled_task = &mut self.scheduled_tasks[i];
-
-        let task = scheduled_task.task.clone();
-        self.scheduled_instants
-            .push(Reverse(IndexedInstant(instant + scheduled_task.delay, i)));
-
-        scheduled_task.delay *= 2;
-        Some(task)
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 #[cfg(test)]
 mod tests {
-    use crate::{DoublingDelayScheduler, Message, ReliableMulticast, TaskScheduler};
+    use crate::{DoublingDelayScheduler, Message, handler::Handler, TaskScheduler};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
     use futures::{
@@ -208,6 +168,7 @@ mod tests {
         pin::Pin,
         time::{Duration, Instant},
     };
+    use crate::service::Service;
 
     type TestMessage = Message<Signable, Signature, PartialMultisignature>;
 
@@ -266,7 +227,8 @@ mod tests {
 
     struct TestData {
         network: TestNetwork,
-        rmcs: Vec<ReliableMulticast<Signable, Keychain>>,
+        services: Vec<Service<Signable, Keychain>>,
+        handlers: Vec<Handler<Signable, Keychain>>,
     }
 
     impl TestData {
@@ -276,17 +238,20 @@ mod tests {
             message_filter: impl FnMut(NodeIndex, TestMessage) -> bool + 'static,
         ) -> Self {
             let (network, channels) = TestNetwork::new(node_count, message_filter);
-            let mut rmcs = Vec::new();
+            let mut handlers = Vec::new();
+            let mut services = Vec::new();
             for (i, (rx, tx)) in channels.into_iter().enumerate() {
-                let rmc = ReliableMulticast::new(
-                    rx,
-                    tx,
+                let (handler, _) = Handler::new(
                     keychains[i],
-                    DoublingDelayScheduler::new(Duration::from_millis(1)),
+                    vec![],
+                    vec![],
                 );
-                rmcs.push(rmc);
+                handlers.push(handler);
+                let service = Service::new(
+                    keychains[i], tx, rx,
+                )
             }
-            TestData { network, rmcs }
+            TestData { network, handlers }
         }
 
         async fn collect_multisigned_hashes(
@@ -298,7 +263,7 @@ mod tests {
             for _ in 0..count {
                 // covert each RMC into a future returning an optional unchecked multisigned hash.
                 let rmc_futures: Vec<BoxFuture<Multisigned<Signable, Keychain>>> = self
-                    .rmcs
+                    .handlers
                     .iter_mut()
                     .map(|rmc| rmc.next_multisigned_hash().boxed())
                     .collect();
@@ -416,73 +381,5 @@ mod tests {
             assert_eq!(multisignatures[0].as_signable(), &hash);
         }
     }
-
-    #[tokio::test]
-    async fn scheduler_yields_proper_order_of_tasks() {
-        let mut scheduler = DoublingDelayScheduler::new(Duration::from_millis(25));
-
-        scheduler.add_task(0);
-        tokio::time::sleep(Duration::from_millis(2)).await;
-        scheduler.add_task(1);
-
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(0));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(1));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(0));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(1));
-
-        tokio::time::sleep(Duration::from_millis(2)).await;
-        scheduler.add_task(2);
-
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(2));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(2));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(0));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(1));
-        let task = scheduler.next_task().await;
-        assert_eq!(task, Some(2));
-    }
-
-    #[tokio::test]
-    async fn scheduler_properly_handles_initial_bunch_of_tasks() {
-        let tasks = (0..5).collect();
-        let before = Instant::now();
-        let mut scheduler = DoublingDelayScheduler::with_tasks(tasks, Duration::from_millis(25));
-
-        for i in 0..5 {
-            let task = scheduler.next_task().await;
-            assert_eq!(task, Some(i));
-            let now = Instant::now();
-            // 0, 5, 10, 15, 20
-            assert!(now - before >= Duration::from_millis(5).mul(i));
-        }
-
-        for i in 0..5 {
-            let task = scheduler.next_task().await;
-            assert_eq!(task, Some(i));
-            let now = Instant::now();
-            // 25, 30, 35, 40, 45
-            assert!(
-                now - before
-                    >= Duration::from_millis(5)
-                        .mul(i)
-                        .add(Duration::from_millis(25))
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn asking_empty_scheduler_for_next_task_blocks() {
-        let mut scheduler: DoublingDelayScheduler<u32> =
-            DoublingDelayScheduler::new(Duration::from_millis(25));
-        let future = tokio::time::timeout(Duration::from_millis(30), scheduler.next_task());
-        let result = future.await;
-        assert!(result.is_err()); // elapsed
-    }
 }
+
