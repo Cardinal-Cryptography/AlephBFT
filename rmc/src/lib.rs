@@ -1,7 +1,4 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
-mod handler;
-mod service;
-
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
     Signable, Signature, Signed, UncheckedSigned,
@@ -40,7 +37,6 @@ pub trait TaskScheduler<T>: Send + Sync {
 /// An RMC message consisting of either a signed (indexed) hash, or a multisigned hash.
 #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, Hash)]
 pub enum Message<H: Signable, S: Signature, M: PartialMultisignature> {
-    StartRmc(UncheckedSigned<Indexed<H>, S>),
     SignedHash(UncheckedSigned<Indexed<H>, S>),
     MultisignedHash(UncheckedSigned<H, M>),
 }
@@ -48,7 +44,6 @@ pub enum Message<H: Signable, S: Signature, M: PartialMultisignature> {
 impl<H: Signable, S: Signature, M: PartialMultisignature> Message<H, S, M> {
     pub fn hash(&self) -> &H {
         match self {
-            Message::StartRmc(unchecked) => unchecked.as_signable_strip_index(),
             Message::SignedHash(unchecked) => unchecked.as_signable_strip_index(),
             Message::MultisignedHash(unchecked) => unchecked.as_signable(),
         }
@@ -170,25 +165,161 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
     }
 }
 
+/// Reliable Multicast Box
+///
+/// The instance of [`ReliableMulticast<H, MK>`] reliably broadcasts hashes of type `H`,
+/// and when a hash is successfully broadcasted, the multisigned hash `Multisigned<H, MK>`
+/// is asynchronously returned.
+///
+/// A node with an instance of [`ReliableMulticast<H, MK>`] can initiate broadcasting
+/// a message `msg: H` by calling the [`ReliableMulticast::start_rmc`] method. As a result,
+/// the node signs `msg` and starts broadcasting the signed message via the network.
+/// When sufficintly many nodes call [`ReliableMulticast::start_rmc`] with the same message `msg`
+/// and a node collects enough signatures to form a complete multisignature under the message,
+/// the multisigned message is yielded by the instance of [`ReliableMulticast`].
+/// The multisigned messages can be polled by calling [`ReliableMulticast::next_multisigned_hash`].
+///
+/// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/reliable_broadcast.html
+/// for a high-level description of this protocol and how it is used for fork alerts.
+pub struct ReliableMulticast<H: Signable + Hash, MK: MultiKeychain> {
+    hash_states: HashMap<H, PartiallyMultisigned<H, MK>>,
+    network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
+    network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
+    keychain: MK,
+    scheduler: Box<dyn TaskScheduler<Task<H, MK>>>,
+    multisigned_hashes_tx: UnboundedSender<Multisigned<H, MK>>,
+    multisigned_hashes_rx: UnboundedReceiver<Multisigned<H, MK>>,
+}
 
+impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> ReliableMulticast<H, MK> {
+    pub fn new(
+        network_rx: UnboundedReceiver<Message<H, MK::Signature, MK::PartialMultisignature>>,
+        network_tx: UnboundedSender<Message<H, MK::Signature, MK::PartialMultisignature>>,
+        keychain: MK,
+        scheduler: impl TaskScheduler<Task<H, MK>> + 'static,
+    ) -> Self {
+        let (multisigned_hashes_tx, multisigned_hashes_rx) = unbounded();
+        ReliableMulticast {
+            hash_states: HashMap::new(),
+            network_rx,
+            network_tx,
+            keychain,
+            scheduler: Box::new(scheduler),
+            multisigned_hashes_tx,
+            multisigned_hashes_rx,
+        }
+    }
 
+    /// Initiate a new instance of RMC for `hash`.
+    pub fn start_rmc(&mut self, hash: H) {
+        debug!(target: "AlephBFT-rmc", "starting rmc for {:?}", hash);
+        let signed_hash = Signed::sign_with_index(hash, &self.keychain);
 
+        let message = Message::SignedHash(signed_hash.into_unchecked());
+        self.handle_message(message.clone());
+        let task = Task::BroadcastMessage(message);
+        self.do_task(task.clone());
+        self.scheduler.add_task(task);
+    }
 
+    fn on_complete_multisignature(&mut self, multisigned: Multisigned<H, MK>) {
+        let hash = multisigned.as_signable().clone();
+        self.hash_states.insert(
+            hash,
+            PartiallyMultisigned::Complete {
+                multisigned: multisigned.clone(),
+            },
+        );
+        self.multisigned_hashes_tx
+            .unbounded_send(multisigned.clone())
+            .expect("We own the the rx, so this can't fail");
 
+        let task = Task::BroadcastMessage(Message::MultisignedHash(multisigned.into_unchecked()));
+        self.do_task(task.clone());
+        self.scheduler.add_task(task);
+    }
 
+    fn handle_message(&mut self, message: Message<H, MK::Signature, MK::PartialMultisignature>) {
+        let hash = message.hash().clone();
+        if let Some(PartiallyMultisigned::Complete { .. }) = self.hash_states.get(&hash) {
+            return;
+        }
+        match message {
+            Message::MultisignedHash(unchecked) => match unchecked.check_multi(&self.keychain) {
+                Ok(multisigned) => {
+                    self.on_complete_multisignature(multisigned);
+                }
+                Err(_) => {
+                    warn!(target: "AlephBFT-rmc", "Received a hash with a bad multisignature");
+                }
+            },
+            Message::SignedHash(unchecked) => {
+                let signed_hash = match unchecked.check(&self.keychain) {
+                    Ok(signed_hash) => signed_hash,
+                    Err(_) => {
+                        warn!(target: "AlephBFT-rmc", "Received a hash with a bad signature");
+                        return;
+                    }
+                };
 
+                let new_state = match self.hash_states.remove(&hash) {
+                    None => signed_hash.into_partially_multisigned(&self.keychain),
+                    Some(partial) => partial.add_signature(signed_hash, &self.keychain),
+                };
+                match new_state {
+                    PartiallyMultisigned::Complete { multisigned } => {
+                        self.on_complete_multisignature(multisigned)
+                    }
+                    incomplete => {
+                        self.hash_states.insert(hash.clone(), incomplete);
+                    }
+                }
+            }
+        }
+    }
 
+    fn do_task(&self, task: Task<H, MK>) {
+        let Task::BroadcastMessage(message) = task;
+        self.network_tx
+            .unbounded_send(message)
+            .expect("Sending message should succeed");
+    }
 
+    /// Fetches final multisignature.
+    pub fn get_multisigned(&self, hash: &H) -> Option<Multisigned<H, MK>> {
+        match self.hash_states.get(hash)? {
+            PartiallyMultisigned::Complete { multisigned } => Some(multisigned.clone()),
+            _ => None,
+        }
+    }
 
+    /// Perform underlying tasks until the multisignature for the hash of this instance is collected.
+    pub async fn next_multisigned_hash(&mut self) -> Multisigned<H, MK> {
+        loop {
+            futures::select! {
+                multisigned_hash = self.multisigned_hashes_rx.next() => {
+                    return multisigned_hash.expect("We own the tx, so it is not closed");
+                }
 
+                incoming_message = self.network_rx.next() => {
+                    if let Some(incoming_message) = incoming_message {
+                        self.handle_message(incoming_message);
+                    } else {
+                        debug!(target: "AlephBFT-rmc", "Network connection closed");
+                    }
+                }
 
-
-
-
-
-
-
-
+                task = self.scheduler.next_task().fuse() => {
+                    if let Some(task) = task {
+                        self.do_task(task);
+                    } else {
+                        debug!(target: "AlephBFT-rmc", "Tasks ended");
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
