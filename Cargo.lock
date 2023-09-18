@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "aleph-bft"
-version = "0.28.1"
+version = "0.28.2"
 dependencies = [
  "aleph-bft-mock",
  "aleph-bft-rmc",
@@ -80,7 +80,7 @@ dependencies = [
  "aleph-bft",
  "aleph-bft-mock",
  "async-trait",
- "clap 4.4.2",
+ "clap 4.4.3",
  "env_logger",
  "futures",
  "futures-timer",
@@ -101,7 +101,7 @@ dependencies = [
  "aleph-bft-mock",
  "aleph-bft-types",
  "async-trait",
- "clap 4.4.2",
+ "clap 4.4.3",
  "env_logger",
  "futures",
  "log",
@@ -384,9 +384,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.4.2"
+version = "4.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a13b88d2c62ff462f88e4a121f17a82c1af05693a2f192b5c38d14de73c19f6"
+checksum = "84ed82781cea27b43c9b106a979fe450a13a31aab0500595fb3fc06616de08e6"
 dependencies = [
  "clap_builder",
  "clap_derive",
