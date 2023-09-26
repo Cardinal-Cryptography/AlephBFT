@@ -152,6 +152,7 @@ version = "0.10.0"
 dependencies = [
  "aleph-bft-crypto",
  "aleph-bft-mock",
+ "aleph-bft-types",
  "async-trait",
  "futures",
  "futures-timer",

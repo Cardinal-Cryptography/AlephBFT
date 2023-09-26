@@ -5,8 +5,8 @@ use crate::{
     Signed, UncheckedSigned,
 };
 use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
-use aleph_bft_rmc::Message as RmcMessage;
 use aleph_bft_types::Terminator;
+use aleph_bft_rmc::{DoublingDelayScheduler, RmcHash as RmcMessage};
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, StreamExt,
@@ -214,9 +214,29 @@ impl TestCase {
         let (messages_for_alerter, messages_from_network) = mpsc::unbounded();
         let (notifications_for_units, mut notifications_from_alerter) = mpsc::unbounded();
         let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
-        let (exit_alerter, exit) = oneshot::channel();
+        let (exit_alerter_tx, exit_alerter_rx) = oneshot::channel();
+        let (exit_rmc_tx, exit_rmc_rx) = oneshot::channel();
         // mock communication with backup - data sent to backup immediately returns to alerter
         let (data_for_backup, responses_from_backup) = mpsc::unbounded();
+
+        let (rmc_messages_for_rmc, rmc_messages_from_alerter) = mpsc::unbounded();
+        let (rmc_messages_for_alerter, rmc_messages_from_rmc) = mpsc::unbounded();
+        let rmc_handler = aleph_bft_rmc::Handler::new(keychain);
+        let rmc_scheduler = DoublingDelayScheduler::new(Duration::from_millis(500));
+        let rmc_service = aleph_bft_rmc::Service::new(
+            rmc_messages_from_alerter,
+            rmc_messages_for_alerter,
+            rmc_scheduler,
+        );
+
+        tokio::spawn(async move {
+            rmc_service
+                .run(
+                    rmc_handler,
+                    Terminator::create_root(exit_rmc_rx, "AlephBFT-rmc"),
+                )
+                .await;
+        });
 
         let mut alerter_service = Service::new(
             keychain,
@@ -224,6 +244,8 @@ impl TestCase {
             messages_from_network,
             notifications_for_units,
             alerts_from_units,
+            rmc_messages_for_rmc,
+            rmc_messages_from_rmc,
             data_for_backup,
             responses_from_backup,
         );
@@ -233,7 +255,7 @@ impl TestCase {
             alerter_service
                 .run(
                     alerter_handler,
-                    Terminator::create_root(exit, "AlephBFT-alerter"),
+                    Terminator::create_root(exit_alerter_rx, "AlephBFT-alerter"),
                 )
                 .await
         });
@@ -266,7 +288,10 @@ impl TestCase {
                 trace!("Remaining items in this segment: {:?}.", segment.expected);
             }
         }
-        exit_alerter
+        exit_alerter_tx
+            .send(())
+            .expect("exit channel shouldn't be closed");
+        exit_rmc_tx
             .send(())
             .expect("exit channel shouldn't be closed");
     }
@@ -312,7 +337,7 @@ async fn reacts_to_correctly_incoming_alert() {
         .incoming_message(AlertMessage::ForkAlert(signed_alert))
         .outgoing_notification(ForkingNotification::Forker(fork_proof));
     test_case.outgoing_message(
-        AlertMessage::RmcMessage(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
+        AlertMessage::RmcHash(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
         Recipient::Everyone,
     );
     test_case.run(own_index).await;
@@ -336,7 +361,7 @@ async fn notifies_about_finished_alert() {
     for i in 1..n_members.0 - 1 {
         let node_id = NodeIndex(i);
         let signed_alert_hash = test_case.indexed_unchecked_signed(alert_hash, node_id);
-        test_case.incoming_message(AlertMessage::RmcMessage(
+        test_case.incoming_message(AlertMessage::RmcHash(
             node_id,
             RmcMessage::SignedHash(signed_alert_hash),
         ));
@@ -357,7 +382,7 @@ async fn asks_about_unknown_alert() {
     let alert_hash = Signable::hash(&alert);
     let signed_alert_hash = test_case.indexed_unchecked_signed(alert_hash, alerter_index);
     test_case
-        .incoming_message(AlertMessage::RmcMessage(
+        .incoming_message(AlertMessage::RmcHash(
             alerter_index,
             RmcMessage::SignedHash(signed_alert_hash),
         ))
@@ -386,7 +411,7 @@ async fn ignores_wrong_alert() {
         .unexpected_notification(ForkingNotification::Forker(wrong_fork_proof));
     for i in 1..n_members.0 {
         test_case.unexpected_message(
-            AlertMessage::RmcMessage(
+            AlertMessage::RmcHash(
                 own_index,
                 RmcMessage::SignedHash(signed_wrong_alert_hash.clone()),
             ),
@@ -421,7 +446,7 @@ async fn responds_to_alert_queries() {
             Recipient::Everyone,
         )
         .outgoing_message(
-            AlertMessage::RmcMessage(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
+            AlertMessage::RmcHash(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
             Recipient::Everyone,
         )
         .wait()
@@ -458,7 +483,7 @@ async fn notifies_only_about_multisigned_alert() {
         test_case.indexed_unchecked_signed(empty_alert_hash, double_committer);
     test_case
         .incoming_message(AlertMessage::ForkAlert(signed_empty_alert))
-        .incoming_message(AlertMessage::RmcMessage(
+        .incoming_message(AlertMessage::RmcHash(
             double_committer,
             RmcMessage::SignedHash(signed_empty_alert_hash),
         ))
@@ -496,7 +521,7 @@ async fn notifies_only_about_multisigned_alert() {
         multisigned_nonempty_alert_hash.into_unchecked();
     test_case
         .incoming_message(AlertMessage::ForkAlert(signed_nonempty_alert))
-        .incoming_message(AlertMessage::RmcMessage(
+        .incoming_message(AlertMessage::RmcHash(
             other_honest_node,
             RmcMessage::MultisignedHash(unchecked_multisigned_nonempty_alert_hash),
         ))

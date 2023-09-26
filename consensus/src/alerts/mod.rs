@@ -2,7 +2,7 @@ use crate::{
     units::UncheckedSignedUnit, Data, Hasher, Index, Keychain, MultiKeychain, Multisigned,
     NodeIndex, PartialMultisignature, Signable, Signature, UncheckedSigned,
 };
-use aleph_bft_rmc::Message as RmcMessage;
+use aleph_bft_rmc::RmcHash;
 use codec::{Decode, Encode};
 use derivative::Derivative;
 use parking_lot::RwLock;
@@ -106,7 +106,7 @@ pub enum AlertMessage<H: Hasher, D: Data, S: Signature, MS: PartialMultisignatur
     /// Alert regarding forks, signed by the person claiming misconduct.
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>),
     /// An internal RMC message, together with the id of the sender.
-    RmcMessage(NodeIndex, RmcMessage<H::Hash, S, MS>),
+    RmcHash(NodeIndex, RmcHash<H::Hash, S, MS>),
     /// A request by a node for a fork alert identified by the given hash.
     AlertRequest(NodeIndex, H::Hash),
 }
@@ -115,7 +115,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H
     pub fn included_data(&self) -> Vec<D> {
         match self {
             Self::ForkAlert(unchecked_alert) => unchecked_alert.as_signable().included_data(),
-            Self::RmcMessage(_, _) => Vec::new(),
+            Self::RmcHash(_, _) => Vec::new(),
             Self::AlertRequest(_, _) => Vec::new(),
         }
     }
