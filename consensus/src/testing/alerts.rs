@@ -5,8 +5,8 @@ use crate::{
     Signed, UncheckedSigned,
 };
 use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
-use aleph_bft_types::Terminator;
 use aleph_bft_rmc::{DoublingDelayScheduler, RmcHash as RmcMessage};
+use aleph_bft_types::Terminator;
 use futures::{
     channel::{mpsc, oneshot},
     FutureExt, StreamExt,

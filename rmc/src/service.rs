@@ -7,6 +7,7 @@ pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
     Signable, Signature, Signed, UncheckedSigned,
 };
+use aleph_bft_types::Terminator;
 use core::fmt::Debug;
 use futures::{
     channel::mpsc::{UnboundedReceiver, UnboundedSender},
@@ -14,7 +15,6 @@ use futures::{
 };
 use log::{debug, error, warn};
 use std::hash::Hash;
-use aleph_bft_types::Terminator;
 
 /// Reliable Multicast Box
 ///
@@ -140,231 +140,286 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{DoublingDelayScheduler, RmcHash, ReliableMulticast, TaskScheduler, RmcOutgoingMessage, RmcIncomingMessage};
-//     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
-//     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
-//     use futures::{
-//         channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-//         future::{self, BoxFuture},
-//         stream::{self, Stream},
-//         FutureExt, StreamExt,
-//     };
-//     use rand::Rng;
-//     use std::{
-//         collections::HashMap,
-//         ops::{Add, Mul},
-//         pin::Pin,
-//         time::{Duration, Instant},
-//     };
-//     use crate::handler::Handler;
-//     use crate::scheduler::DoublingDelayScheduler;
-//     use crate::service::Service;
-//
-//     struct TestNetwork {
-//         outgoing_rx: Pin<Box<dyn Stream<Item = RmcIncomingMessage<Signable, Signature, PartialMultisignature>>>>,
-//         incoming_txs: Vec<UnboundedSender<RmcOutgoingMessage<Signable, Keychain>>>,
-//         message_filter: Box<dyn FnMut(NodeIndex, RmcIncomingMessage<Signable, Signature, PartialMultisignature>) -> bool>,
-//     }
-//
-//     type ReceiversSenders = Vec<(UnboundedReceiver<RmcOutgoingMessage<Signable, Keychain>>, UnboundedSender<RmcIncomingMessage<Signable, Signature, PartialMultisignature>>)>;
-//     impl TestNetwork {
-//         fn new(
-//             node_count: NodeCount,
-//             message_filter: impl FnMut(NodeIndex, RmcIncomingMessage<Signable, Signature, PartialMultisignature>) -> bool + 'static,
-//         ) -> (Self, ReceiversSenders) {
-//             let all_nodes: Vec<_> = (0..node_count.0).map(NodeIndex).collect();
-//             let (incomng_txs, incoming_rxs): (Vec<_>, Vec<_>) =
-//                 all_nodes.iter().map(|_| unbounded()).unzip();
-//             let (outgoing_txs, outgoing_rxs): (Vec<_>, Vec<_>) = {
-//                 all_nodes
-//                     .iter()
-//                     .map(|_| {
-//                         let (tx, rx) = unbounded();
-//                         (tx, rx)
-//                     })
-//                     .unzip()
-//             };
-//             let network = TestNetwork {
-//                 outgoing_rx: Box::pin(stream::select_all(outgoing_rxs)),
-//                 incoming_txs: incomng_txs,
-//                 message_filter: Box::new(message_filter),
-//             };
-//
-//             let channels = incoming_rxs.into_iter().zip(outgoing_txs).collect();
-//             (network, channels)
-//         }
-//
-//         fn broadcast_message(&mut self, msg: RmcOutgoingMessage<Signable, Keychain>) {
-//             for tx in &mut self.incoming_txs {
-//                 tx.unbounded_send(msg.clone())
-//                     .expect("Channel should be open");
-//             }
-//         }
-//
-//         async fn run(&mut self) {
-//             while let Some(message) = self.outgoing_rx.next().await {
-//                 for (i, tx) in self.incoming_txs.iter().enumerate() {
-//                     if (self.message_filter)(NodeIndex(i), message.clone()) {
-//                         tx.unbounded_send(message.clone())
-//                             .expect("Channel should be open");
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//
-//     struct TestData {
-//         network: TestNetwork,
-//         services: Vec<Service<Signable, Keychain>>,
-//         handlers: Vec<Handler<Signable, Keychain>>,
-//     }
-//
-//     impl TestData {
-//         fn new(
-//             node_count: NodeCount,
-//             keychains: &[Keychain],
-//             message_filter: impl FnMut(NodeIndex, TestMessage) -> bool + 'static,
-//         ) -> Self {
-//             let (network, channels) = TestNetwork::new(node_count, message_filter);
-//             let mut handlers = vec![];
-//             let mut services = vec![];
-//
-//             for (i, (rx, tx)) in channels.into_iter().enumerate() {
-//                 let handler = Handler::new(keychains[i]);
-//                 handlers.push(handler);
-//                 let service = Service::new(keychains[i], rx, tx, DoublingDelayScheduler::new(Duration::from_millis(1)));
-//                 services.push(service);
-//             }
-//             TestData { network, rmcs }
-//         }
-//
-//         async fn collect_multisigned_hashes(
-//             mut self,
-//             count: usize,
-//         ) -> HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>> {
-//             let mut hashes = HashMap::new();
-//
-//             for _ in 0..count {
-//                 // covert each RMC into a future returning an optional unchecked multisigned hash.
-//                 let rmc_futures: Vec<BoxFuture<Multisigned<Signable, Keychain>>> = self
-//                     .rmcs
-//                     .iter_mut()
-//                     .map(|rmc| rmc.next_multisigned_hash().boxed())
-//                     .collect();
-//                 tokio::select! {
-//                     (unchecked, i, _) = future::select_all(rmc_futures) => {
-//                         hashes.entry(i.into()).or_insert_with(Vec::new).push(unchecked);
-//                     }
-//                     _ = self.network.run() => {
-//                         panic!("network ended unexpectedly");
-//                     }
-//                 }
-//             }
-//             hashes
-//         }
-//     }
-//
-//     /// Create 10 honest nodes and let each of them start rmc for the same hash.
-//     #[tokio::test]
-//     async fn simple_scenario() {
-//         let node_count = NodeCount(10);
-//         let keychains = Keychain::new_vec(node_count);
-//         let mut data = TestData::new(node_count, &keychains, |_, _| true);
-//
-//         let hash: Signable = "56".into();
-//         for i in 0..node_count.0 {
-//             data.rmcs[i].start_rmc(hash.clone());
-//         }
-//
-//         let hashes = data.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-//
-//     /// Each message is delivered with 20% probability
-//     #[tokio::test]
-//     async fn faulty_network() {
-//         let node_count = NodeCount(10);
-//         let keychains = Keychain::new_vec(node_count);
-//         let mut rng = rand::thread_rng();
-//         let mut data = TestData::new(node_count, &keychains, move |_, _| rng.gen_range(0..5) == 0);
-//
-//         let hash: Signable = "56".into();
-//         for i in 0..node_count.0 {
-//             data.rmcs[i].start_rmc(hash.clone());
-//         }
-//
-//         let hashes = data.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-//
-//     /// Only 7 nodes start rmc and one of the nodes which didn't start rmc
-//     /// is delivered only messages with complete multisignatures
-//     #[tokio::test]
-//     async fn node_hearing_only_multisignatures() {
-//         let node_count = NodeCount(10);
-//         let keychains = Keychain::new_vec(node_count);
-//         let mut data = TestData::new(node_count, &keychains, move |node_ix, message| {
-//             !matches!((node_ix.0, message), (0, RmcHash::SignedHash(_)))
-//         });
-//
-//         let threshold = (2 * node_count.0 + 1) / 3;
-//         let hash: Signable = "56".into();
-//         for i in 0..threshold {
-//             data.rmcs[i].start_rmc(hash.clone());
-//         }
-//
-//         let hashes = data.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-//
-//     /// 7 honest nodes and 3 dishonest nodes which emit bad signatures and multisignatures
-//     #[tokio::test]
-//     async fn bad_signatures_and_multisignatures_are_ignored() {
-//         let node_count = NodeCount(10);
-//         let keychains = Keychain::new_vec(node_count);
-//         let mut data = TestData::new(node_count, &keychains, |_, _| true);
-//
-//         let bad_hash: Signable = "65".into();
-//         let bad_keychain: BadSigning<Keychain> = Keychain::new(node_count, 0.into()).into();
-//         let bad_msg = TestMessage::SignedHash(
-//             Signed::sign_with_index(bad_hash.clone(), &bad_keychain).into(),
-//         );
-//         data.network.broadcast_message(bad_msg);
-//         let bad_msg = TestMessage::MultisignedHash(
-//             Signed::sign_with_index(bad_hash.clone(), &bad_keychain)
-//                 .into_partially_multisigned(&bad_keychain)
-//                 .into_unchecked(),
-//         );
-//         data.network.broadcast_message(bad_msg);
-//
-//         let hash: Signable = "56".into();
-//         for i in 0..node_count.0 {
-//             data.rmcs[i].start_rmc(hash.clone());
-//         }
-//
-//         let hashes = data.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::{
+        DoublingDelayScheduler, Handler, RmcHash, RmcIncomingMessage, RmcOutgoingMessage, Service,
+    };
+    use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
+    use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
+    use aleph_bft_types::Terminator;
+    use futures::{
+        channel::{
+            mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+            oneshot,
+        },
+        future::{self},
+        StreamExt,
+    };
+    use rand::Rng;
+    use std::{collections::HashMap, time::Duration};
+
+    type TestIncomingMessage = RmcIncomingMessage<Signable, Signature, PartialMultisignature>;
+    type TestOutgoingMessage = RmcOutgoingMessage<Signable, Keychain>;
+
+    struct TestNetwork {
+        outgoing_rxs: Vec<UnboundedReceiver<TestOutgoingMessage>>,
+        incoming_txs: Vec<UnboundedSender<TestIncomingMessage>>,
+        message_filter: Box<dyn FnMut(NodeIndex, TestIncomingMessage) -> bool>,
+        multisigned_txs: Vec<UnboundedSender<Multisigned<Signable, Keychain>>>,
+    }
+
+    type ReceiversSenders = Vec<(
+        UnboundedReceiver<TestIncomingMessage>,
+        UnboundedSender<TestOutgoingMessage>,
+    )>;
+    impl TestNetwork {
+        fn new(
+            node_count: NodeCount,
+            message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
+        ) -> (
+            Self,
+            Vec<UnboundedReceiver<TestIncomingMessage>>,
+            Vec<UnboundedSender<TestOutgoingMessage>>,
+            Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
+        ) {
+            let (incoming_txs, incoming_rxs): (Vec<_>, Vec<_>) = (0..node_count.0)
+                .map(|_| unbounded::<TestIncomingMessage>())
+                .unzip();
+            let (outgoing_txs, outgoing_rxs): (Vec<_>, Vec<_>) = (0..node_count.0)
+                .map(|_| unbounded::<TestOutgoingMessage>())
+                .unzip();
+            let (multisigned_txs, multisigned_rxs) = (0..node_count.0).map(|_| unbounded()).unzip();
+            (
+                TestNetwork {
+                    outgoing_rxs,
+                    incoming_txs,
+                    message_filter: Box::new(message_filter),
+                    multisigned_txs,
+                },
+                incoming_rxs,
+                outgoing_txs,
+                multisigned_rxs,
+            )
+        }
+
+        fn send_message(&mut self, node: NodeIndex, msg: TestIncomingMessage) {
+            self.incoming_txs[node.0]
+                .unbounded_send(msg)
+                .expect("channel should be open");
+        }
+
+        fn broadcast_message(&mut self, msg: TestIncomingMessage) {
+            for i in 0..self.incoming_txs.len() {
+                self.send_message(NodeIndex(i), msg.clone());
+            }
+        }
+
+        async fn run(&mut self) {
+            while let (Some(message), i, _) =
+                future::select_all(self.outgoing_rxs.iter_mut().map(|rx| rx.next())).await
+            {
+                match message {
+                    RmcOutgoingMessage::NewMultisigned(multisigned) => {
+                        self.multisigned_txs[i]
+                            .unbounded_send(multisigned)
+                            .expect("channel should be open");
+                    }
+                    RmcOutgoingMessage::RmcHash(hash) => {
+                        for (i, tx) in self.incoming_txs.iter().enumerate() {
+                            if (self.message_filter)(
+                                NodeIndex(i),
+                                TestIncomingMessage::RmcHash(hash.clone()),
+                            ) {
+                                tx.unbounded_send(TestIncomingMessage::RmcHash(hash.clone()))
+                                    .expect("channel should be open");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    struct TestEnvironment {
+        network: TestNetwork,
+        rmc_handlers: Vec<Handler<Signable, Keychain>>,
+        rmc_services: Vec<Service<Signable, Keychain>>,
+        multisigned_rxs: Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
+    }
+
+    impl TestEnvironment {
+        fn new(
+            node_count: NodeCount,
+            message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
+        ) -> Self {
+            let (network, rmc_inputs, rmc_outputs, multisigned_rxs) =
+                TestNetwork::new(node_count, message_filter);
+            let node_count = NodeCount(rmc_inputs.len());
+            let mut rmc_handlers = vec![];
+            let mut rmc_services = vec![];
+            let mut rmc_inputs = rmc_inputs.into_iter();
+            let mut rmc_outputs = rmc_outputs.into_iter();
+            for i in 0..node_count.0 {
+                rmc_handlers.push(Handler::new(Keychain::new(node_count, NodeIndex(i))));
+                rmc_services.push(Service::new(
+                    rmc_inputs.next().expect("there should be enough rxs"),
+                    rmc_outputs.next().expect("there should be enough txs"),
+                    DoublingDelayScheduler::new(Duration::from_millis(1)),
+                ));
+            }
+            TestEnvironment {
+                network,
+                rmc_handlers,
+                rmc_services,
+                multisigned_rxs,
+            }
+        }
+
+        fn start_rmc(&mut self, node: NodeIndex, hash: Signable) {
+            self.network
+                .broadcast_message(RmcIncomingMessage::StartRmc(hash));
+        }
+
+        async fn collect_multisigned_hashes(
+            mut self,
+            count: usize,
+        ) -> HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>> {
+            let node_count = NodeCount(self.rmc_services.len());
+            let (exit_tx, exit_rx) = oneshot::channel();
+            let mut terminator = Terminator::create_root(exit_rx, "root");
+
+            let mut hashes = HashMap::new();
+            let mut handlers = self.rmc_handlers.into_iter();
+            let mut services = self.rmc_services.into_iter();
+            let mut handles = vec![];
+
+            for i in 0..node_count.0 {
+                let rmc_terminator = terminator.add_offspring_connection("rmc");
+                let handler = handlers.next().expect("there should be enough handlers");
+                let service = services.next().expect("there should be enough services");
+                handles.push(tokio::spawn(async move {
+                    service.run(handler, rmc_terminator).await;
+                }));
+            }
+
+            for _ in 0..count {
+                if let (Some(unchecked), i, _) =
+                    future::select_all(self.multisigned_rxs.iter_mut().map(|rx| rx.next())).await
+                {
+                    hashes
+                        .entry(i.into())
+                        .or_insert_with(Vec::new)
+                        .push(unchecked);
+                }
+            }
+
+            exit_tx.send(());
+            terminator.terminate_sync().await;
+            hashes
+        }
+    }
+
+    /// Create 10 honest nodes and let each of them start rmc for the same hash.
+    #[tokio::test]
+    async fn simple_scenario() {
+        let node_count = NodeCount(10);
+        let mut environment = TestEnvironment::new(node_count, |_, _| true);
+        let hash: Signable = "56".into();
+        for i in 0..node_count.0 {
+            environment.start_rmc(NodeIndex(i), hash.clone());
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+
+    /// Each message is delivered with 20% probability
+    #[tokio::test]
+    async fn faulty_network() {
+        let node_count = NodeCount(10);
+        let keychains = Keychain::new_vec(node_count);
+        let mut rng = rand::thread_rng();
+        let mut environment =
+            TestEnvironment::new(node_count, move |_, _| rng.gen_range(0..5) == 0);
+
+        let hash: Signable = "56".into();
+        for i in 0..node_count.0 {
+            environment.start_rmc(NodeIndex(i), hash.clone());
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+
+    /// Only 7 nodes start rmc and one of the nodes which didn't start rmc
+    /// is delivered only messages with complete multisignatures
+    #[tokio::test]
+    async fn node_hearing_only_multisignatures() {
+        let node_count = NodeCount(10);
+        let mut environment = TestEnvironment::new(node_count, move |node_ix, message| {
+            !matches!(
+                (node_ix.0, message),
+                (0, TestIncomingMessage::RmcHash(RmcHash::SignedHash(_)))
+            )
+        });
+
+        let threshold = (2 * node_count.0 + 1) / 3;
+        let hash: Signable = "56".into();
+        for i in 0..threshold {
+            environment.start_rmc(NodeIndex(i), hash.clone());
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+
+    /// 7 honest nodes and 3 dishonest nodes which emit bad signatures and multisignatures
+    #[tokio::test]
+    async fn bad_signatures_and_multisignatures_are_ignored() {
+        let node_count = NodeCount(10);
+        let keychains = Keychain::new_vec(node_count);
+        let mut environment = TestEnvironment::new(node_count, |_, _| true);
+
+        let bad_hash: Signable = "65".into();
+        let bad_keychain: BadSigning<Keychain> = Keychain::new(node_count, 0.into()).into();
+        let bad_msg = TestIncomingMessage::RmcHash(RmcHash::SignedHash(
+            Signed::sign_with_index(bad_hash.clone(), &bad_keychain).into(),
+        ));
+        environment.network.broadcast_message(bad_msg);
+        let bad_msg = TestIncomingMessage::RmcHash(RmcHash::MultisignedHash(
+            Signed::sign_with_index(bad_hash.clone(), &bad_keychain)
+                .into_partially_multisigned(&bad_keychain)
+                .into_unchecked(),
+        ));
+        environment.network.broadcast_message(bad_msg);
+
+        let hash: Signable = "56".into();
+        for i in 0..node_count.0 {
+            environment.start_rmc(NodeIndex(i), hash.clone());
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+}

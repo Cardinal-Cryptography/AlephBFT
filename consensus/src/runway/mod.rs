@@ -10,8 +10,8 @@ use crate::{
     NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Signature, Signed, SpawnHandle,
     UncheckedSigned,
 };
-use aleph_bft_types::{handle_task_termination, Recipient, Terminator};
 use aleph_bft_rmc::DoublingDelayScheduler;
+use aleph_bft_types::{handle_task_termination, Recipient, Terminator};
 use futures::{
     channel::{mpsc, oneshot},
     pin_mut, Future, FutureExt, StreamExt,

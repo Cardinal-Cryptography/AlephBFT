@@ -5,8 +5,8 @@ use crate::{
     },
     Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Recipient, Sender,
 };
-use aleph_bft_types::Terminator;
 use aleph_bft_rmc::{RmcHash, RmcIncomingMessage, RmcOutgoingMessage};
+use aleph_bft_types::Terminator;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, warn};
 use std::collections::HashMap;
