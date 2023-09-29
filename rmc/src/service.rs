@@ -114,7 +114,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
             .expect("Sending message should succeed");
     }
 
-    /// Perform underlying tasks until the multisignature for the hash of this instance is collected.
+    /// Run the rmc service.
     pub async fn run(mut self, mut handler: Handler<H, MK>, mut terminator: Terminator) {
         loop {
             futures::select! {
@@ -169,20 +169,18 @@ mod tests {
         multisigned_txs: Vec<UnboundedSender<Multisigned<Signable, Keychain>>>,
     }
 
-    type ReceiversSenders = Vec<(
-        UnboundedReceiver<TestIncomingMessage>,
-        UnboundedSender<TestOutgoingMessage>,
-    )>;
+    type NewTestNetworkResult = (
+        TestNetwork,
+        Vec<UnboundedReceiver<TestIncomingMessage>>,
+        Vec<UnboundedSender<TestOutgoingMessage>>,
+        Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
+    );
+
     impl TestNetwork {
         fn new(
             node_count: NodeCount,
             message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
-        ) -> (
-            Self,
-            Vec<UnboundedReceiver<TestIncomingMessage>>,
-            Vec<UnboundedSender<TestOutgoingMessage>>,
-            Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
-        ) {
+        ) -> NewTestNetworkResult {
             let (incoming_txs, incoming_rxs): (Vec<_>, Vec<_>) = (0..node_count.0)
                 .map(|_| unbounded::<TestIncomingMessage>())
                 .unzip();
@@ -278,7 +276,7 @@ mod tests {
 
         fn start_rmc(&mut self, node: NodeIndex, hash: Signable) {
             self.network
-                .broadcast_message(RmcIncomingMessage::StartRmc(hash));
+                .send_message(node, RmcIncomingMessage::StartRmc(hash));
         }
 
         async fn collect_multisigned_hashes(
@@ -294,7 +292,7 @@ mod tests {
             let mut services = self.rmc_services.into_iter();
             let mut handles = vec![];
 
-            for i in 0..node_count.0 {
+            for _ in 0..node_count.0 {
                 let rmc_terminator = terminator.add_offspring_connection("rmc");
                 let handler = handlers.next().expect("there should be enough handlers");
                 let service = services.next().expect("there should be enough services");
@@ -304,17 +302,19 @@ mod tests {
             }
 
             for _ in 0..count {
-                if let (Some(unchecked), i, _) =
-                    future::select_all(self.multisigned_rxs.iter_mut().map(|rx| rx.next())).await
-                {
-                    hashes
-                        .entry(i.into())
-                        .or_insert_with(Vec::new)
-                        .push(unchecked);
+                tokio::select! {
+                    (unchecked, i, _) = future::select_all(self.multisigned_rxs.iter_mut().map(|rx| rx.next())) => {
+                        if let Some(unchecked) = unchecked {
+                            hashes.entry(i.into()).or_insert_with(Vec::new).push(unchecked);
+                        }
+                    }
+                    _ = self.network.run() => {
+                        panic!("network ended unexpectedly");
+                    }
                 }
             }
 
-            exit_tx.send(());
+            let _ = exit_tx.send(());
             terminator.terminate_sync().await;
             hashes
         }
@@ -343,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn faulty_network() {
         let node_count = NodeCount(10);
-        let keychains = Keychain::new_vec(node_count);
+        let _keychains = Keychain::new_vec(node_count);
         let mut rng = rand::thread_rng();
         let mut environment =
             TestEnvironment::new(node_count, move |_, _| rng.gen_range(0..5) == 0);
@@ -393,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn bad_signatures_and_multisignatures_are_ignored() {
         let node_count = NodeCount(10);
-        let keychains = Keychain::new_vec(node_count);
+        let _keychains = Keychain::new_vec(node_count);
         let mut environment = TestEnvironment::new(node_count, |_, _| true);
 
         let bad_hash: Signable = "65".into();
