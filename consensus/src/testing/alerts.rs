@@ -240,14 +240,16 @@ impl TestCase {
 
         let mut alerter_service = Service::new(
             keychain,
-            messages_for_network,
-            messages_from_network,
-            notifications_for_units,
-            alerts_from_units,
-            rmc_messages_for_rmc,
-            rmc_messages_from_rmc,
-            data_for_backup,
-            responses_from_backup,
+            crate::alerts::IO {
+                messages_for_network,
+                messages_from_network,
+                notifications_for_units,
+                alerts_from_units,
+                messages_for_rmc: rmc_messages_for_rmc,
+                messages_from_rmc: rmc_messages_from_rmc,
+                data_for_backup,
+                responses_from_backup,
+            },
         );
         let alerter_handler = Handler::new(keychain, 0);
 

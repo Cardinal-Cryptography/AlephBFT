@@ -32,20 +32,30 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     exiting: bool,
 }
 
+pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
+    pub messages_for_network: Sender<(NetworkMessage<H, D, MK>, Recipient)>,
+    pub messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
+    pub notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
+    pub alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
+    pub messages_for_rmc:
+        Sender<RmcIncomingMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    pub messages_from_rmc: Receiver<RmcOutgoingMessage<H::Hash, MK>>,
+    pub data_for_backup: Sender<AlertData<H, D, MK>>,
+    pub responses_from_backup: Receiver<AlertData<H, D, MK>>,
+}
+
 impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
-    pub fn new(
-        keychain: MK,
-        messages_for_network: Sender<(NetworkMessage<H, D, MK>, Recipient)>,
-        messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
-        notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
-        alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-        messages_for_rmc: Sender<
-            RmcIncomingMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
-        >,
-        messages_from_rmc: Receiver<RmcOutgoingMessage<H::Hash, MK>>,
-        data_for_backup: Sender<AlertData<H, D, MK>>,
-        responses_from_backup: Receiver<AlertData<H, D, MK>>,
-    ) -> Service<H, D, MK> {
+    pub fn new(keychain: MK, io: IO<H, D, MK>) -> Service<H, D, MK> {
+        let IO {
+            messages_for_network,
+            messages_from_network,
+            notifications_for_units,
+            alerts_from_units,
+            messages_for_rmc,
+            messages_from_rmc,
+            data_for_backup,
+            responses_from_backup,
+        } = io;
         Service {
             messages_for_network,
             messages_from_network,

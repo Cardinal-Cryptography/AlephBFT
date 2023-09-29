@@ -997,14 +997,16 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let mut alerter_service = crate::alerts::Service::new(
         alerter_keychain.clone(),
-        alert_messages_for_network,
-        alert_messages_from_network,
-        alert_notifications_for_units,
-        alerts_from_units,
-        rmc_messages_for_rmc,
-        rmc_messages_from_rmc,
-        alert_data_for_saver,
-        alert_data_from_saver,
+        crate::alerts::IO {
+            messages_for_network: alert_messages_for_network,
+            messages_from_network: alert_messages_from_network,
+            notifications_for_units: alert_notifications_for_units,
+            alerts_from_units,
+            messages_for_rmc: rmc_messages_for_rmc,
+            messages_from_rmc: rmc_messages_from_rmc,
+            data_for_backup: alert_data_for_saver,
+            responses_from_backup: alert_data_from_saver,
+        },
     );
     let alerter_handler = crate::alerts::Handler::new(alerter_keychain, config.session_id());
 
