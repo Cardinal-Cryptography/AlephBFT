@@ -84,7 +84,8 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
     }
 
     /// Update the internal state with the finished multisigned hash. If the hash is incorrectly
-    /// signed then [`Error::BadMultisignature`] is returned. Otherwise `multisigned` is returned.
+    /// signed then [`Error::BadMultisignature`] is returned. Otherwise `multisigned` is returned,
+    /// unless the multisignature got completed earlier.
     pub fn on_multisigned_hash(
         &mut self,
         unchecked: &UncheckedSigned<H, MK::PartialMultisignature>,

@@ -46,9 +46,3 @@ pub enum RmcOutgoingMessage<H: Signable, MK: MultiKeychain> {
     NewMultisigned(Multisigned<H, MK>),
     RmcHash(RmcHash<H, MK::Signature, MK::PartialMultisignature>),
 }
-
-/// A task of brodcasting a message.
-#[derive(Clone)]
-pub enum Task<H: Signable, MK: MultiKeychain> {
-    BroadcastMessage(RmcHash<H, MK::Signature, MK::PartialMultisignature>),
-}

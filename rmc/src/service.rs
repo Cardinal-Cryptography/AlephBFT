@@ -1,7 +1,6 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 use crate::{
     handler::Handler, scheduler::TaskScheduler, RmcHash, RmcIncomingMessage, RmcOutgoingMessage,
-    Task,
 };
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
@@ -34,7 +33,7 @@ use std::hash::Hash;
 pub struct Service<H: Signable + Hash, MK: MultiKeychain> {
     network_rx: UnboundedReceiver<RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>>,
     network_tx: UnboundedSender<RmcOutgoingMessage<H, MK>>,
-    scheduler: Box<dyn TaskScheduler<Task<H, MK>>>,
+    scheduler: Box<dyn TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>>,
 }
 
 impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> {
@@ -43,7 +42,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
             RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
         >,
         network_tx: UnboundedSender<RmcOutgoingMessage<H, MK>>,
-        scheduler: impl TaskScheduler<Task<H, MK>> + 'static,
+        scheduler: impl TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>> + 'static,
     ) -> Self {
         Service {
             network_rx,
@@ -62,13 +61,13 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
                 debug!(target: "AlephBFT-rmc", "starting rmc for {:?}", hash);
                 let unchecked = handler.on_start_rmc(hash);
                 self.scheduler
-                    .add_task(Task::BroadcastMessage(RmcHash::SignedHash(unchecked)));
+                    .add_task(RmcHash::SignedHash(unchecked));
             }
             RmcIncomingMessage::RmcHash(RmcHash::MultisignedHash(unchecked)) => {
                 match handler.on_multisigned_hash(&unchecked) {
                     Ok(Some(multisigned)) => {
                         self.scheduler
-                            .add_task(Task::BroadcastMessage(RmcHash::MultisignedHash(unchecked)));
+                            .add_task(RmcHash::MultisignedHash(unchecked));
                         if self
                             .network_tx
                             .unbounded_send(RmcOutgoingMessage::NewMultisigned(multisigned))
@@ -87,9 +86,9 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
                 match handler.on_signed_hash(&unchecked) {
                     Ok(Some(multisigned)) => {
                         self.scheduler
-                            .add_task(Task::BroadcastMessage(RmcHash::MultisignedHash(
+                            .add_task(RmcHash::MultisignedHash(
                                 multisigned.clone().into_unchecked(),
-                            )));
+                            ));
                         if self
                             .network_tx
                             .unbounded_send(RmcOutgoingMessage::NewMultisigned(multisigned))
@@ -107,8 +106,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
         }
     }
 
-    fn do_task(&self, task: Task<H, MK>) {
-        let Task::BroadcastMessage(hash) = task;
+    fn send_hash(&self, hash: RmcHash<H, MK::Signature, MK::PartialMultisignature>) {
         self.network_tx
             .unbounded_send(RmcOutgoingMessage::RmcHash(hash))
             .expect("Sending message should succeed");
@@ -126,7 +124,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
                 }
                 task = self.scheduler.next_task().fuse() => {
                     match task {
-                        Some(task) => self.do_task(task),
+                        Some(task) => self.send_hash(task),
                         None => debug!(target: "AlephBFT-rmc", "Tasks ended"),
                     }
                 }
