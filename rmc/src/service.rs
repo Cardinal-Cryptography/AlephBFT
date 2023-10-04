@@ -17,62 +17,69 @@ use std::hash::Hash;
 
 /// Reliable Multicast Box
 ///
-/// The instance of [`Service<H, MK>`] reliably broadcasts hashes of type `H`,
+/// The instance of [`Service<H, MK, SCH>`] reliably broadcasts hashes of type `H`,
 /// and when a hash is successfully broadcast, the multisigned hash `Multisigned<H, MK>`
 /// is sent to the network.
 ///
-/// A node with an instance of [`Service<H, MK>`] can initiate broadcasting a message `msg: H`
-/// by sending the [`RmcIncomingMessage::StartRmc`] variant through the network to [`Service<H, MK>`].
+/// A node with an instance of [`Service<H, MK, SCH>`] can initiate broadcasting a message `msg: H`
+/// by sending the [`RmcIncomingMessage::StartRmc`] variant through the network to [`Service<H, MK, SCH>`].
 /// As a result, the node signs `msg` and starts broadcasting the signed message via the network.
 /// When sufficintly many nodes initiate rmc with the same message `msg` and a node collects enough
 /// signatures to form a complete multisignature under the message, the multisigned message
-/// is sent back through the network by the instance of [`Service<H, MK>`].
+/// is sent back through the network by the instance of [`Service<H, MK, SCH>`].
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/reliable_broadcast.html
 /// for a high-level description of this protocol and how it is used for fork alerts.
-pub struct Service<H: Signable + Hash, MK: MultiKeychain> {
-    network_rx: UnboundedReceiver<RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>>,
-    network_tx: UnboundedSender<RmcOutgoingMessage<H, MK>>,
-    scheduler: Box<dyn TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>>,
+pub struct Service<H, MK, SCH>
+where
+    H: Signable + Hash,
+    MK: MultiKeychain,
+    SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
+{
+    incoming_messages:
+        UnboundedReceiver<RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>>,
+    outgoing_messages: UnboundedSender<RmcOutgoingMessage<H, MK>>,
+    scheduler: SCH,
+    handler: Handler<H, MK>,
 }
 
-impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> {
+impl<H, MK, SCH> Service<H, MK, SCH>
+where
+    H: Signable + Hash + Eq + Clone + Debug,
+    MK: MultiKeychain,
+    SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
+{
     pub fn new(
-        network_rx: UnboundedReceiver<
+        incoming_messages: UnboundedReceiver<
             RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
         >,
-        network_tx: UnboundedSender<RmcOutgoingMessage<H, MK>>,
-        scheduler: impl TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>> + 'static,
+        outgoing_messages: UnboundedSender<RmcOutgoingMessage<H, MK>>,
+        scheduler: SCH,
+        handler: Handler<H, MK>,
     ) -> Self {
         Service {
-            network_rx,
-            network_tx,
-            scheduler: Box::new(scheduler),
+            incoming_messages,
+            outgoing_messages,
+            scheduler,
+            handler,
         }
     }
 
     fn handle_message(
         &mut self,
         message: RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
-        handler: &mut Handler<H, MK>,
     ) {
         match message {
             RmcIncomingMessage::StartRmc(hash) => {
                 debug!(target: "AlephBFT-rmc", "starting rmc for {:?}", hash);
-                let unchecked = handler.on_start_rmc(hash);
+                let unchecked = self.handler.on_start_rmc(hash);
                 self.scheduler.add_task(RmcHash::SignedHash(unchecked));
             }
             RmcIncomingMessage::RmcHash(RmcHash::MultisignedHash(unchecked)) => {
-                match handler.on_multisigned_hash(&unchecked) {
+                match self.handler.on_multisigned_hash(&unchecked) {
                     Ok(Some(multisigned)) => {
                         self.scheduler.add_task(RmcHash::MultisignedHash(unchecked));
-                        if self
-                            .network_tx
-                            .unbounded_send(RmcOutgoingMessage::NewMultisigned(multisigned))
-                            .is_err()
-                        {
-                            error!(target: "AlephBFT-rmc", "network closed early.");
-                        }
+                        self.send_message(RmcOutgoingMessage::NewMultisigned(multisigned));
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -81,18 +88,12 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
                 }
             }
             RmcIncomingMessage::RmcHash(RmcHash::SignedHash(unchecked)) => {
-                match handler.on_signed_hash(&unchecked) {
+                match self.handler.on_signed_hash(&unchecked) {
                     Ok(Some(multisigned)) => {
                         self.scheduler.add_task(RmcHash::MultisignedHash(
                             multisigned.clone().into_unchecked(),
                         ));
-                        if self
-                            .network_tx
-                            .unbounded_send(RmcOutgoingMessage::NewMultisigned(multisigned))
-                            .is_err()
-                        {
-                            error!(target: "AlephBFT-rmc", "network closed early.");
-                        }
+                        self.send_message(RmcOutgoingMessage::NewMultisigned(multisigned));
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -103,25 +104,25 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
         }
     }
 
-    fn send_hash(&self, hash: RmcHash<H, MK::Signature, MK::PartialMultisignature>) {
-        self.network_tx
-            .unbounded_send(RmcOutgoingMessage::RmcHash(hash))
-            .expect("Sending message should succeed");
+    fn send_message(&self, message: RmcOutgoingMessage<H, MK>) {
+        if self.outgoing_messages.unbounded_send(message).is_err() {
+            error!(target: "AlephBFT-rmc", "outgoing messages channel closed early.");
+        }
     }
 
     /// Run the rmc service.
-    pub async fn run(mut self, mut handler: Handler<H, MK>, mut terminator: Terminator) {
+    pub async fn run(mut self, mut terminator: Terminator) {
         loop {
             futures::select! {
-                message = self.network_rx.next() => {
+                message = self.incoming_messages.next() => {
                     match message {
-                        Some(message) => self.handle_message(message, &mut handler),
+                        Some(message) => self.handle_message(message),
                         None => debug!(target: "AlephBFT-rmc", "Network connection closed"),
                     }
                 }
                 task = self.scheduler.next_task().fuse() => {
                     match task {
-                        Some(task) => self.send_hash(task),
+                        Some(task) => self.send_message(RmcOutgoingMessage::RmcHash(task)),
                         None => debug!(target: "AlephBFT-rmc", "Tasks ended"),
                     }
                 }
@@ -156,6 +157,8 @@ mod tests {
 
     type TestIncomingMessage = RmcIncomingMessage<Signable, Signature, PartialMultisignature>;
     type TestOutgoingMessage = RmcOutgoingMessage<Signable, Keychain>;
+    type TestScheduler =
+        DoublingDelayScheduler<RmcHash<Signable, Signature, PartialMultisignature>>;
 
     struct TestNetwork {
         outgoing_rxs: Vec<UnboundedReceiver<TestOutgoingMessage>>,
@@ -236,8 +239,7 @@ mod tests {
 
     struct TestEnvironment {
         network: TestNetwork,
-        rmc_handlers: Vec<Handler<Signable, Keychain>>,
-        rmc_services: Vec<Service<Signable, Keychain>>,
+        rmc_services: Vec<Service<Signable, Keychain, TestScheduler>>,
         multisigned_rxs: Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
     }
 
@@ -249,21 +251,19 @@ mod tests {
             let (network, rmc_inputs, rmc_outputs, multisigned_rxs) =
                 TestNetwork::new(node_count, message_filter);
             let node_count = NodeCount(rmc_inputs.len());
-            let mut rmc_handlers = vec![];
             let mut rmc_services = vec![];
             let mut rmc_inputs = rmc_inputs.into_iter();
             let mut rmc_outputs = rmc_outputs.into_iter();
             for i in 0..node_count.0 {
-                rmc_handlers.push(Handler::new(Keychain::new(node_count, NodeIndex(i))));
                 rmc_services.push(Service::new(
                     rmc_inputs.next().expect("there should be enough rxs"),
                     rmc_outputs.next().expect("there should be enough txs"),
                     DoublingDelayScheduler::new(Duration::from_millis(1)),
+                    Handler::new(Keychain::new(node_count, NodeIndex(i))),
                 ));
             }
             TestEnvironment {
                 network,
-                rmc_handlers,
                 rmc_services,
                 multisigned_rxs,
             }
@@ -283,16 +283,14 @@ mod tests {
             let mut terminator = Terminator::create_root(exit_rx, "root");
 
             let mut hashes = HashMap::new();
-            let mut handlers = self.rmc_handlers.into_iter();
             let mut services = self.rmc_services.into_iter();
             let mut handles = vec![];
 
             for _ in 0..node_count.0 {
                 let rmc_terminator = terminator.add_offspring_connection("rmc");
-                let handler = handlers.next().expect("there should be enough handlers");
                 let service = services.next().expect("there should be enough services");
                 handles.push(tokio::spawn(async move {
-                    service.run(handler, rmc_terminator).await;
+                    service.run(rmc_terminator).await;
                 }));
             }
 

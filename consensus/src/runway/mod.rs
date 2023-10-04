@@ -978,12 +978,13 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         rmc_messages_from_alerter,
         rmc_messages_for_alerter,
         rmc_scheduler,
+        rmc_handler,
     );
     let rmc_terminator = terminator.add_offspring_connection("AlephBFT-rmc");
 
     let mut rmc_handle = spawn_handle
         .spawn_essential("runway/rmc", async move {
-            rmc_service.run(rmc_handler, rmc_terminator).await;
+            rmc_service.run(rmc_terminator).await;
         })
         .fuse();
 
@@ -994,9 +995,11 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
+    let alerter_handler =
+        crate::alerts::Handler::new(alerter_keychain.clone(), config.session_id());
 
     let mut alerter_service = crate::alerts::Service::new(
-        alerter_keychain.clone(),
+        alerter_keychain,
         crate::alerts::IO {
             messages_for_network: alert_messages_for_network,
             messages_from_network: alert_messages_from_network,
@@ -1007,14 +1010,12 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             data_for_backup: alert_data_for_saver,
             responses_from_backup: alert_data_from_saver,
         },
+        alerter_handler,
     );
-    let alerter_handler = crate::alerts::Handler::new(alerter_keychain, config.session_id());
 
     let mut alerter_handle = spawn_handle
         .spawn_essential("runway/alerter", async move {
-            alerter_service
-                .run(alerter_handler, alerter_terminator)
-                .await;
+            alerter_service.run(alerter_terminator).await;
         })
         .fuse();
 

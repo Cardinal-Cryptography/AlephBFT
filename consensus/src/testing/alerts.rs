@@ -227,17 +227,16 @@ impl TestCase {
             rmc_messages_from_alerter,
             rmc_messages_for_alerter,
             rmc_scheduler,
+            rmc_handler,
         );
 
         tokio::spawn(async move {
             rmc_service
-                .run(
-                    rmc_handler,
-                    Terminator::create_root(exit_rmc_rx, "AlephBFT-rmc"),
-                )
+                .run(Terminator::create_root(exit_rmc_rx, "AlephBFT-rmc"))
                 .await;
         });
 
+        let alerter_handler = Handler::new(keychain, 0);
         let mut alerter_service = Service::new(
             keychain,
             crate::alerts::IO {
@@ -250,15 +249,12 @@ impl TestCase {
                 data_for_backup,
                 responses_from_backup,
             },
+            alerter_handler,
         );
-        let alerter_handler = Handler::new(keychain, 0);
 
         tokio::spawn(async move {
             alerter_service
-                .run(
-                    alerter_handler,
-                    Terminator::create_root(exit_alerter_rx, "AlephBFT-alerter"),
-                )
+                .run(Terminator::create_root(exit_alerter_rx, "AlephBFT-alerter"))
                 .await
         });
 

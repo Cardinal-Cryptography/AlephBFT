@@ -110,7 +110,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
         }
     }
 
-    pub fn already_completed(&self, hash: &H) -> bool {
+    fn already_completed(&self, hash: &H) -> bool {
         matches!(
             self.hash_states.get(hash),
             Some(PartiallyMultisigned::Complete { .. })

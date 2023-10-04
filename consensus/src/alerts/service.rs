@@ -20,16 +20,14 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     messages_for_rmc: Sender<RmcIncomingMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
     messages_from_rmc: Receiver<RmcOutgoingMessage<H::Hash, MK>>,
-
     data_for_backup: Sender<AlertData<H, D, MK>>,
     responses_from_backup: Receiver<AlertData<H, D, MK>>,
-
     own_alert_responses: HashMap<H::Hash, OnOwnAlertResponse<H, D, MK>>,
     network_alert_responses: HashMap<H::Hash, OnNetworkAlertResponse<H, D, MK>>,
     multisigned_notifications: HashMap<H::Hash, ForkingNotification<H, D, MK::Signature>>,
-
     node_index: NodeIndex,
     exiting: bool,
+    handler: Handler<H, D, MK>,
 }
 
 pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
@@ -45,7 +43,7 @@ pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
-    pub fn new(keychain: MK, io: IO<H, D, MK>) -> Service<H, D, MK> {
+    pub fn new(keychain: MK, io: IO<H, D, MK>, handler: Handler<H, D, MK>) -> Service<H, D, MK> {
         let IO {
             messages_for_network,
             messages_from_network,
@@ -70,6 +68,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             multisigned_notifications: HashMap::new(),
             node_index: keychain.index(),
             exiting: false,
+            handler,
         }
     }
 
@@ -130,11 +129,10 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     fn handle_message_from_network(
         &mut self,
-        handler: &mut Handler<H, D, MK>,
         message: AlertMessage<H, D, MK::Signature, MK::PartialMultisignature>,
     ) {
         match message {
-            AlertMessage::ForkAlert(alert) => match handler.on_network_alert(alert.clone()) {
+            AlertMessage::ForkAlert(alert) => match self.handler.on_network_alert(alert.clone()) {
                 Ok(response) => {
                     let alert = alert.as_signable().clone();
                     self.network_alert_responses.insert(alert.hash(), response);
@@ -152,7 +150,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 Err(error) => debug!(target: LOG_TARGET, "{}", error),
             },
             AlertMessage::RmcHash(sender, message) => {
-                match handler.on_rmc_message(sender, message) {
+                match self.handler.on_rmc_message(sender, message) {
                     RmcResponse::RmcMessage(message) => {
                         self.send_message_to_rmc(RmcIncomingMessage::RmcHash(message));
                     }
@@ -163,21 +161,19 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                     RmcResponse::Noop => {}
                 }
             }
-            AlertMessage::AlertRequest(node, hash) => match handler.on_alert_request(node, hash) {
-                Ok((alert, recipient)) => {
-                    self.send_message_for_network(AlertMessage::ForkAlert(alert), recipient);
+            AlertMessage::AlertRequest(node, hash) => {
+                match self.handler.on_alert_request(node, hash) {
+                    Ok((alert, recipient)) => {
+                        self.send_message_for_network(AlertMessage::ForkAlert(alert), recipient);
+                    }
+                    Err(error) => debug!(target: LOG_TARGET, "{}", error),
                 }
-                Err(error) => debug!(target: LOG_TARGET, "{}", error),
-            },
+            }
         }
     }
 
-    fn handle_alert_from_runway(
-        &mut self,
-        handler: &mut Handler<H, D, MK>,
-        alert: Alert<H, D, MK::Signature>,
-    ) {
-        let response = handler.on_own_alert(alert.clone());
+    fn handle_alert_from_runway(&mut self, alert: Alert<H, D, MK::Signature>) {
+        let response = self.handler.on_own_alert(alert.clone());
         self.own_alert_responses.insert(alert.hash(), response);
         if self
             .data_for_backup
@@ -188,25 +184,15 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         }
     }
 
-    fn handle_message_from_rmc(
-        &mut self,
-        message: RmcOutgoingMessage<H::Hash, MK>,
-        handler: &mut Handler<H, D, MK>,
-    ) {
+    fn handle_message_from_rmc(&mut self, message: RmcOutgoingMessage<H::Hash, MK>) {
         match message {
-            RmcOutgoingMessage::NewMultisigned(multisigned) => {
-                self.handle_multisigned(handler, multisigned)
-            }
+            RmcOutgoingMessage::NewMultisigned(multisigned) => self.handle_multisigned(multisigned),
             RmcOutgoingMessage::RmcHash(hash) => self.rmc_message_to_network(hash),
         }
     }
 
-    fn handle_multisigned(
-        &mut self,
-        handler: &mut Handler<H, D, MK>,
-        multisigned: Multisigned<H::Hash, MK>,
-    ) {
-        match handler.alert_confirmed(multisigned.clone()) {
+    fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
+        match self.handler.alert_confirmed(multisigned.clone()) {
             Ok(notification) => {
                 self.multisigned_notifications
                     .insert(*multisigned.as_signable(), notification);
@@ -263,25 +249,25 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         }
     }
 
-    pub async fn run(&mut self, mut handler: Handler<H, D, MK>, mut terminator: Terminator) {
+    pub async fn run(&mut self, mut terminator: Terminator) {
         loop {
             futures::select! {
                 message = self.messages_from_network.next() => match message {
-                    Some(message) => self.handle_message_from_network(&mut handler, message),
+                    Some(message) => self.handle_message_from_network(message),
                     None => {
                         error!(target: LOG_TARGET, "Message stream closed.");
                         break;
                     }
                 },
                 alert = self.alerts_from_units.next() => match alert {
-                    Some(alert) => self.handle_alert_from_runway(&mut handler, alert),
+                    Some(alert) => self.handle_alert_from_runway(alert),
                     None => {
                         error!(target: LOG_TARGET, "Alert stream closed.");
                         break;
                     }
                 },
                 message = self.messages_from_rmc.next() => match message {
-                    Some(message) => self.handle_message_from_rmc(message, &mut handler),
+                    Some(message) => self.handle_message_from_rmc(message),
                     None => {
                         error!(target: LOG_TARGET, "RMC message stream closed.");
                         break;
