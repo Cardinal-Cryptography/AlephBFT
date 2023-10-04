@@ -60,14 +60,12 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
             RmcIncomingMessage::StartRmc(hash) => {
                 debug!(target: "AlephBFT-rmc", "starting rmc for {:?}", hash);
                 let unchecked = handler.on_start_rmc(hash);
-                self.scheduler
-                    .add_task(RmcHash::SignedHash(unchecked));
+                self.scheduler.add_task(RmcHash::SignedHash(unchecked));
             }
             RmcIncomingMessage::RmcHash(RmcHash::MultisignedHash(unchecked)) => {
                 match handler.on_multisigned_hash(&unchecked) {
                     Ok(Some(multisigned)) => {
-                        self.scheduler
-                            .add_task(RmcHash::MultisignedHash(unchecked));
+                        self.scheduler.add_task(RmcHash::MultisignedHash(unchecked));
                         if self
                             .network_tx
                             .unbounded_send(RmcOutgoingMessage::NewMultisigned(multisigned))
@@ -85,10 +83,9 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Service<H, MK> 
             RmcIncomingMessage::RmcHash(RmcHash::SignedHash(unchecked)) => {
                 match handler.on_signed_hash(&unchecked) {
                     Ok(Some(multisigned)) => {
-                        self.scheduler
-                            .add_task(RmcHash::MultisignedHash(
-                                multisigned.clone().into_unchecked(),
-                            ));
+                        self.scheduler.add_task(RmcHash::MultisignedHash(
+                            multisigned.clone().into_unchecked(),
+                        ));
                         if self
                             .network_tx
                             .unbounded_send(RmcOutgoingMessage::NewMultisigned(multisigned))
