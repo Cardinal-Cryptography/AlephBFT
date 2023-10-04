@@ -15,6 +15,8 @@ use futures::{
 use log::{debug, error, warn};
 use std::hash::Hash;
 
+const LOG_TARGET: &str = "AlephBFT-rmc";
+
 /// Reliable Multicast Box
 ///
 /// The instance of [`Service<H, MK, SCH>`] reliably broadcasts hashes of type `H`,
@@ -71,7 +73,7 @@ where
     ) {
         match message {
             RmcIncomingMessage::StartRmc(hash) => {
-                debug!(target: "AlephBFT-rmc", "starting rmc for {:?}", hash);
+                debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
                 let unchecked = self.handler.on_start_rmc(hash);
                 self.scheduler.add_task(RmcHash::SignedHash(unchecked));
             }
@@ -83,7 +85,7 @@ where
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        warn!(target: "AlephBFT-rmc", "{}", error);
+                        warn!(target: LOG_TARGET, "{}", error);
                     }
                 }
             }
@@ -97,7 +99,7 @@ where
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        warn!(target: "AlephBFT-rmc", "{}", error);
+                        warn!(target: LOG_TARGET, "{}", error);
                     }
                 }
             }
@@ -106,7 +108,7 @@ where
 
     fn send_message(&self, message: RmcOutgoingMessage<H, MK>) {
         if self.outgoing_messages.unbounded_send(message).is_err() {
-            error!(target: "AlephBFT-rmc", "outgoing messages channel closed early.");
+            error!(target: LOG_TARGET, "outgoing messages channel closed early.");
         }
     }
 
@@ -117,17 +119,17 @@ where
                 message = self.incoming_messages.next() => {
                     match message {
                         Some(message) => self.handle_message(message),
-                        None => debug!(target: "AlephBFT-rmc", "Network connection closed"),
+                        None => debug!(target: LOG_TARGET, "Network connection closed"),
                     }
                 }
                 task = self.scheduler.next_task().fuse() => {
                     match task {
                         Some(task) => self.send_message(RmcOutgoingMessage::RmcHash(task)),
-                        None => debug!(target: "AlephBFT-rmc", "Tasks ended"),
+                        None => debug!(target: LOG_TARGET, "Tasks ended"),
                     }
                 }
                 _ = terminator.get_exit().fuse() => {
-                    debug!(target: "AlephBFT-rmc", "received exit signal.");
+                    debug!(target: LOG_TARGET, "received exit signal.");
                     break;
                 },
             }
