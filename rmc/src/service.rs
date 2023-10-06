@@ -74,11 +74,12 @@ where
         match message {
             RmcIncomingMessage::StartRmc(hash) => {
                 debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
-                let unchecked = self.handler.on_start_rmc(hash);
-                self.scheduler.add_task(RmcHash::SignedHash(unchecked));
+                let signed_hash = self.handler.on_start_rmc(hash);
+                self.scheduler
+                    .add_task(RmcHash::SignedHash(signed_hash.into_unchecked()));
             }
             RmcIncomingMessage::RmcHash(RmcHash::MultisignedHash(unchecked)) => {
-                match self.handler.on_multisigned_hash(&unchecked) {
+                match self.handler.on_multisigned_hash(unchecked.clone()) {
                     Ok(Some(multisigned)) => {
                         self.scheduler.add_task(RmcHash::MultisignedHash(unchecked));
                         self.send_message(RmcOutgoingMessage::NewMultisigned(multisigned));
@@ -90,7 +91,7 @@ where
                 }
             }
             RmcIncomingMessage::RmcHash(RmcHash::SignedHash(unchecked)) => {
-                match self.handler.on_signed_hash(&unchecked) {
+                match self.handler.on_signed_hash(unchecked) {
                     Ok(Some(multisigned)) => {
                         self.scheduler.add_task(RmcHash::MultisignedHash(
                             multisigned.clone().into_unchecked(),

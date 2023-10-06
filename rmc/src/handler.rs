@@ -37,34 +37,34 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
         }
     }
 
-    /// Signs hash and updates the internal state with it. Returns the unchecked signed
+    /// Signs hash and updates the internal state with it. Returns the signed
     /// version of the hash for broadcast. Should be called at most once for a particular hash.
-    pub fn on_start_rmc(&mut self, hash: H) -> UncheckedSigned<Indexed<H>, MK::Signature> {
-        let unchecked = Signed::sign_with_index(hash.clone(), &self.keychain).into_unchecked();
-        let _ = self.on_signed_hash(&unchecked);
-        unchecked
+    pub fn on_start_rmc(&mut self, hash: H) -> Signed<Indexed<H>, MK> {
+        let signed_hash = Signed::sign_with_index(hash, &self.keychain);
+        self.handle_signed_hash(signed_hash.clone());
+        signed_hash
     }
-
     /// Update the internal state with the signed hash. If the hash is incorrectly signed then
     /// [`Error::BadSignature`] is returned. If Adding this signature completes a multisignature
     /// then `Ok(multisigned)` is returned. Otherwise `Ok(None)` is returned.
     pub fn on_signed_hash(
         &mut self,
-        unchecked: &UncheckedSigned<Indexed<H>, MK::Signature>,
+        unchecked: UncheckedSigned<Indexed<H>, MK::Signature>,
     ) -> Result<Option<Multisigned<H, MK>>, Error> {
-        let hash = unchecked.as_signable_strip_index();
-        let signed_hash = match unchecked.clone().check(&self.keychain) {
-            Ok(signed_hash) => signed_hash,
-            Err(_) => return Err(Error::BadSignature),
-        };
+        let signed_hash = unchecked
+            .check(&self.keychain)
+            .map_err(|_| Error::BadSignature)?;
+        Ok(self.handle_signed_hash(signed_hash))
+    }
 
-        if self.already_completed(hash) {
-            return Ok(None);
+    fn handle_signed_hash(&mut self, signed: Signed<Indexed<H>, MK>) -> Option<Multisigned<H, MK>> {
+        let hash = signed.as_signable().as_signable().clone();
+        if self.already_completed(&hash) {
+            return None;
         }
-
-        let new_state = match self.hash_states.remove(hash) {
-            None => signed_hash.into_partially_multisigned(&self.keychain),
-            Some(partial) => partial.add_signature(signed_hash, &self.keychain),
+        let new_state = match self.hash_states.remove(&hash) {
+            None => signed.into_partially_multisigned(&self.keychain),
+            Some(partial) => partial.add_signature(signed, &self.keychain),
         };
         match new_state {
             PartiallyMultisigned::Complete { multisigned } => {
@@ -74,11 +74,11 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
                         multisigned: multisigned.clone(),
                     },
                 );
-                Ok(Some(multisigned))
+                Some(multisigned)
             }
             incomplete => {
                 self.hash_states.insert(hash.clone(), incomplete);
-                Ok(None)
+                None
             }
         }
     }
@@ -88,26 +88,22 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
     /// unless the multisignature got completed earlier.
     pub fn on_multisigned_hash(
         &mut self,
-        unchecked: &UncheckedSigned<H, MK::PartialMultisignature>,
+        unchecked: UncheckedSigned<H, MK::PartialMultisignature>,
     ) -> Result<Option<Multisigned<H, MK>>, Error> {
-        match unchecked.clone().check_multi(&self.keychain) {
-            Ok(multisigned) => {
-                let hash = multisigned.as_signable().clone();
-
-                if self.already_completed(&hash) {
-                    return Ok(None);
-                }
-
-                self.hash_states.insert(
-                    hash,
-                    PartiallyMultisigned::Complete {
-                        multisigned: multisigned.clone(),
-                    },
-                );
-                Ok(Some(multisigned))
-            }
-            Err(_) => Err(Error::BadMultisignature),
+        if self.already_completed(unchecked.as_signable()) {
+            return Ok(None);
         }
+
+        let multisigned = unchecked
+            .check_multi(&self.keychain)
+            .map_err(|_| Error::BadMultisignature)?;
+        self.hash_states.insert(
+            multisigned.as_signable().clone(),
+            PartiallyMultisigned::Complete {
+                multisigned: multisigned.clone(),
+            },
+        );
+        Ok(Some(multisigned))
     }
 
     fn already_completed(&self, hash: &H) -> bool {
