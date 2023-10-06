@@ -88,7 +88,7 @@ where
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        warn!(target: LOG_TARGET, "{}", error);
+                        warn!(target: LOG_TARGET, "failed handling signed hash: {}", error);
                     }
                 }
             }
@@ -102,7 +102,7 @@ where
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        warn!(target: LOG_TARGET, "{}", error);
+                        warn!(target: LOG_TARGET, "failed handling multisigned hash: {}", error);
                     }
                 }
             }

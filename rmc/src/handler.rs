@@ -41,7 +41,9 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
     /// version of the hash for broadcast. Should be called at most once for a particular hash.
     pub fn on_start_rmc(&mut self, hash: H) -> Signed<Indexed<H>, MK> {
         let signed_hash = Signed::sign_with_index(hash, &self.keychain);
-        self.handle_signed_hash(signed_hash.clone());
+        if !self.already_completed(signed_hash.as_signable().as_signable()) {
+            self.handle_signed_hash(signed_hash.clone());
+        }
         signed_hash
     }
     /// Update the internal state with the signed hash. If the hash is incorrectly signed then
@@ -54,14 +56,16 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
         let signed_hash = unchecked
             .check(&self.keychain)
             .map_err(|_| Error::BadSignature)?;
-        Ok(self.handle_signed_hash(signed_hash))
+        Ok(
+            match self.already_completed(signed_hash.as_signable().as_signable()) {
+                true => None,
+                false => self.handle_signed_hash(signed_hash),
+            },
+        )
     }
 
     fn handle_signed_hash(&mut self, signed: Signed<Indexed<H>, MK>) -> Option<Multisigned<H, MK>> {
         let hash = signed.as_signable().as_signable().clone();
-        if self.already_completed(&hash) {
-            return None;
-        }
         let new_state = match self.hash_states.remove(&hash) {
             None => signed.into_partially_multisigned(&self.keychain),
             Some(partial) => partial.add_signature(signed, &self.keychain),
@@ -69,7 +73,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
         match new_state {
             PartiallyMultisigned::Complete { multisigned } => {
                 self.hash_states.insert(
-                    hash.clone(),
+                    hash,
                     PartiallyMultisigned::Complete {
                         multisigned: multisigned.clone(),
                     },
@@ -77,7 +81,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
                 Some(multisigned)
             }
             incomplete => {
-                self.hash_states.insert(hash.clone(), incomplete);
+                self.hash_states.insert(hash, incomplete);
                 None
             }
         }
