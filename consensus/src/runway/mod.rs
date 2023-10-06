@@ -970,16 +970,9 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     });
     let mut backup_saver_handle = backup_saver_handle.fuse();
 
-    let (rmc_messages_for_rmc, rmc_messages_from_alerter) = mpsc::unbounded();
-    let (rmc_messages_for_alerter, rmc_messages_from_rmc) = mpsc::unbounded();
     let rmc_handler = aleph_bft_rmc::Handler::new(keychain.clone());
     let rmc_scheduler = DoublingDelayScheduler::new(Duration::from_millis(500));
-    let rmc_service = aleph_bft_rmc::Service::new(
-        rmc_messages_from_alerter,
-        rmc_messages_for_alerter,
-        rmc_scheduler,
-        rmc_handler,
-    );
+    let (rmc_service, rmc_io) = aleph_bft_rmc::Service::new(rmc_scheduler, rmc_handler);
     let rmc_terminator = terminator.add_offspring_connection("AlephBFT-rmc");
 
     let mut rmc_handle = spawn_handle
@@ -1005,11 +998,10 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             messages_from_network: alert_messages_from_network,
             notifications_for_units: alert_notifications_for_units,
             alerts_from_units,
-            messages_for_rmc: rmc_messages_for_rmc,
-            messages_from_rmc: rmc_messages_from_rmc,
             data_for_backup: alert_data_for_saver,
             responses_from_backup: alert_data_from_saver,
         },
+        rmc_io,
         alerter_handler,
     );
 

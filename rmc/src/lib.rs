@@ -4,6 +4,10 @@ pub use aleph_bft_crypto::{
 };
 use codec::{Decode, Encode};
 use core::fmt::Debug;
+use futures::{
+    channel::mpsc::{TrySendError, UnboundedReceiver, UnboundedSender},
+    StreamExt,
+};
 use std::hash::Hash;
 
 mod handler;
@@ -45,4 +49,37 @@ pub enum RmcIncomingMessage<H: Signable, S: Signature, M: PartialMultisignature>
 pub enum RmcOutgoingMessage<H: Signable, MK: MultiKeychain> {
     NewMultisigned(Multisigned<H, MK>),
     RmcHash(RmcHash<H, MK::Signature, MK::PartialMultisignature>),
+}
+
+pub struct RmcIO<H: Signable, MK: MultiKeychain> {
+    messages_to_rmc:
+        UnboundedSender<RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>>,
+    messages_from_rmc: UnboundedReceiver<RmcOutgoingMessage<H, MK>>,
+}
+
+type RmcIOSendError<H, S, M> = TrySendError<RmcIncomingMessage<H, S, M>>;
+
+impl<H: Signable, MK: MultiKeychain> RmcIO<H, MK> {
+    pub fn new(
+        messages_to_rmc: UnboundedSender<
+            RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
+        >,
+        messages_from_rmc: UnboundedReceiver<RmcOutgoingMessage<H, MK>>,
+    ) -> Self {
+        RmcIO {
+            messages_to_rmc,
+            messages_from_rmc,
+        }
+    }
+
+    pub fn send(
+        &self,
+        message: RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
+    ) -> Result<(), RmcIOSendError<H, MK::Signature, MK::PartialMultisignature>> {
+        self.messages_to_rmc.unbounded_send(message)
+    }
+
+    pub async fn receive(&mut self) -> Option<RmcOutgoingMessage<H, MK>> {
+        self.messages_from_rmc.next().await
+    }
 }

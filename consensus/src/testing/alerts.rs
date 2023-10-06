@@ -219,16 +219,9 @@ impl TestCase {
         // mock communication with backup - data sent to backup immediately returns to alerter
         let (data_for_backup, responses_from_backup) = mpsc::unbounded();
 
-        let (rmc_messages_for_rmc, rmc_messages_from_alerter) = mpsc::unbounded();
-        let (rmc_messages_for_alerter, rmc_messages_from_rmc) = mpsc::unbounded();
         let rmc_handler = aleph_bft_rmc::Handler::new(keychain);
         let rmc_scheduler = DoublingDelayScheduler::new(Duration::from_millis(500));
-        let rmc_service = aleph_bft_rmc::Service::new(
-            rmc_messages_from_alerter,
-            rmc_messages_for_alerter,
-            rmc_scheduler,
-            rmc_handler,
-        );
+        let (rmc_service, rmc_io) = aleph_bft_rmc::Service::new(rmc_scheduler, rmc_handler);
 
         tokio::spawn(async move {
             rmc_service
@@ -244,11 +237,10 @@ impl TestCase {
                 messages_from_network,
                 notifications_for_units,
                 alerts_from_units,
-                messages_for_rmc: rmc_messages_for_rmc,
-                messages_from_rmc: rmc_messages_from_rmc,
                 data_for_backup,
                 responses_from_backup,
             },
+            rmc_io,
             alerter_handler,
         );
 

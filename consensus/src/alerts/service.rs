@@ -5,7 +5,7 @@ use crate::{
     },
     Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Recipient, Sender,
 };
-use aleph_bft_rmc::{RmcHash, RmcIncomingMessage, RmcOutgoingMessage};
+use aleph_bft_rmc::{RmcHash, RmcIO, RmcIncomingMessage, RmcOutgoingMessage};
 use aleph_bft_types::Terminator;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, warn};
@@ -18,10 +18,9 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
     notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-    messages_for_rmc: Sender<RmcIncomingMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    messages_from_rmc: Receiver<RmcOutgoingMessage<H::Hash, MK>>,
     data_for_backup: Sender<AlertData<H, D, MK>>,
     responses_from_backup: Receiver<AlertData<H, D, MK>>,
+    rmc_io: RmcIO<H::Hash, MK>,
     own_alert_responses: HashMap<H::Hash, OnOwnAlertResponse<H, D, MK>>,
     network_alert_responses: HashMap<H::Hash, OnNetworkAlertResponse<H, D, MK>>,
     multisigned_notifications: HashMap<H::Hash, ForkingNotification<H, D, MK::Signature>>,
@@ -35,22 +34,22 @@ pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
     pub messages_from_network: Receiver<NetworkMessage<H, D, MK>>,
     pub notifications_for_units: Sender<ForkingNotification<H, D, MK::Signature>>,
     pub alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
-    pub messages_for_rmc:
-        Sender<RmcIncomingMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
-    pub messages_from_rmc: Receiver<RmcOutgoingMessage<H::Hash, MK>>,
     pub data_for_backup: Sender<AlertData<H, D, MK>>,
     pub responses_from_backup: Receiver<AlertData<H, D, MK>>,
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
-    pub fn new(keychain: MK, io: IO<H, D, MK>, handler: Handler<H, D, MK>) -> Service<H, D, MK> {
+    pub fn new(
+        keychain: MK,
+        io: IO<H, D, MK>,
+        rmc_io: RmcIO<H::Hash, MK>,
+        handler: Handler<H, D, MK>,
+    ) -> Service<H, D, MK> {
         let IO {
             messages_for_network,
             messages_from_network,
             notifications_for_units,
             alerts_from_units,
-            messages_for_rmc,
-            messages_from_rmc,
             data_for_backup,
             responses_from_backup,
         } = io;
@@ -59,10 +58,9 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             messages_from_network,
             notifications_for_units,
             alerts_from_units,
-            messages_for_rmc,
-            messages_from_rmc,
             data_for_backup,
             responses_from_backup,
+            rmc_io,
             own_alert_responses: HashMap::new(),
             network_alert_responses: HashMap::new(),
             multisigned_notifications: HashMap::new(),
@@ -103,7 +101,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         &mut self,
         message: RmcIncomingMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
-        if self.messages_for_rmc.unbounded_send(message).is_err() {
+        if self.rmc_io.send(message).is_err() {
             warn!(target: LOG_TARGET, "channel for rmc closed.");
             self.exiting = true;
         }
@@ -266,7 +264,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                         break;
                     }
                 },
-                message = self.messages_from_rmc.next() => match message {
+                message = self.rmc_io.receive().fuse() => match message {
                     Some(message) => self.handle_message_from_rmc(message),
                     None => {
                         error!(target: LOG_TARGET, "RMC message stream closed.");

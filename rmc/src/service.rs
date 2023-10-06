@@ -1,6 +1,7 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 use crate::{
-    handler::Handler, scheduler::TaskScheduler, RmcHash, RmcIncomingMessage, RmcOutgoingMessage,
+    handler::Handler, scheduler::TaskScheduler, RmcHash, RmcIO, RmcIncomingMessage,
+    RmcOutgoingMessage,
 };
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
@@ -9,7 +10,10 @@ pub use aleph_bft_crypto::{
 use aleph_bft_types::Terminator;
 use core::fmt::Debug;
 use futures::{
-    channel::mpsc::{UnboundedReceiver, UnboundedSender},
+    channel::{
+        mpsc,
+        mpsc::{UnboundedReceiver, UnboundedSender},
+    },
     FutureExt, StreamExt,
 };
 use log::{debug, error, warn};
@@ -51,20 +55,18 @@ where
     MK: MultiKeychain,
     SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
 {
-    pub fn new(
-        incoming_messages: UnboundedReceiver<
-            RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
-        >,
-        outgoing_messages: UnboundedSender<RmcOutgoingMessage<H, MK>>,
-        scheduler: SCH,
-        handler: Handler<H, MK>,
-    ) -> Self {
-        Service {
-            incoming_messages,
-            outgoing_messages,
-            scheduler,
-            handler,
-        }
+    pub fn new(scheduler: SCH, handler: Handler<H, MK>) -> (Self, RmcIO<H, MK>) {
+        let (messages_to_rmc, messages_from_outside) = mpsc::unbounded();
+        let (messages_to_outside, messages_from_rmc) = mpsc::unbounded();
+        (
+            Service {
+                incoming_messages: messages_from_outside,
+                outgoing_messages: messages_to_outside,
+                scheduler,
+                handler,
+            },
+            RmcIO::new(messages_to_rmc, messages_from_rmc),
+        )
     }
 
     fn handle_message(
@@ -142,7 +144,8 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        DoublingDelayScheduler, Handler, RmcHash, RmcIncomingMessage, RmcOutgoingMessage, Service,
+        DoublingDelayScheduler, Handler, RmcHash, RmcIO, RmcIncomingMessage, RmcOutgoingMessage,
+        Service,
     };
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
@@ -152,7 +155,7 @@ mod tests {
             mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
             oneshot,
         },
-        future::{self},
+        future::{self, select_all},
         StreamExt,
     };
     use rand::Rng;
@@ -164,74 +167,73 @@ mod tests {
         DoublingDelayScheduler<RmcHash<Signable, Signature, PartialMultisignature>>;
 
     struct TestNetwork {
-        outgoing_rxs: Vec<UnboundedReceiver<TestOutgoingMessage>>,
-        incoming_txs: Vec<UnboundedSender<TestIncomingMessage>>,
+        rmcios: Vec<RmcIO<Signable, Keychain>>,
         message_filter: Box<dyn FnMut(NodeIndex, TestIncomingMessage) -> bool>,
         multisigned_txs: Vec<UnboundedSender<Multisigned<Signable, Keychain>>>,
     }
 
     type NewTestNetworkResult = (
         TestNetwork,
-        Vec<UnboundedReceiver<TestIncomingMessage>>,
-        Vec<UnboundedSender<TestOutgoingMessage>>,
         Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
     );
 
     impl TestNetwork {
         fn new(
             node_count: NodeCount,
+            rmcios: Vec<RmcIO<Signable, Keychain>>,
             message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
         ) -> NewTestNetworkResult {
-            let (incoming_txs, incoming_rxs): (Vec<_>, Vec<_>) = (0..node_count.0)
-                .map(|_| unbounded::<TestIncomingMessage>())
-                .unzip();
-            let (outgoing_txs, outgoing_rxs): (Vec<_>, Vec<_>) = (0..node_count.0)
-                .map(|_| unbounded::<TestOutgoingMessage>())
-                .unzip();
             let (multisigned_txs, multisigned_rxs) = (0..node_count.0).map(|_| unbounded()).unzip();
             (
                 TestNetwork {
-                    outgoing_rxs,
-                    incoming_txs,
+                    rmcios,
                     message_filter: Box::new(message_filter),
                     multisigned_txs,
                 },
-                incoming_rxs,
-                outgoing_txs,
                 multisigned_rxs,
             )
         }
 
         fn send_message(&mut self, node: NodeIndex, msg: TestIncomingMessage) {
-            self.incoming_txs[node.0]
-                .unbounded_send(msg)
+            self.rmcios[node.0]
+                .send(msg)
                 .expect("channel should be open");
         }
 
         fn broadcast_message(&mut self, msg: TestIncomingMessage) {
-            for i in 0..self.incoming_txs.len() {
+            for i in 0..self.rmcios.len() {
                 self.send_message(NodeIndex(i), msg.clone());
             }
         }
 
+        async fn receive_message(&mut self) -> (Option<TestOutgoingMessage>, usize) {
+            let futures = self
+                .rmcios
+                .iter_mut()
+                .map(|rmcio| Box::pin(rmcio.receive()));
+            let (maybe_msg, i, _) = select_all(futures).await;
+            (maybe_msg, i)
+        }
+
         async fn run(&mut self) {
-            while let (Some(message), i, _) =
-                future::select_all(self.outgoing_rxs.iter_mut().map(|rx| rx.next())).await
-            {
-                match message {
-                    RmcOutgoingMessage::NewMultisigned(multisigned) => {
-                        self.multisigned_txs[i]
-                            .unbounded_send(multisigned)
-                            .expect("channel should be open");
-                    }
-                    RmcOutgoingMessage::RmcHash(hash) => {
-                        for (i, tx) in self.incoming_txs.iter().enumerate() {
-                            if (self.message_filter)(
-                                NodeIndex(i),
-                                TestIncomingMessage::RmcHash(hash.clone()),
-                            ) {
-                                tx.unbounded_send(TestIncomingMessage::RmcHash(hash.clone()))
-                                    .expect("channel should be open");
+            loop {
+                if let (Some(message), i) = self.receive_message().await {
+                    match message {
+                        RmcOutgoingMessage::NewMultisigned(multisigned) => {
+                            self.multisigned_txs[i]
+                                .unbounded_send(multisigned)
+                                .expect("channel should be open");
+                        }
+                        RmcOutgoingMessage::RmcHash(hash) => {
+                            for (i, rmcio) in self.rmcios.iter().enumerate() {
+                                if (self.message_filter)(
+                                    NodeIndex(i),
+                                    TestIncomingMessage::RmcHash(hash.clone()),
+                                ) {
+                                    rmcio
+                                        .send(TestIncomingMessage::RmcHash(hash.clone()))
+                                        .expect("channel should be open");
+                                }
                             }
                         }
                     }
@@ -251,20 +253,20 @@ mod tests {
             node_count: NodeCount,
             message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
         ) -> Self {
-            let (network, rmc_inputs, rmc_outputs, multisigned_rxs) =
-                TestNetwork::new(node_count, message_filter);
-            let node_count = NodeCount(rmc_inputs.len());
             let mut rmc_services = vec![];
-            let mut rmc_inputs = rmc_inputs.into_iter();
-            let mut rmc_outputs = rmc_outputs.into_iter();
+            let mut rmcios = vec![];
+
             for i in 0..node_count.0 {
-                rmc_services.push(Service::new(
-                    rmc_inputs.next().expect("there should be enough rxs"),
-                    rmc_outputs.next().expect("there should be enough txs"),
+                let (service, rmcio) = Service::new(
                     DoublingDelayScheduler::new(Duration::from_millis(1)),
                     Handler::new(Keychain::new(node_count, NodeIndex(i))),
-                ));
+                );
+                rmc_services.push(service);
+                rmcios.push(rmcio);
             }
+
+            let (network, multisigned_rxs) = TestNetwork::new(node_count, rmcios, message_filter);
+
             TestEnvironment {
                 network,
                 rmc_services,
