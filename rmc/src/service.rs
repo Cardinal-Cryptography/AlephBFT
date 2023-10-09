@@ -216,24 +216,22 @@ mod tests {
         }
 
         async fn run(&mut self) {
-            loop {
-                if let (Some(message), i) = self.receive_message().await {
-                    match message {
-                        RmcOutgoingMessage::NewMultisigned(multisigned) => {
-                            self.multisigned_txs[i]
-                                .unbounded_send(multisigned)
-                                .expect("channel should be open");
-                        }
-                        RmcOutgoingMessage::RmcHash(hash) => {
-                            for (i, rmcio) in self.rmcios.iter().enumerate() {
-                                if (self.message_filter)(
-                                    NodeIndex(i),
-                                    TestIncomingMessage::RmcHash(hash.clone()),
-                                ) {
-                                    rmcio
-                                        .send(TestIncomingMessage::RmcHash(hash.clone()))
-                                        .expect("channel should be open");
-                                }
+            while let (Some(message), i) = self.receive_message().await {
+                match message {
+                    RmcOutgoingMessage::NewMultisigned(multisigned) => {
+                        self.multisigned_txs[i]
+                            .unbounded_send(multisigned)
+                            .expect("channel should be open");
+                    }
+                    RmcOutgoingMessage::RmcHash(hash) => {
+                        for (i, rmcio) in self.rmcios.iter().enumerate() {
+                            if (self.message_filter)(
+                                NodeIndex(i),
+                                TestIncomingMessage::RmcHash(hash.clone()),
+                            ) {
+                                rmcio
+                                    .send(TestIncomingMessage::RmcHash(hash.clone()))
+                                    .expect("channel should be open");
                             }
                         }
                     }
@@ -314,6 +312,7 @@ mod tests {
 
             let _ = exit_tx.send(());
             terminator.terminate_sync().await;
+            self.network.run().await;
             hashes
         }
     }
