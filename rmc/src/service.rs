@@ -117,6 +117,7 @@ where
 
     /// Run the rmc service.
     pub async fn run(mut self, mut terminator: Terminator) {
+        let mut terminator_exit = false;
         loop {
             futures::select! {
                 message = self.incoming_messages.next() => {
@@ -133,11 +134,14 @@ where
                 }
                 _ = terminator.get_exit().fuse() => {
                     debug!(target: LOG_TARGET, "received exit signal.");
-                    break;
+                    terminator_exit = true;
                 },
             }
+            if terminator_exit {
+                terminator.terminate_sync().await;
+                break;
+            }
         }
-        terminator.terminate_sync().await;
     }
 }
 

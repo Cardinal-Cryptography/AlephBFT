@@ -284,7 +284,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 },
             }
             if self.exiting {
-                debug!(target: LOG_TARGET, "Alerter decided to exit.");
                 terminator.terminate_sync().await;
                 break;
             }
