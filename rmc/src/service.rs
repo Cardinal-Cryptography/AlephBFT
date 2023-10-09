@@ -219,9 +219,9 @@ mod tests {
             while let (Some(message), i) = self.receive_message().await {
                 match message {
                     RmcOutgoingMessage::NewMultisigned(multisigned) => {
-                        self.multisigned_txs[i]
-                            .unbounded_send(multisigned)
-                            .expect("channel should be open");
+                        if self.multisigned_txs[i].unbounded_send(multisigned).is_err() {
+                            break;
+                        }
                     }
                     RmcOutgoingMessage::RmcHash(hash) => {
                         for (i, rmcio) in self.rmcios.iter().enumerate() {
@@ -229,9 +229,9 @@ mod tests {
                                 NodeIndex(i),
                                 TestIncomingMessage::RmcHash(hash.clone()),
                             ) {
-                                rmcio
-                                    .send(TestIncomingMessage::RmcHash(hash.clone()))
-                                    .expect("channel should be open");
+                                if rmcio.send(TestIncomingMessage::RmcHash(hash.clone())).is_err() {
+                                    break;
+                                }
                             }
                         }
                     }
