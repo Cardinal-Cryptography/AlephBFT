@@ -228,10 +228,11 @@ mod tests {
                             if (self.message_filter)(
                                 NodeIndex(i),
                                 TestIncomingMessage::RmcHash(hash.clone()),
-                            ) {
-                                if rmcio.send(TestIncomingMessage::RmcHash(hash.clone())).is_err() {
-                                    break;
-                                }
+                            ) && rmcio
+                                .send(TestIncomingMessage::RmcHash(hash.clone()))
+                                .is_err()
+                            {
+                                break;
                             }
                         }
                     }
