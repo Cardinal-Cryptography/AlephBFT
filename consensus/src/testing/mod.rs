@@ -27,10 +27,10 @@ pub type Network = MockNetwork<NetworkData>;
 pub type ReconnectSender = ReconnectSenderGeneric<NetworkData>;
 
 pub fn init_log() {
-    let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::max())
-        .is_test(true)
-        .try_init();
+    // let _ = env_logger::builder()
+    //     .filter_level(log::LevelFilter::max())
+    //     .is_test(true)
+    //     .try_init();
 }
 
 pub fn complete_oneshot<T: std::fmt::Debug>(t: T) -> oneshot::Receiver<T> {

@@ -1,21 +1,13 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
 use crate::{
-    handler::Handler, scheduler::TaskScheduler, RmcHash, RmcIO, RmcIncomingMessage,
-    RmcOutgoingMessage,
+    handler::Handler, scheduler::TaskScheduler, RmcHash,
 };
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
     Signable, Signature, Signed, UncheckedSigned,
 };
 use core::fmt::Debug;
-use futures::{
-    channel::{
-        mpsc,
-        mpsc::{UnboundedReceiver, UnboundedSender},
-    },
-    FutureExt, StreamExt,
-};
-use log::{debug, error, warn};
+use log::{debug, warn};
 use std::hash::Hash;
 
 const LOG_TARGET: &str = "AlephBFT-rmc";
@@ -41,9 +33,6 @@ where
     MK: MultiKeychain,
     SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
 {
-    incoming_messages:
-        UnboundedReceiver<RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>>,
-    outgoing_messages: UnboundedSender<RmcOutgoingMessage<H, MK>>,
     scheduler: SCH,
     handler: Handler<H, MK>,
 }
@@ -54,36 +43,34 @@ where
     MK: MultiKeychain,
     SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
 {
-    pub fn new(scheduler: SCH, handler: Handler<H, MK>) -> (Self, RmcIO<H, MK>) {
-        let (messages_to_rmc, messages_from_outside) = mpsc::unbounded();
-        let (messages_to_outside, messages_from_rmc) = mpsc::unbounded();
-        (
-            Service {
-                incoming_messages: messages_from_outside,
-                outgoing_messages: messages_to_outside,
-                scheduler,
-                handler,
-            },
-            RmcIO::new(messages_to_rmc, messages_from_rmc),
-        )
+    pub fn new(scheduler: SCH, handler: Handler<H, MK>) -> Self {
+        Service {
+            scheduler,
+            handler,
+        }
     }
 
-    fn handle_message(
+    pub fn start_rmc(&mut self, hash: H) -> Option<Multisigned<H, MK>> {
+        debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
+        let (signed_hash, maybe_multisigned) = self.handler.on_start_rmc(hash);
+        self.scheduler
+            .add_task(RmcHash::SignedHash(signed_hash.into_unchecked()));
+        if let Some(multisigned) = maybe_multisigned.clone() {
+            self.scheduler
+                .add_task(RmcHash::MultisignedHash(multisigned.into_unchecked()));
+        }
+        return maybe_multisigned;
+    }
+
+    pub fn process_hash(
         &mut self,
-        message: RmcIncomingMessage<H, MK::Signature, MK::PartialMultisignature>,
+        hash: RmcHash<H, MK::Signature, MK::PartialMultisignature>,
     ) -> Option<Multisigned<H, MK>> {
-        match message {
-            RmcIncomingMessage::StartRmc(hash) => {
-                debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
-                let signed_hash = self.handler.on_start_rmc(hash);
-                self.scheduler
-                    .add_task(RmcHash::SignedHash(signed_hash.into_unchecked()));
-            }
-            RmcIncomingMessage::RmcHash(RmcHash::MultisignedHash(unchecked)) => {
+        match hash {
+            RmcHash::MultisignedHash(unchecked) => {
                 match self.handler.on_multisigned_hash(unchecked.clone()) {
                     Ok(Some(multisigned)) => {
                         self.scheduler.add_task(RmcHash::MultisignedHash(unchecked));
-                        //self.send_message(RmcOutgoingMessage::NewMultisigned(multisigned));
                         return Some(multisigned);
                     }
                     Ok(None) => {}
@@ -92,13 +79,12 @@ where
                     }
                 }
             }
-            RmcIncomingMessage::RmcHash(RmcHash::SignedHash(unchecked)) => {
+            RmcHash::SignedHash(unchecked) => {
                 match self.handler.on_signed_hash(unchecked) {
                     Ok(Some(multisigned)) => {
                         self.scheduler.add_task(RmcHash::MultisignedHash(
                             multisigned.clone().into_unchecked(),
                         ));
-                        //self.send_message(RmcOutgoingMessage::NewMultisigned(multisigned));
                         return Some(multisigned);
                     }
                     Ok(None) => {}
@@ -111,32 +97,13 @@ where
         None
     }
 
-    fn send_message(&self, message: RmcOutgoingMessage<H, MK>) {
-        if self.outgoing_messages.unbounded_send(message).is_err() {
-            error!(target: LOG_TARGET, "outgoing messages channel closed early.");
-        }
-    }
-
     /// Run the rmc service.
-    pub async fn run(&mut self) -> Multisigned<H, MK> {
+    pub async fn run(&mut self) -> RmcHash<H, MK::Signature, MK::PartialMultisignature> {
         loop {
-            futures::select! {
-                message = self.incoming_messages.next() => {
-                    match message {
-                        Some(message) => {
-                            if let Some(multisigned) = self.handle_message(message) {
-                                return multisigned;
-                            }
-                        }
-                        None => debug!(target: LOG_TARGET, "Network connection closed"),
-                    }
-                }
-                task = self.scheduler.next_task().fuse() => {
-                    match task {
-                        Some(task) => self.send_message(RmcOutgoingMessage::RmcHash(task)),
-                        None => debug!(target: LOG_TARGET, "Tasks ended"),
-                    }
-                }
+            let task = self.scheduler.next_task().await;
+            match task {
+                Some(task) => return task,
+                None => debug!(target: LOG_TARGET, "Tasks ended"),
             }
         }
     }

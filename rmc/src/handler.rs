@@ -39,12 +39,13 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
 
     /// Signs hash and updates the internal state with it. Returns the signed
     /// version of the hash for broadcast. Should be called at most once for a particular hash.
-    pub fn on_start_rmc(&mut self, hash: H) -> Signed<Indexed<H>, MK> {
+    pub fn on_start_rmc(&mut self, hash: H) -> (Signed<Indexed<H>, MK>, Option<Multisigned<H, MK>>) {
         let signed_hash = Signed::sign_with_index(hash, &self.keychain);
+        let mut maybe_multisigned = None;
         if !self.already_completed(signed_hash.as_signable().as_signable()) {
-            self.handle_signed_hash(signed_hash.clone());
+            maybe_multisigned = self.handle_signed_hash(signed_hash.clone());
         }
-        signed_hash
+        (signed_hash, maybe_multisigned)
     }
     /// Update the internal state with the signed hash. If the hash is incorrectly signed then
     /// [`Error::BadSignature`] is returned. If Adding this signature completes a multisignature
