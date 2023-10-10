@@ -5,11 +5,12 @@ use crate::{
     },
     Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Recipient, Sender,
 };
-use aleph_bft_rmc::{RmcHash, RmcIO, RmcIncomingMessage, RmcOutgoingMessage};
+use aleph_bft_rmc::{RmcHash, RmcIO, RmcIncomingMessage, RmcOutgoingMessage, DoublingDelayScheduler};
 use aleph_bft_types::Terminator;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, warn};
 use std::collections::HashMap;
+use std::time::Duration;
 
 const LOG_TARGET: &str = "AlephBFT-alerter";
 
@@ -27,6 +28,8 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     node_index: NodeIndex,
     exiting: bool,
     handler: Handler<H, D, MK>,
+
+    rmc_service: aleph_bft_rmc::Service<H::Hash, MK, DoublingDelayScheduler<RmcHash<H::Hash, MK::Signature, MK::PartialMultisignature>>>,
 }
 
 pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
@@ -42,7 +45,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
     pub fn new(
         keychain: MK,
         io: IO<H, D, MK>,
-        rmc_io: RmcIO<H::Hash, MK>,
         handler: Handler<H, D, MK>,
     ) -> Service<H, D, MK> {
         let IO {
@@ -53,6 +55,14 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             data_for_backup,
             responses_from_backup,
         } = io;
+
+        let node_index = keychain.index();
+        let rmc_handler = aleph_bft_rmc::Handler::new(keychain);
+        let (rmc_service, rmc_io) = aleph_bft_rmc::Service::new(
+            DoublingDelayScheduler::new(Duration::from_millis(500)),
+            rmc_handler,
+        );
+
         Service {
             messages_for_network,
             messages_from_network,
@@ -64,9 +74,11 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             own_alert_responses: HashMap::new(),
             network_alert_responses: HashMap::new(),
             multisigned_notifications: HashMap::new(),
-            node_index: keychain.index(),
+            node_index,
             exiting: false,
             handler,
+
+            rmc_service,
         }
     }
 
@@ -270,6 +282,9 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                         error!(target: LOG_TARGET, "RMC message stream closed.");
                         break;
                     }
+                },
+                multisigned = self.rmc_service.run().fuse() => {
+                    self.handle_multisigned(multisigned);
                 },
                 item = self.responses_from_backup.next() => match item {
                     Some(item) => self.handle_data_from_backup(item),

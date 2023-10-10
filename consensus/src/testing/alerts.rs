@@ -5,7 +5,7 @@ use crate::{
     Signed, UncheckedSigned,
 };
 use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
-use aleph_bft_rmc::{DoublingDelayScheduler, RmcHash as RmcMessage};
+use aleph_bft_rmc::{RmcHash as RmcMessage};
 use aleph_bft_types::Terminator;
 use futures::{
     channel::{mpsc, oneshot},
@@ -215,19 +215,8 @@ impl TestCase {
         let (notifications_for_units, mut notifications_from_alerter) = mpsc::unbounded();
         let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
         let (exit_alerter_tx, exit_alerter_rx) = oneshot::channel();
-        let (exit_rmc_tx, exit_rmc_rx) = oneshot::channel();
         // mock communication with backup - data sent to backup immediately returns to alerter
         let (data_for_backup, responses_from_backup) = mpsc::unbounded();
-
-        let rmc_handler = aleph_bft_rmc::Handler::new(keychain);
-        let rmc_scheduler = DoublingDelayScheduler::new(Duration::from_millis(500));
-        let (rmc_service, rmc_io) = aleph_bft_rmc::Service::new(rmc_scheduler, rmc_handler);
-
-        tokio::spawn(async move {
-            rmc_service
-                .run(Terminator::create_root(exit_rmc_rx, "AlephBFT-rmc"))
-                .await;
-        });
 
         let alerter_handler = Handler::new(keychain, 0);
         let mut alerter_service = Service::new(
@@ -240,7 +229,6 @@ impl TestCase {
                 data_for_backup,
                 responses_from_backup,
             },
-            rmc_io,
             alerter_handler,
         );
 
@@ -279,9 +267,6 @@ impl TestCase {
             }
         }
         exit_alerter_tx
-            .send(())
-            .expect("exit channel shouldn't be closed");
-        exit_rmc_tx
             .send(())
             .expect("exit channel shouldn't be closed");
     }

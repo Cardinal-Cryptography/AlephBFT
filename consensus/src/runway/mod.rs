@@ -10,7 +10,6 @@ use crate::{
     NodeCount, NodeIndex, NodeMap, Receiver, Round, Sender, Signature, Signed, SpawnHandle,
     UncheckedSigned,
 };
-use aleph_bft_rmc::DoublingDelayScheduler;
 use aleph_bft_types::{handle_task_termination, Recipient, Terminator};
 use futures::{
     channel::{mpsc, oneshot},
@@ -970,17 +969,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     });
     let mut backup_saver_handle = backup_saver_handle.fuse();
 
-    let rmc_handler = aleph_bft_rmc::Handler::new(keychain.clone());
-    let rmc_scheduler = DoublingDelayScheduler::new(Duration::from_millis(500));
-    let (rmc_service, rmc_io) = aleph_bft_rmc::Service::new(rmc_scheduler, rmc_handler);
-    let rmc_terminator = terminator.add_offspring_connection("AlephBFT-rmc");
-
-    let mut rmc_handle = spawn_handle
-        .spawn_essential("runway/rmc", async move {
-            rmc_service.run(rmc_terminator).await;
-        })
-        .fuse();
-
     let (alert_notifications_for_units, notifications_from_alerter) = mpsc::unbounded();
     let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
 
@@ -1001,7 +989,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             data_for_backup: alert_data_for_saver,
             responses_from_backup: alert_data_from_saver,
         },
-        rmc_io,
         alerter_handler,
     );
 
@@ -1126,10 +1113,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
                 debug!(target: "AlephBFT-runway", "{:?} Runway task terminated early.", index);
                 break;
             },
-            _ = rmc_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} RMC task terminated early.", index);
-                break;
-            },
             _ = alerter_handle => {
                 debug!(target: "AlephBFT-runway", "{:?} Alerter task terminated early.", index);
                 break;
@@ -1162,7 +1145,6 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     terminator.terminate_sync().await;
 
     handle_task_termination(consensus_handle, "AlephBFT-runway", "Consensus", index).await;
-    handle_task_termination(rmc_handle, "AlephBFT-runway", "RMC", index).await;
     handle_task_termination(alerter_handle, "AlephBFT-runway", "Alerter", index).await;
     handle_task_termination(runway_handle, "AlephBFT-runway", "Runway", index).await;
     handle_task_termination(packer_handle, "AlephBFT-runway", "Packer", index).await;
