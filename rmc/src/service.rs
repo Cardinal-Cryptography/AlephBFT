@@ -2,7 +2,7 @@
 use crate::{
     handler::{Handler, OnStartRmcResponse},
     scheduler::TaskScheduler,
-    RmcMessage,
+    Message,
 };
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
@@ -33,7 +33,7 @@ pub struct Service<H, MK, SCH>
 where
     H: Signable + Hash,
     MK: MultiKeychain,
-    SCH: TaskScheduler<RmcMessage<H, MK::Signature, MK::PartialMultisignature>>,
+    SCH: TaskScheduler<Message<H, MK::Signature, MK::PartialMultisignature>>,
 {
     scheduler: SCH,
     handler: Handler<H, MK>,
@@ -43,7 +43,7 @@ impl<H, MK, SCH> Service<H, MK, SCH>
 where
     H: Signable + Hash + Eq + Clone + Debug,
     MK: MultiKeychain,
-    SCH: TaskScheduler<RmcMessage<H, MK::Signature, MK::PartialMultisignature>>,
+    SCH: TaskScheduler<Message<H, MK::Signature, MK::PartialMultisignature>>,
 {
     pub fn new(scheduler: SCH, handler: Handler<H, MK>) -> Self {
         Service { scheduler, handler }
@@ -59,10 +59,10 @@ where
         match self.handler.on_start_rmc(hash) {
             OnStartRmcResponse::SignedHash(signed_hash) => {
                 self.scheduler
-                    .add_task(RmcMessage::SignedHash(signed_hash.into_unchecked()));
+                    .add_task(Message::SignedHash(signed_hash.into_unchecked()));
             }
             OnStartRmcResponse::MultisignedHash(multisigned) => {
-                self.scheduler.add_task(RmcMessage::MultisignedHash(
+                self.scheduler.add_task(Message::MultisignedHash(
                     multisigned.clone().into_unchecked(),
                 ));
                 return Some(multisigned);
@@ -78,12 +78,12 @@ where
     /// the multisignature, if we haven't seen it before. Otherwise `None` is returned.
     pub fn process_message(
         &mut self,
-        message: RmcMessage<H, MK::Signature, MK::PartialMultisignature>,
+        message: Message<H, MK::Signature, MK::PartialMultisignature>,
     ) -> Option<Multisigned<H, MK>> {
         match message {
-            RmcMessage::SignedHash(unchecked) => match self.handler.on_signed_hash(unchecked) {
+            Message::SignedHash(unchecked) => match self.handler.on_signed_hash(unchecked) {
                 Ok(Some(multisigned)) => {
-                    self.scheduler.add_task(RmcMessage::MultisignedHash(
+                    self.scheduler.add_task(Message::MultisignedHash(
                         multisigned.clone().into_unchecked(),
                     ));
                     return Some(multisigned);
@@ -93,11 +93,10 @@ where
                     warn!(target: LOG_TARGET, "failed handling multisigned hash: {}", error);
                 }
             },
-            RmcMessage::MultisignedHash(unchecked) => {
+            Message::MultisignedHash(unchecked) => {
                 match self.handler.on_multisigned_hash(unchecked.clone()) {
                     Ok(Some(multisigned)) => {
-                        self.scheduler
-                            .add_task(RmcMessage::MultisignedHash(unchecked));
+                        self.scheduler.add_task(Message::MultisignedHash(unchecked));
                         return Some(multisigned);
                     }
                     Ok(None) => {}
@@ -111,16 +110,14 @@ where
     }
 
     /// Obtain the next message scheduled for broadcast.
-    pub async fn next_message(
-        &mut self,
-    ) -> RmcMessage<H, MK::Signature, MK::PartialMultisignature> {
+    pub async fn next_message(&mut self) -> Message<H, MK::Signature, MK::PartialMultisignature> {
         self.scheduler.next_task().await
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{DoublingDelayScheduler, Handler, RmcMessage, Service};
+    use crate::{DoublingDelayScheduler, Handler, Message, Service};
     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
     use futures::{
@@ -130,7 +127,7 @@ mod tests {
     use rand::Rng;
     use std::{collections::HashMap, time::Duration};
 
-    type TestMessage = RmcMessage<Signable, Signature, PartialMultisignature>;
+    type TestMessage = Message<Signable, Signature, PartialMultisignature>;
 
     struct TestEnvironment {
         rmc_services: Vec<Service<Signable, Keychain, DoublingDelayScheduler<TestMessage>>>,
