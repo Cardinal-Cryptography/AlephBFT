@@ -126,7 +126,7 @@ mod tests {
         rmc_start_rx: UnboundedReceiver<(Signable, NodeIndex)>,
         broadcast_tx: UnboundedSender<(TestMessage, NodeIndex)>,
         broadcast_rx: UnboundedReceiver<(TestMessage, NodeIndex)>,
-        hashes: HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>>,
+        hashes: HashMap<NodeIndex, Multisigned<Signable, Keychain>>,
         message_filter: Box<dyn FnMut(NodeIndex, TestMessage) -> bool>,
     }
 
@@ -181,8 +181,7 @@ mod tests {
             message: TestMessage,
             node_index: NodeIndex,
             use_filter: bool,
-        ) -> usize {
-            let mut new_multisigs = 0;
+        ) {
             for (j, service) in self.rmc_services.iter_mut().enumerate() {
                 if j == node_index.0
                     || (use_filter && !(self.message_filter)(j.into(), message.clone()))
@@ -190,14 +189,10 @@ mod tests {
                     continue;
                 }
                 if let Some(multisigned) = service.process_message(message.clone()) {
-                    self.hashes
-                        .entry(j.into())
-                        .or_insert_with(Vec::new)
-                        .push(multisigned);
-                    new_multisigs += 1;
+                    assert_eq!(self.hashes.insert(j.into(), multisigned), None);
+                    // there should be only one multisig per node
                 }
             }
-            new_multisigs
         }
 
         async fn next_event(&mut self) -> EnvironmentEvent {
@@ -222,9 +217,9 @@ mod tests {
 
         async fn collect_multisigned_hashes(
             mut self,
-            mut count: usize,
-        ) -> HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>> {
-            while count > 0 {
+            expected_multisigs: usize,
+        ) -> HashMap<NodeIndex, Multisigned<Signable, Keychain>> {
+            while self.hashes.len() < expected_multisigs {
                 match self.next_event().await {
                     EnvironmentEvent::StartRmc(hash, node_index) => {
                         let service = self
@@ -232,18 +227,15 @@ mod tests {
                             .get_mut(node_index.0)
                             .expect("service should exist");
                         if let Some(multisigned) = service.start_rmc(hash) {
-                            self.hashes
-                                .entry(node_index)
-                                .or_insert_with(Vec::new)
-                                .push(multisigned);
-                            count -= 1;
+                            assert_eq!(self.hashes.insert(node_index, multisigned), None);
+                            // there should be only one multisig per node
                         }
                     }
                     EnvironmentEvent::NetworkMessage(message, node_index) => {
-                        count -= self.handle_message(message, node_index, true);
+                        self.handle_message(message, node_index, true);
                     }
                     EnvironmentEvent::ManualBroadcast(message, node_index) => {
-                        count -= self.handle_message(message, node_index, false);
+                        self.handle_message(message, node_index, false);
                     }
                 }
             }
@@ -264,9 +256,8 @@ mod tests {
         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
         assert_eq!(hashes.len(), node_count.0);
         for i in 0..node_count.0 {
-            let multisignatures = &hashes[&i.into()];
-            assert_eq!(multisignatures.len(), 1);
-            assert_eq!(multisignatures[0].as_signable(), &hash);
+            let multisignature = &hashes[&i.into()];
+            assert_eq!(multisignature.as_signable(), &hash);
         }
     }
 
@@ -285,9 +276,8 @@ mod tests {
         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
         assert_eq!(hashes.len(), node_count.0);
         for i in 0..node_count.0 {
-            let multisignatures = &hashes[&i.into()];
-            assert_eq!(multisignatures.len(), 1);
-            assert_eq!(multisignatures[0].as_signable(), &hash);
+            let multisignature = &hashes[&i.into()];
+            assert_eq!(multisignature.as_signable(), &hash);
         }
     }
 
@@ -309,9 +299,8 @@ mod tests {
         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
         assert_eq!(hashes.len(), node_count.0);
         for i in 0..node_count.0 {
-            let multisignatures = &hashes[&i.into()];
-            assert_eq!(multisignatures.len(), 1);
-            assert_eq!(multisignatures[0].as_signable(), &hash);
+            let multisignature = &hashes[&i.into()];
+            assert_eq!(multisignature.as_signable(), &hash);
         }
     }
 
@@ -343,9 +332,8 @@ mod tests {
         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
         assert_eq!(hashes.len(), node_count.0);
         for i in 0..node_count.0 {
-            let multisignatures = &hashes[&i.into()];
-            assert_eq!(multisignatures.len(), 1);
-            assert_eq!(multisignatures[0].as_signable(), &hash);
+            let multisignature = &hashes[&i.into()];
+            assert_eq!(multisignature.as_signable(), &hash);
         }
     }
 }
