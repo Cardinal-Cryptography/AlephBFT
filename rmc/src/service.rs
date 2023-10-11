@@ -1,5 +1,9 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
-use crate::{handler::Handler, scheduler::TaskScheduler, RmcMessage};
+use crate::{
+    handler::{Handler, OnStartRmcResponse},
+    scheduler::TaskScheduler,
+    RmcMessage,
+};
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
     Signable, Signature, Signed, UncheckedSigned,
@@ -7,7 +11,6 @@ pub use aleph_bft_crypto::{
 use core::fmt::Debug;
 use log::{debug, warn};
 use std::hash::Hash;
-use crate::handler::OnStartRmcResponse;
 
 const LOG_TARGET: &str = "AlephBFT-rmc";
 
@@ -55,10 +58,13 @@ where
         debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
         match self.handler.on_start_rmc(hash) {
             OnStartRmcResponse::SignedHash(signed_hash) => {
-                self.scheduler.add_task(RmcMessage::SignedHash(signed_hash.into_unchecked()));
+                self.scheduler
+                    .add_task(RmcMessage::SignedHash(signed_hash.into_unchecked()));
             }
             OnStartRmcResponse::MultisignedHash(multisigned) => {
-                self.scheduler.add_task(RmcMessage::MultisignedHash(multisigned.clone().into_unchecked()));
+                self.scheduler.add_task(RmcMessage::MultisignedHash(
+                    multisigned.clone().into_unchecked(),
+                ));
                 return Some(multisigned);
             }
             OnStartRmcResponse::Noop => {}
