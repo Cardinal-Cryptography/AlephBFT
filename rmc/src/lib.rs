@@ -14,7 +14,7 @@ pub use handler::Handler;
 pub use scheduler::DoublingDelayScheduler;
 pub use service::Service;
 
-/// An RMC hash consisting of either a signed (indexed) hash, or a multisigned hash.
+/// An RMC message consisting of either a signed (indexed) hash, or a multisigned hash.
 #[derive(Debug, Encode, Decode, Clone, PartialEq, Eq, Hash)]
 pub enum Message<H: Signable, S: Signature, M: PartialMultisignature> {
     SignedHash(UncheckedSigned<Indexed<H>, S>),
