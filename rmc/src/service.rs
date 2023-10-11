@@ -236,6 +236,7 @@ mod tests {
                                 .entry(node_index)
                                 .or_insert_with(Vec::new)
                                 .push(multisigned);
+                            count -= 1;
                         }
                     }
                     EnvironmentEvent::NetworkMessage(message, node_index) => {
