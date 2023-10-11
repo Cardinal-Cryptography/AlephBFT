@@ -5,7 +5,7 @@ use crate::{
     Signed, UncheckedSigned,
 };
 use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
-use aleph_bft_rmc::Message;
+use aleph_bft_rmc::Message as RmcMessage;
 use aleph_bft_types::Terminator;
 use futures::{
     channel::{mpsc, oneshot},
@@ -312,7 +312,7 @@ async fn reacts_to_correctly_incoming_alert() {
         .incoming_message(AlertMessage::ForkAlert(signed_alert))
         .outgoing_notification(ForkingNotification::Forker(fork_proof));
     test_case.outgoing_message(
-        AlertMessage::RmcMessage(own_index, Message::SignedHash(signed_alert_hash.clone())),
+        AlertMessage::RmcMessage(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
         Recipient::Everyone,
     );
     test_case.run(own_index).await;
@@ -338,7 +338,7 @@ async fn notifies_about_finished_alert() {
         let signed_alert_hash = test_case.indexed_unchecked_signed(alert_hash, node_id);
         test_case.incoming_message(AlertMessage::RmcMessage(
             node_id,
-            Message::SignedHash(signed_alert_hash),
+            RmcMessage::SignedHash(signed_alert_hash),
         ));
     }
     test_case.outgoing_notification(ForkingNotification::Units(Vec::new()));
@@ -359,7 +359,7 @@ async fn asks_about_unknown_alert() {
     test_case
         .incoming_message(AlertMessage::RmcMessage(
             alerter_index,
-            Message::SignedHash(signed_alert_hash),
+            RmcMessage::SignedHash(signed_alert_hash),
         ))
         .outgoing_message(
             AlertMessage::AlertRequest(own_index, alert_hash),
@@ -388,7 +388,7 @@ async fn ignores_wrong_alert() {
         test_case.unexpected_message(
             AlertMessage::RmcMessage(
                 own_index,
-                Message::SignedHash(signed_wrong_alert_hash.clone()),
+                RmcMessage::SignedHash(signed_wrong_alert_hash.clone()),
             ),
             Recipient::Node(NodeIndex(i)),
         );
@@ -421,7 +421,7 @@ async fn responds_to_alert_queries() {
             Recipient::Everyone,
         )
         .outgoing_message(
-            AlertMessage::RmcMessage(own_index, Message::SignedHash(signed_alert_hash.clone())),
+            AlertMessage::RmcMessage(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
             Recipient::Everyone,
         )
         .wait()
@@ -460,7 +460,7 @@ async fn notifies_only_about_multisigned_alert() {
         .incoming_message(AlertMessage::ForkAlert(signed_empty_alert))
         .incoming_message(AlertMessage::RmcMessage(
             double_committer,
-            Message::SignedHash(signed_empty_alert_hash),
+            RmcMessage::SignedHash(signed_empty_alert_hash),
         ))
         .outgoing_notification(ForkingNotification::Forker(fork_proof.clone()))
         .unexpected_notification(ForkingNotification::Units(Vec::new()))
@@ -498,7 +498,7 @@ async fn notifies_only_about_multisigned_alert() {
         .incoming_message(AlertMessage::ForkAlert(signed_nonempty_alert))
         .incoming_message(AlertMessage::RmcMessage(
             other_honest_node,
-            Message::MultisignedHash(unchecked_multisigned_nonempty_alert_hash),
+            RmcMessage::MultisignedHash(unchecked_multisigned_nonempty_alert_hash),
         ))
         .outgoing_notification(ForkingNotification::Units(vec![forker_unit]))
         .unexpected_notification(ForkingNotification::Units(Vec::new()));

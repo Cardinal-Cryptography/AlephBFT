@@ -68,7 +68,7 @@ where
                 ));
                 return Some(multisigned);
             }
-            OnStartRmcResponse::Noop => None
+            OnStartRmcResponse::Noop => None,
         }
     }
 
