@@ -312,7 +312,7 @@ async fn reacts_to_correctly_incoming_alert() {
         .incoming_message(AlertMessage::ForkAlert(signed_alert))
         .outgoing_notification(ForkingNotification::Forker(fork_proof));
     test_case.outgoing_message(
-        AlertMessage::RmcHash(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
+        AlertMessage::RmcMessage(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
         Recipient::Everyone,
     );
     test_case.run(own_index).await;
@@ -336,7 +336,7 @@ async fn notifies_about_finished_alert() {
     for i in 1..n_members.0 - 1 {
         let node_id = NodeIndex(i);
         let signed_alert_hash = test_case.indexed_unchecked_signed(alert_hash, node_id);
-        test_case.incoming_message(AlertMessage::RmcHash(
+        test_case.incoming_message(AlertMessage::RmcMessage(
             node_id,
             RmcMessage::SignedHash(signed_alert_hash),
         ));
@@ -357,7 +357,7 @@ async fn asks_about_unknown_alert() {
     let alert_hash = Signable::hash(&alert);
     let signed_alert_hash = test_case.indexed_unchecked_signed(alert_hash, alerter_index);
     test_case
-        .incoming_message(AlertMessage::RmcHash(
+        .incoming_message(AlertMessage::RmcMessage(
             alerter_index,
             RmcMessage::SignedHash(signed_alert_hash),
         ))
@@ -386,7 +386,7 @@ async fn ignores_wrong_alert() {
         .unexpected_notification(ForkingNotification::Forker(wrong_fork_proof));
     for i in 1..n_members.0 {
         test_case.unexpected_message(
-            AlertMessage::RmcHash(
+            AlertMessage::RmcMessage(
                 own_index,
                 RmcMessage::SignedHash(signed_wrong_alert_hash.clone()),
             ),
@@ -421,7 +421,7 @@ async fn responds_to_alert_queries() {
             Recipient::Everyone,
         )
         .outgoing_message(
-            AlertMessage::RmcHash(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
+            AlertMessage::RmcMessage(own_index, RmcMessage::SignedHash(signed_alert_hash.clone())),
             Recipient::Everyone,
         )
         .wait()
@@ -458,7 +458,7 @@ async fn notifies_only_about_multisigned_alert() {
         test_case.indexed_unchecked_signed(empty_alert_hash, double_committer);
     test_case
         .incoming_message(AlertMessage::ForkAlert(signed_empty_alert))
-        .incoming_message(AlertMessage::RmcHash(
+        .incoming_message(AlertMessage::RmcMessage(
             double_committer,
             RmcMessage::SignedHash(signed_empty_alert_hash),
         ))
@@ -496,7 +496,7 @@ async fn notifies_only_about_multisigned_alert() {
         multisigned_nonempty_alert_hash.into_unchecked();
     test_case
         .incoming_message(AlertMessage::ForkAlert(signed_nonempty_alert))
-        .incoming_message(AlertMessage::RmcHash(
+        .incoming_message(AlertMessage::RmcMessage(
             other_honest_node,
             RmcMessage::MultisignedHash(unchecked_multisigned_nonempty_alert_hash),
         ))

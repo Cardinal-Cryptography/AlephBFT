@@ -24,7 +24,11 @@ impl Display for Error {
     }
 }
 
-type OnStartRmcResponse<H, MK> = (Signed<Indexed<H>, MK>, Option<Multisigned<H, MK>>);
+pub enum OnStartRmcResponse<H: Signable, MK: MultiKeychain> {
+    SignedHash(Signed<Indexed<H>, MK>),
+    MultisignedHash(Multisigned<H, MK>),
+    Noop,
+}
 
 pub struct Handler<H: Signable + Hash, MK: MultiKeychain> {
     keychain: MK,
@@ -43,12 +47,15 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
     /// version of the hash for broadcast. Should be called at most once for a particular hash.
     pub fn on_start_rmc(&mut self, hash: H) -> OnStartRmcResponse<H, MK> {
         let signed_hash = Signed::sign_with_index(hash, &self.keychain);
-        let mut maybe_multisigned = None;
-        if !self.already_completed(signed_hash.as_signable().as_signable()) {
-            maybe_multisigned = self.handle_signed_hash(signed_hash.clone());
+        if self.already_completed(signed_hash.as_signable().as_signable()) {
+            return OnStartRmcResponse::Noop;
         }
-        (signed_hash, maybe_multisigned)
+        if let Some(multisigned) = self.handle_signed_hash(signed_hash.clone()) {
+            return OnStartRmcResponse::MultisignedHash(multisigned);
+        }
+        OnStartRmcResponse::SignedHash(signed_hash)
     }
+
     /// Update the internal state with the signed hash. If the hash is incorrectly signed then
     /// [`Error::BadSignature`] is returned. If Adding this signature completes a multisignature
     /// then `Ok(multisigned)` is returned. Otherwise `Ok(None)` is returned.

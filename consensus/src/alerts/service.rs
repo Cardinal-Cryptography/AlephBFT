@@ -80,7 +80,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
         self.send_message_for_network(
-            AlertMessage::RmcHash(self.node_index, message),
+            AlertMessage::RmcMessage(self.node_index, message),
             Recipient::Everyone,
         );
     }
@@ -142,7 +142,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 }
                 Err(error) => debug!(target: LOG_TARGET, "{}", error),
             },
-            AlertMessage::RmcHash(sender, message) => {
+            AlertMessage::RmcMessage(sender, message) => {
                 match self.handler.on_rmc_message(sender, message) {
                     RmcResponse::RmcMessage(message) => {
                         if let Some(multisigned) = self.rmc_service.process_message(message) {
@@ -274,6 +274,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 },
             }
             if self.exiting {
+                debug!(target: LOG_TARGET, "Alerter decided to exit.");
                 terminator.terminate_sync().await;
                 break;
             }

@@ -7,6 +7,7 @@ pub use aleph_bft_crypto::{
 use core::fmt::Debug;
 use log::{debug, warn};
 use std::hash::Hash;
+use crate::handler::OnStartRmcResponse;
 
 const LOG_TARGET: &str = "AlephBFT-rmc";
 
@@ -45,19 +46,24 @@ where
         Service { scheduler, handler }
     }
 
-    /// Signs the given `hash` and starts scheduling a message containing the signed hash for
-    /// repeated broadcasts. If the given `hash` completes the multisignature, it is returned.
-    /// Otherwise `None` is returned.
+    /// Signs the given `hash` and adds the signature to the collection. If the given `hash`
+    /// completes the multisignature, it is scheduled for the broadcasts and then returned.
+    /// If the multisignature is not completed, `None` is returned. If the multisignature was
+    /// already completed when starting rmc, no tasks are scheduled. Otherwise the signed hash
+    /// is scheduled for the broadcasts.
     pub fn start_rmc(&mut self, hash: H) -> Option<Multisigned<H, MK>> {
         debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
-        let (signed_hash, maybe_multisigned) = self.handler.on_start_rmc(hash);
-        self.scheduler
-            .add_task(RmcMessage::SignedHash(signed_hash.into_unchecked()));
-        if let Some(multisigned) = maybe_multisigned.clone() {
-            self.scheduler
-                .add_task(RmcMessage::MultisignedHash(multisigned.into_unchecked()));
+        match self.handler.on_start_rmc(hash) {
+            OnStartRmcResponse::SignedHash(signed_hash) => {
+                self.scheduler.add_task(RmcMessage::SignedHash(signed_hash.into_unchecked()));
+            }
+            OnStartRmcResponse::MultisignedHash(multisigned) => {
+                self.scheduler.add_task(RmcMessage::MultisignedHash(multisigned.clone().into_unchecked()));
+                return Some(multisigned);
+            }
+            OnStartRmcResponse::Noop => {}
         }
-        maybe_multisigned
+        None
     }
 
     /// Processes a message which can be of two types. If the message is a hash signed by one

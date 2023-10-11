@@ -106,7 +106,7 @@ pub enum AlertMessage<H: Hasher, D: Data, S: Signature, MS: PartialMultisignatur
     /// Alert regarding forks, signed by the person claiming misconduct.
     ForkAlert(UncheckedSigned<Alert<H, D, S>, S>),
     /// An internal RMC message, together with the id of the sender.
-    RmcHash(NodeIndex, RmcMessage<H::Hash, S, MS>),
+    RmcMessage(NodeIndex, RmcMessage<H::Hash, S, MS>),
     /// A request by a node for a fork alert identified by the given hash.
     AlertRequest(NodeIndex, H::Hash),
 }
@@ -115,7 +115,7 @@ impl<H: Hasher, D: Data, S: Signature, MS: PartialMultisignature> AlertMessage<H
     pub fn included_data(&self) -> Vec<D> {
         match self {
             Self::ForkAlert(unchecked_alert) => unchecked_alert.as_signable().included_data(),
-            Self::RmcHash(_, _) => Vec::new(),
+            Self::RmcMessage(_, _) => Vec::new(),
             Self::AlertRequest(_, _) => Vec::new(),
         }
     }
