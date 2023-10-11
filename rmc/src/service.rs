@@ -60,7 +60,6 @@ where
             OnStartRmcResponse::SignedHash(signed_hash) => {
                 self.scheduler
                     .add_task(Message::SignedHash(signed_hash.into_unchecked()));
-                None
             }
             OnStartRmcResponse::MultisignedHash(multisigned) => {
                 self.scheduler.add_task(Message::MultisignedHash(
@@ -68,8 +67,9 @@ where
                 ));
                 return Some(multisigned);
             }
-            OnStartRmcResponse::Noop => None,
+            OnStartRmcResponse::Noop => {}
         }
+        None
     }
 
     /// Processes a message which can be of two types. If the message is a hash signed by one
