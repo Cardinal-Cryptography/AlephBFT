@@ -23,7 +23,7 @@ use std::{
 #[async_trait::async_trait]
 pub trait TaskScheduler<T>: Send + Sync {
     fn add_task(&mut self, task: T);
-    async fn next_task(&mut self) -> Option<T>;
+    async fn next_task(&mut self) -> T;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -106,7 +106,7 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
         self.add_task_after(task, Duration::ZERO);
     }
 
-    async fn next_task(&mut self) -> Option<T> {
+    async fn next_task(&mut self) -> T {
         match self.scheduled_instants.peek() {
             Some(&Reverse(IndexedInstant(instant, _))) => {
                 let now = Instant::now();
@@ -128,7 +128,7 @@ impl<T: Send + Sync + Clone> TaskScheduler<T> for DoublingDelayScheduler<T> {
             .push(Reverse(IndexedInstant(instant + scheduled_task.delay, i)));
 
         scheduled_task.delay *= 2;
-        Some(task)
+        task
     }
 }
 
@@ -150,27 +150,27 @@ mod tests {
         scheduler.add_task(1);
 
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(0));
+        assert_eq!(task, 0);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(1));
+        assert_eq!(task, 1);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(0));
+        assert_eq!(task, 0);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(1));
+        assert_eq!(task, 1);
 
         tokio::time::sleep(Duration::from_millis(2)).await;
         scheduler.add_task(2);
 
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(2));
+        assert_eq!(task, 2);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(2));
+        assert_eq!(task, 2);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(0));
+        assert_eq!(task, 0);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(1));
+        assert_eq!(task, 1);
         let task = scheduler.next_task().await;
-        assert_eq!(task, Some(2));
+        assert_eq!(task, 2);
     }
 
     #[tokio::test]
@@ -181,7 +181,7 @@ mod tests {
 
         for i in 0..5 {
             let task = scheduler.next_task().await;
-            assert_eq!(task, Some(i));
+            assert_eq!(task, i);
             let now = Instant::now();
             // 0, 5, 10, 15, 20
             assert!(now - before >= Duration::from_millis(5).mul(i));
@@ -189,7 +189,7 @@ mod tests {
 
         for i in 0..5 {
             let task = scheduler.next_task().await;
-            assert_eq!(task, Some(i));
+            assert_eq!(task, i);
             let now = Instant::now();
             // 25, 30, 35, 40, 45
             assert!(

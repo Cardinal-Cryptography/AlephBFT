@@ -24,6 +24,8 @@ impl Display for Error {
     }
 }
 
+type OnStartRmcResponse<H, MK> = (Signed<Indexed<H>, MK>, Option<Multisigned<H, MK>>);
+
 pub struct Handler<H: Signable + Hash, MK: MultiKeychain> {
     keychain: MK,
     hash_states: HashMap<H, PartiallyMultisigned<H, MK>>,
@@ -39,7 +41,7 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
 
     /// Signs hash and updates the internal state with it. Returns the signed
     /// version of the hash for broadcast. Should be called at most once for a particular hash.
-    pub fn on_start_rmc(&mut self, hash: H) -> (Signed<Indexed<H>, MK>, Option<Multisigned<H, MK>>) {
+    pub fn on_start_rmc(&mut self, hash: H) -> OnStartRmcResponse<H, MK> {
         let signed_hash = Signed::sign_with_index(hash, &self.keychain);
         let mut maybe_multisigned = None;
         if !self.already_completed(signed_hash.as_signable().as_signable()) {

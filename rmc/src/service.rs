@@ -1,7 +1,5 @@
 //! Reliable MultiCast - a primitive for Reliable Broadcast protocol.
-use crate::{
-    handler::Handler, scheduler::TaskScheduler, RmcHash,
-};
+use crate::{handler::Handler, scheduler::TaskScheduler, RmcMessage};
 pub use aleph_bft_crypto::{
     Indexed, MultiKeychain, Multisigned, NodeCount, PartialMultisignature, PartiallyMultisigned,
     Signable, Signature, Signed, UncheckedSigned,
@@ -14,16 +12,16 @@ const LOG_TARGET: &str = "AlephBFT-rmc";
 
 /// Reliable Multicast Box
 ///
-/// The instance of [`Service<H, MK, SCH>`] reliably broadcasts hashes of type `H`,
-/// and when a hash is successfully broadcast, the multisigned hash `Multisigned<H, MK>`
-/// is sent to the network.
+/// The instance of [`Service<H, MK, SCH>`] is used to reliably broadcasts hashes of type `H`.
+/// It collects the signed hashes and upon receiving a large enough number of them it yields
+/// the multisigned hash.
 ///
 /// A node with an instance of [`Service<H, MK, SCH>`] can initiate broadcasting a message `msg: H`
-/// by sending the [`RmcIncomingMessage::StartRmc`] variant through the network to [`Service<H, MK, SCH>`].
-/// As a result, the node signs `msg` and starts broadcasting the signed message via the network.
-/// When sufficintly many nodes initiate rmc with the same message `msg` and a node collects enough
-/// signatures to form a complete multisignature under the message, the multisigned message
-/// is sent back through the network by the instance of [`Service<H, MK, SCH>`].
+/// by calling [`Service::start_rmc`]. As a result, the node signs `msg` and starts scheduling
+/// messages for broadcast which can be obtained by awaiting on [`Service::next_message`]. When
+/// sufficiently many nodes initiate rmc with the same message `msg` and a node collects enough
+/// signatures to form a complete multisignature under the message, [`Service::process_message`]
+/// will return the multisigned hash.
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/reliable_broadcast.html
 /// for a high-level description of this protocol and how it is used for fork alerts.
@@ -31,7 +29,7 @@ pub struct Service<H, MK, SCH>
 where
     H: Signable + Hash,
     MK: MultiKeychain,
-    SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
+    SCH: TaskScheduler<RmcMessage<H, MK::Signature, MK::PartialMultisignature>>,
 {
     scheduler: SCH,
     handler: Handler<H, MK>,
@@ -41,36 +39,53 @@ impl<H, MK, SCH> Service<H, MK, SCH>
 where
     H: Signable + Hash + Eq + Clone + Debug,
     MK: MultiKeychain,
-    SCH: TaskScheduler<RmcHash<H, MK::Signature, MK::PartialMultisignature>>,
+    SCH: TaskScheduler<RmcMessage<H, MK::Signature, MK::PartialMultisignature>>,
 {
     pub fn new(scheduler: SCH, handler: Handler<H, MK>) -> Self {
-        Service {
-            scheduler,
-            handler,
-        }
+        Service { scheduler, handler }
     }
 
+    /// Signs the given `hash` and starts scheduling a message containing the signed hash for
+    /// repeated broadcasts. If the given `hash` completes the multisignature, it is returned.
+    /// Otherwise `None` is returned.
     pub fn start_rmc(&mut self, hash: H) -> Option<Multisigned<H, MK>> {
         debug!(target: LOG_TARGET, "starting rmc for {:?}", hash);
         let (signed_hash, maybe_multisigned) = self.handler.on_start_rmc(hash);
         self.scheduler
-            .add_task(RmcHash::SignedHash(signed_hash.into_unchecked()));
+            .add_task(RmcMessage::SignedHash(signed_hash.into_unchecked()));
         if let Some(multisigned) = maybe_multisigned.clone() {
             self.scheduler
-                .add_task(RmcHash::MultisignedHash(multisigned.into_unchecked()));
+                .add_task(RmcMessage::MultisignedHash(multisigned.into_unchecked()));
         }
-        return maybe_multisigned;
+        maybe_multisigned
     }
 
-    pub fn process_hash(
+    /// Processes a message which can be of two types. If the message is a hash signed by one
+    /// person, it adds it to the collective signature. If it completes the multisignature, it is
+    /// returned. Otherwise `None` is returned. If the message is a multisigned hash, it returns
+    /// the multisignature, if we haven't seen it before. Otherwise `None` is returned.
+    pub fn process_message(
         &mut self,
-        hash: RmcHash<H, MK::Signature, MK::PartialMultisignature>,
+        message: RmcMessage<H, MK::Signature, MK::PartialMultisignature>,
     ) -> Option<Multisigned<H, MK>> {
-        match hash {
-            RmcHash::MultisignedHash(unchecked) => {
+        match message {
+            RmcMessage::SignedHash(unchecked) => match self.handler.on_signed_hash(unchecked) {
+                Ok(Some(multisigned)) => {
+                    self.scheduler.add_task(RmcMessage::MultisignedHash(
+                        multisigned.clone().into_unchecked(),
+                    ));
+                    return Some(multisigned);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(target: LOG_TARGET, "failed handling multisigned hash: {}", error);
+                }
+            },
+            RmcMessage::MultisignedHash(unchecked) => {
                 match self.handler.on_multisigned_hash(unchecked.clone()) {
                     Ok(Some(multisigned)) => {
-                        self.scheduler.add_task(RmcHash::MultisignedHash(unchecked));
+                        self.scheduler
+                            .add_task(RmcMessage::MultisignedHash(unchecked));
                         return Some(multisigned);
                     }
                     Ok(None) => {}
@@ -79,313 +94,257 @@ where
                     }
                 }
             }
-            RmcHash::SignedHash(unchecked) => {
-                match self.handler.on_signed_hash(unchecked) {
-                    Ok(Some(multisigned)) => {
-                        self.scheduler.add_task(RmcHash::MultisignedHash(
-                            multisigned.clone().into_unchecked(),
-                        ));
-                        return Some(multisigned);
-                    }
-                    Ok(None) => {}
-                    Err(error) => {
-                        warn!(target: LOG_TARGET, "failed handling multisigned hash: {}", error);
-                    }
-                }
-            }
         }
         None
     }
 
-    /// Run the rmc service.
-    pub async fn run(&mut self) -> RmcHash<H, MK::Signature, MK::PartialMultisignature> {
-        loop {
-            let task = self.scheduler.next_task().await;
-            match task {
-                Some(task) => return task,
-                None => debug!(target: LOG_TARGET, "Tasks ended"),
-            }
-        }
+    /// Obtain the next message scheduled for broadcast.
+    pub async fn next_message(
+        &mut self,
+    ) -> RmcMessage<H, MK::Signature, MK::PartialMultisignature> {
+        self.scheduler.next_task().await
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use crate::{
-//         DoublingDelayScheduler, Handler, RmcHash, RmcIO, RmcIncomingMessage, RmcOutgoingMessage,
-//         Service,
-//     };
-//     use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
-//     use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
-//     use aleph_bft_types::Terminator;
-//     use futures::{
-//         channel::{
-//             mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
-//             oneshot,
-//         },
-//         future::{self, select_all},
-//         StreamExt,
-//     };
-//     use rand::Rng;
-//     use std::{collections::HashMap, time::Duration};
-//
-//     type TestIncomingMessage = RmcIncomingMessage<Signable, Signature, PartialMultisignature>;
-//     type TestOutgoingMessage = RmcOutgoingMessage<Signable, Keychain>;
-//     type TestScheduler =
-//         DoublingDelayScheduler<RmcHash<Signable, Signature, PartialMultisignature>>;
-//
-//     struct TestNetwork {
-//         rmcios: Vec<RmcIO<Signable, Keychain>>,
-//         message_filter: Box<dyn FnMut(NodeIndex, TestIncomingMessage) -> bool>,
-//         multisigned_txs: Vec<UnboundedSender<Multisigned<Signable, Keychain>>>,
-//     }
-//
-//     type NewTestNetworkResult = (
-//         TestNetwork,
-//         Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
-//     );
-//
-//     impl TestNetwork {
-//         fn new(
-//             node_count: NodeCount,
-//             rmcios: Vec<RmcIO<Signable, Keychain>>,
-//             message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
-//         ) -> NewTestNetworkResult {
-//             let (multisigned_txs, multisigned_rxs) = (0..node_count.0).map(|_| unbounded()).unzip();
-//             (
-//                 TestNetwork {
-//                     rmcios,
-//                     message_filter: Box::new(message_filter),
-//                     multisigned_txs,
-//                 },
-//                 multisigned_rxs,
-//             )
-//         }
-//
-//         fn send_message(&mut self, node: NodeIndex, msg: TestIncomingMessage) {
-//             self.rmcios[node.0]
-//                 .send(msg)
-//                 .expect("channel should be open");
-//         }
-//
-//         fn broadcast_message(&mut self, msg: TestIncomingMessage) {
-//             for i in 0..self.rmcios.len() {
-//                 self.send_message(NodeIndex(i), msg.clone());
-//             }
-//         }
-//
-//         async fn receive_message(&mut self) -> (Option<TestOutgoingMessage>, usize) {
-//             let futures = self
-//                 .rmcios
-//                 .iter_mut()
-//                 .map(|rmcio| Box::pin(rmcio.receive()));
-//             let (maybe_msg, i, _) = select_all(futures).await;
-//             (maybe_msg, i)
-//         }
-//
-//         async fn run(&mut self) {
-//             while let (Some(message), i) = self.receive_message().await {
-//                 match message {
-//                     RmcOutgoingMessage::NewMultisigned(multisigned) => {
-//                         if self.multisigned_txs[i].unbounded_send(multisigned).is_err() {
-//                             break;
-//                         }
-//                     }
-//                     RmcOutgoingMessage::RmcHash(hash) => {
-//                         for (i, rmcio) in self.rmcios.iter().enumerate() {
-//                             if (self.message_filter)(
-//                                 NodeIndex(i),
-//                                 TestIncomingMessage::RmcHash(hash.clone()),
-//                             ) && rmcio
-//                                 .send(TestIncomingMessage::RmcHash(hash.clone()))
-//                                 .is_err()
-//                             {
-//                                 break;
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//
-//     struct TestEnvironment {
-//         network: TestNetwork,
-//         rmc_services: Vec<Service<Signable, Keychain, TestScheduler>>,
-//         multisigned_rxs: Vec<UnboundedReceiver<Multisigned<Signable, Keychain>>>,
-//     }
-//
-//     impl TestEnvironment {
-//         fn new(
-//             node_count: NodeCount,
-//             message_filter: impl FnMut(NodeIndex, TestIncomingMessage) -> bool + 'static,
-//         ) -> Self {
-//             let mut rmc_services = vec![];
-//             let mut rmcios = vec![];
-//
-//             for i in 0..node_count.0 {
-//                 let (service, rmcio) = Service::new(
-//                     DoublingDelayScheduler::new(Duration::from_millis(1)),
-//                     Handler::new(Keychain::new(node_count, NodeIndex(i))),
-//                 );
-//                 rmc_services.push(service);
-//                 rmcios.push(rmcio);
-//             }
-//
-//             let (network, multisigned_rxs) = TestNetwork::new(node_count, rmcios, message_filter);
-//
-//             TestEnvironment {
-//                 network,
-//                 rmc_services,
-//                 multisigned_rxs,
-//             }
-//         }
-//
-//         fn start_rmc(&mut self, node: NodeIndex, hash: Signable) {
-//             self.network
-//                 .send_message(node, RmcIncomingMessage::StartRmc(hash));
-//         }
-//
-//         async fn collect_multisigned_hashes(
-//             mut self,
-//             count: usize,
-//         ) -> HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>> {
-//             let node_count = NodeCount(self.rmc_services.len());
-//             let (exit_tx, exit_rx) = oneshot::channel();
-//             let mut terminator = Terminator::create_root(exit_rx, "root");
-//
-//             let mut hashes = HashMap::new();
-//             let mut services = self.rmc_services.into_iter();
-//             let mut handles = vec![];
-//
-//             for _ in 0..node_count.0 {
-//                 let rmc_terminator = terminator.add_offspring_connection("rmc");
-//                 let service = services.next().expect("there should be enough services");
-//                 handles.push(tokio::spawn(async move {
-//                     service.run(rmc_terminator).await;
-//                 }));
-//             }
-//
-//             for _ in 0..count {
-//                 tokio::select! {
-//                     (unchecked, i, _) = future::select_all(self.multisigned_rxs.iter_mut().map(|rx| rx.next())) => {
-//                         if let Some(unchecked) = unchecked {
-//                             hashes.entry(i.into()).or_insert_with(Vec::new).push(unchecked);
-//                         }
-//                     }
-//                     _ = self.network.run() => {
-//                         panic!("network ended unexpectedly");
-//                     }
-//                 }
-//             }
-//
-//             let _ = exit_tx.send(());
-//             terminator.terminate_sync().await;
-//             self.network.run().await;
-//             hashes
-//         }
-//     }
-//
-//     /// Create 10 honest nodes and let each of them start rmc for the same hash.
-//     #[tokio::test]
-//     async fn simple_scenario() {
-//         let node_count = NodeCount(10);
-//         let mut environment = TestEnvironment::new(node_count, |_, _| true);
-//         let hash: Signable = "56".into();
-//         for i in 0..node_count.0 {
-//             environment.start_rmc(NodeIndex(i), hash.clone());
-//         }
-//
-//         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-//
-//     /// Each message is delivered with 20% probability
-//     #[tokio::test]
-//     async fn faulty_network() {
-//         let node_count = NodeCount(10);
-//         let _keychains = Keychain::new_vec(node_count);
-//         let mut rng = rand::thread_rng();
-//         let mut environment =
-//             TestEnvironment::new(node_count, move |_, _| rng.gen_range(0..5) == 0);
-//
-//         let hash: Signable = "56".into();
-//         for i in 0..node_count.0 {
-//             environment.start_rmc(NodeIndex(i), hash.clone());
-//         }
-//
-//         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-//
-//     /// Only 7 nodes start rmc and one of the nodes which didn't start rmc
-//     /// is delivered only messages with complete multisignatures
-//     #[tokio::test]
-//     async fn node_hearing_only_multisignatures() {
-//         let node_count = NodeCount(10);
-//         let mut environment = TestEnvironment::new(node_count, move |node_ix, message| {
-//             !matches!(
-//                 (node_ix.0, message),
-//                 (0, TestIncomingMessage::RmcHash(RmcHash::SignedHash(_)))
-//             )
-//         });
-//
-//         let threshold = (2 * node_count.0 + 1) / 3;
-//         let hash: Signable = "56".into();
-//         for i in 0..threshold {
-//             environment.start_rmc(NodeIndex(i), hash.clone());
-//         }
-//
-//         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-//
-//     /// 7 honest nodes and 3 dishonest nodes which emit bad signatures and multisignatures
-//     #[tokio::test]
-//     async fn bad_signatures_and_multisignatures_are_ignored() {
-//         let node_count = NodeCount(10);
-//         let _keychains = Keychain::new_vec(node_count);
-//         let mut environment = TestEnvironment::new(node_count, |_, _| true);
-//
-//         let bad_hash: Signable = "65".into();
-//         let bad_keychain: BadSigning<Keychain> = Keychain::new(node_count, 0.into()).into();
-//         let bad_msg = TestIncomingMessage::RmcHash(RmcHash::SignedHash(
-//             Signed::sign_with_index(bad_hash.clone(), &bad_keychain).into(),
-//         ));
-//         environment.network.broadcast_message(bad_msg);
-//         let bad_msg = TestIncomingMessage::RmcHash(RmcHash::MultisignedHash(
-//             Signed::sign_with_index(bad_hash.clone(), &bad_keychain)
-//                 .into_partially_multisigned(&bad_keychain)
-//                 .into_unchecked(),
-//         ));
-//         environment.network.broadcast_message(bad_msg);
-//
-//         let hash: Signable = "56".into();
-//         for i in 0..node_count.0 {
-//             environment.start_rmc(NodeIndex(i), hash.clone());
-//         }
-//
-//         let hashes = environment.collect_multisigned_hashes(node_count.0).await;
-//         assert_eq!(hashes.len(), node_count.0);
-//         for i in 0..node_count.0 {
-//             let multisignatures = &hashes[&i.into()];
-//             assert_eq!(multisignatures.len(), 1);
-//             assert_eq!(multisignatures[0].as_signable(), &hash);
-//         }
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::{DoublingDelayScheduler, Handler, RmcMessage, Service};
+    use aleph_bft_crypto::{Multisigned, NodeCount, NodeIndex, Signed};
+    use aleph_bft_mock::{BadSigning, Keychain, PartialMultisignature, Signable, Signature};
+    use futures::{
+        channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender},
+        future, StreamExt,
+    };
+    use rand::Rng;
+    use std::{collections::HashMap, time::Duration};
+
+    type TestMessage = RmcMessage<Signable, Signature, PartialMultisignature>;
+
+    struct TestEnvironment {
+        rmc_services: Vec<Service<Signable, Keychain, DoublingDelayScheduler<TestMessage>>>,
+        rmc_start_tx: UnboundedSender<(Signable, NodeIndex)>,
+        rmc_start_rx: UnboundedReceiver<(Signable, NodeIndex)>,
+        broadcast_tx: UnboundedSender<(TestMessage, NodeIndex)>,
+        broadcast_rx: UnboundedReceiver<(TestMessage, NodeIndex)>,
+        hashes: HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>>,
+        message_filter: Box<dyn FnMut(NodeIndex, TestMessage) -> bool>,
+    }
+
+    enum EnvironmentEvent {
+        NetworkMessage(TestMessage, NodeIndex),
+        ManualBroadcast(TestMessage, NodeIndex),
+        StartRmc(Signable, NodeIndex),
+    }
+
+    impl TestEnvironment {
+        fn new(
+            node_count: NodeCount,
+            message_filter: impl FnMut(NodeIndex, TestMessage) -> bool + 'static,
+        ) -> Self {
+            let mut rmc_services = vec![];
+            let (rmc_start_tx, rmc_start_rx) = unbounded();
+            let (broadcast_tx, broadcast_rx) = unbounded();
+
+            for i in 0..node_count.0 {
+                let service = Service::new(
+                    DoublingDelayScheduler::new(Duration::from_millis(1)),
+                    Handler::new(Keychain::new(node_count, NodeIndex(i))),
+                );
+                rmc_services.push(service);
+            }
+
+            TestEnvironment {
+                rmc_services,
+                rmc_start_tx,
+                rmc_start_rx,
+                broadcast_tx,
+                broadcast_rx,
+                hashes: HashMap::new(),
+                message_filter: Box::new(message_filter),
+            }
+        }
+
+        fn start_rmc(&self, hash: Signable, node_index: NodeIndex) {
+            self.rmc_start_tx
+                .unbounded_send((hash, node_index))
+                .expect("our channel should be open");
+        }
+
+        fn broadcast_message(&self, message: TestMessage, node_index: NodeIndex) {
+            self.broadcast_tx
+                .unbounded_send((message, node_index))
+                .expect("our channel should be open");
+        }
+
+        fn handle_message(
+            &mut self,
+            message: TestMessage,
+            node_index: NodeIndex,
+            use_filter: bool,
+        ) -> usize {
+            let mut new_multisigs = 0;
+            for (j, service) in self.rmc_services.iter_mut().enumerate() {
+                if j == node_index.0
+                    || (use_filter && !(self.message_filter)(j.into(), message.clone()))
+                {
+                    continue;
+                }
+                if let Some(multisigned) = service.process_message(message.clone()) {
+                    self.hashes
+                        .entry(j.into())
+                        .or_insert_with(Vec::new)
+                        .push(multisigned);
+                    new_multisigs += 1;
+                }
+            }
+            new_multisigs
+        }
+
+        async fn next_event(&mut self) -> EnvironmentEvent {
+            let message_futures = self
+                .rmc_services
+                .iter_mut()
+                .map(|serv| Box::pin(serv.next_message()));
+            tokio::select! {
+                (message, i, _) = future::select_all(message_futures) => {
+                    EnvironmentEvent::NetworkMessage(message, NodeIndex(i))
+                }
+                maybe_message = self.broadcast_rx.next() => {
+                    let (message, node_index) = maybe_message.expect("our channel should be open");
+                    EnvironmentEvent::ManualBroadcast(message, node_index)
+                }
+                maybe_start_rmc = self.rmc_start_rx.next() => {
+                    let (hash, node_index) = maybe_start_rmc.expect("our channel should be open");
+                    EnvironmentEvent::StartRmc(hash, node_index)
+                }
+            }
+        }
+
+        async fn collect_multisigned_hashes(
+            mut self,
+            mut count: usize,
+        ) -> HashMap<NodeIndex, Vec<Multisigned<Signable, Keychain>>> {
+            while count > 0 {
+                match self.next_event().await {
+                    EnvironmentEvent::StartRmc(hash, node_index) => {
+                        let service = self
+                            .rmc_services
+                            .get_mut(node_index.0)
+                            .expect("service should exist");
+                        if let Some(multisigned) = service.start_rmc(hash) {
+                            self.hashes
+                                .entry(node_index)
+                                .or_insert_with(Vec::new)
+                                .push(multisigned);
+                        }
+                    }
+                    EnvironmentEvent::NetworkMessage(message, node_index) => {
+                        count -= self.handle_message(message, node_index, true);
+                    }
+                    EnvironmentEvent::ManualBroadcast(message, node_index) => {
+                        count -= self.handle_message(message, node_index, false);
+                    }
+                }
+            }
+            self.hashes
+        }
+    }
+
+    /// Create 10 honest nodes and let each of them start rmc for the same hash.
+    #[tokio::test]
+    async fn simple_scenario() {
+        let node_count = NodeCount(10);
+        let environment = TestEnvironment::new(node_count, |_, _| true);
+        let hash: Signable = "56".into();
+        for i in 0..node_count.0 {
+            environment.start_rmc(hash.clone(), NodeIndex(i));
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+
+    /// Each message is delivered with 20% probability
+    #[tokio::test]
+    async fn faulty_network() {
+        let node_count = NodeCount(10);
+        let mut rng = rand::thread_rng();
+        let environment = TestEnvironment::new(node_count, move |_, _| rng.gen_range(0..5) == 0);
+
+        let hash: Signable = "56".into();
+        for i in 0..node_count.0 {
+            environment.start_rmc(hash.clone(), NodeIndex(i));
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+
+    /// Only 7 nodes start rmc and one of the nodes which didn't start rmc
+    /// is delivered only messages with complete multisignatures
+    #[tokio::test]
+    async fn node_hearing_only_multisignatures() {
+        let node_count = NodeCount(10);
+        let environment = TestEnvironment::new(node_count, move |node_ix, message| {
+            !matches!((node_ix.0, message), (0, TestMessage::SignedHash(_)))
+        });
+
+        let threshold = (2 * node_count.0 + 1) / 3;
+        let hash: Signable = "56".into();
+        for i in 0..threshold {
+            environment.start_rmc(hash.clone(), NodeIndex(i));
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+
+    /// 7 honest nodes and 3 dishonest nodes which emit bad signatures and multisignatures
+    #[tokio::test]
+    async fn bad_signatures_and_multisignatures_are_ignored() {
+        let node_count = NodeCount(10);
+        let _keychains = Keychain::new_vec(node_count);
+        let environment = TestEnvironment::new(node_count, |_, _| true);
+
+        let bad_hash: Signable = "65".into();
+        let bad_keychain: BadSigning<Keychain> = Keychain::new(node_count, 0.into()).into();
+        let bad_msg = TestMessage::SignedHash(
+            Signed::sign_with_index(bad_hash.clone(), &bad_keychain).into(),
+        );
+        environment.broadcast_message(bad_msg, NodeIndex(0));
+        let bad_msg = TestMessage::MultisignedHash(
+            Signed::sign_with_index(bad_hash.clone(), &bad_keychain)
+                .into_partially_multisigned(&bad_keychain)
+                .into_unchecked(),
+        );
+        environment.broadcast_message(bad_msg, NodeIndex(0));
+
+        let hash: Signable = "56".into();
+        for i in 0..node_count.0 {
+            environment.start_rmc(hash.clone(), NodeIndex(i));
+        }
+
+        let hashes = environment.collect_multisigned_hashes(node_count.0).await;
+        assert_eq!(hashes.len(), node_count.0);
+        for i in 0..node_count.0 {
+            let multisignatures = &hashes[&i.into()];
+            assert_eq!(multisignatures.len(), 1);
+            assert_eq!(multisignatures[0].as_signable(), &hash);
+        }
+    }
+}

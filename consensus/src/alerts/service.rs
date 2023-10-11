@@ -5,14 +5,15 @@ use crate::{
     },
     Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Recipient, Sender,
 };
-use aleph_bft_rmc::{RmcHash, DoublingDelayScheduler};
+use aleph_bft_rmc::{DoublingDelayScheduler, RmcMessage};
 use aleph_bft_types::Terminator;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, warn};
-use std::collections::HashMap;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 const LOG_TARGET: &str = "AlephBFT-alerter";
+type RmcService<H, MK, S, M> =
+    aleph_bft_rmc::Service<H, MK, DoublingDelayScheduler<RmcMessage<H, S, M>>>;
 
 pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     messages_for_network: Sender<(NetworkMessage<H, D, MK>, Recipient)>,
@@ -27,7 +28,7 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     node_index: NodeIndex,
     exiting: bool,
     handler: Handler<H, D, MK>,
-    rmc_service: aleph_bft_rmc::Service<H::Hash, MK, DoublingDelayScheduler<RmcHash<H::Hash, MK::Signature, MK::PartialMultisignature>>>,
+    rmc_service: RmcService<H::Hash, MK, MK::Signature, MK::PartialMultisignature>,
 }
 
 pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
@@ -40,11 +41,7 @@ pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
-    pub fn new(
-        keychain: MK,
-        io: IO<H, D, MK>,
-        handler: Handler<H, D, MK>,
-    ) -> Service<H, D, MK> {
+    pub fn new(keychain: MK, io: IO<H, D, MK>, handler: Handler<H, D, MK>) -> Service<H, D, MK> {
         let IO {
             messages_for_network,
             messages_from_network,
@@ -80,7 +77,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     fn rmc_message_to_network(
         &mut self,
-        message: RmcHash<H::Hash, MK::Signature, MK::PartialMultisignature>,
+        message: RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
     ) {
         self.send_message_for_network(
             AlertMessage::RmcHash(self.node_index, message),
@@ -148,7 +145,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             AlertMessage::RmcHash(sender, message) => {
                 match self.handler.on_rmc_message(sender, message) {
                     RmcResponse::RmcMessage(message) => {
-                        if let Some(multisigned) = self.rmc_service.process_hash(message) {
+                        if let Some(multisigned) = self.rmc_service.process_message(message) {
                             self.handle_multisigned(multisigned);
                         }
                     }
@@ -208,7 +205,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 Some((message, recipient, hash)) => {
                     self.send_message_for_network(message, recipient);
                     if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
-                        println!("SIEMA");
                         self.handle_multisigned(multisigned);
                     }
                 }
@@ -218,7 +214,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                 match self.network_alert_responses.remove(&alert.hash()) {
                     Some((maybe_notification, hash)) => {
                         if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
-                            println!("SIEMA");
                             self.handle_multisigned(multisigned);
                         }
                         if let Some(notification) = maybe_notification {
@@ -263,7 +258,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
                         break;
                     }
                 },
-                message = self.rmc_service.run().fuse() => {
+                message = self.rmc_service.next_message().fuse() => {
                     self.rmc_message_to_network(message);
                 },
                 item = self.responses_from_backup.next() => match item {
