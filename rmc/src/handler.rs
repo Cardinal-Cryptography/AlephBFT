@@ -10,6 +10,7 @@ use std::{
     hash::Hash,
 };
 
+#[derive(Debug, PartialEq)]
 pub enum Error {
     BadSignature,
     BadMultisignature,
@@ -24,6 +25,7 @@ impl Display for Error {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum OnStartRmcResponse<H: Signable, MK: MultiKeychain> {
     SignedHash(Signed<Indexed<H>, MK>),
     MultisignedHash(Multisigned<H, MK>),
@@ -125,5 +127,225 @@ impl<H: Signable + Hash + Eq + Clone + Debug, MK: MultiKeychain> Handler<H, MK> 
             self.hash_states.get(hash),
             Some(PartiallyMultisigned::Complete { .. })
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        handler::{Error, OnStartRmcResponse},
+        Handler,
+    };
+    use aleph_bft_crypto::{NodeCount, NodeIndex, PartiallyMultisigned, Signed};
+    use aleph_bft_mock::{BadSigning, Keychain, Signable};
+
+    fn apply_signatures(
+        handler: &mut Handler<Signable, Keychain>,
+        hash: &Signable,
+        count: NodeCount,
+        nodes: impl Iterator<Item = NodeIndex>,
+    ) {
+        for i in nodes {
+            let keychain_i = Keychain::new(count, i);
+            let signed_hash = Signed::sign_with_index(hash.clone(), &keychain_i);
+            handler
+                .on_signed_hash(signed_hash.clone().into_unchecked())
+                .expect("the signatures should be correct");
+        }
+    }
+
+    fn apply_signatures_and_get_multisigned(
+        handler: &mut Handler<Signable, Keychain>,
+        hash: &Signable,
+        count: NodeCount,
+        nodes: impl Iterator<Item = NodeIndex>,
+    ) -> Option<PartiallyMultisigned<Signable, Keychain>> {
+        let mut multisigned = None;
+        for i in nodes {
+            let keychain_i = Keychain::new(count, i);
+            let signed_hash = Signed::sign_with_index(hash.clone(), &keychain_i);
+            handler
+                .on_signed_hash(signed_hash.clone().into_unchecked())
+                .expect("the signatures should be correct");
+            multisigned = match multisigned {
+                None => Some(signed_hash.into_partially_multisigned(&keychain_i)),
+                Some(ms) => Some(ms.add_signature(signed_hash, &keychain_i)),
+            }
+        }
+        multisigned
+    }
+
+    #[test]
+    fn on_start_rmc_before_exceeding_quorum_returns_signed() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let expected = Signed::sign_with_index(hash.clone(), &keychain);
+        assert_eq!(
+            handler.on_start_rmc(hash),
+            OnStartRmcResponse::SignedHash(expected)
+        );
+    }
+
+    #[test]
+    fn on_start_rmc_exceeding_quorum_returns_multisigned() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let multisigned = apply_signatures_and_get_multisigned(
+            &mut handler,
+            &hash,
+            7.into(),
+            (1..5).map(|i| i.into()),
+        )
+        .expect("passed nodes set is non-empty");
+        let multisigned =
+            multisigned.add_signature(Signed::sign_with_index(hash.clone(), &keychain), &keychain); // should exceed the quorum
+        match multisigned {
+            PartiallyMultisigned::Incomplete { .. } => panic!("multisignature should be complete"),
+            PartiallyMultisigned::Complete { multisigned } => assert_eq!(
+                handler.on_start_rmc(hash),
+                OnStartRmcResponse::MultisignedHash(multisigned)
+            ),
+        }
+    }
+
+    #[test]
+    fn on_start_rmc_after_exceeding_quorum_returns_noop() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        apply_signatures(&mut handler, &hash, 7.into(), (1..6).map(|i| i.into())); // should already exceed the quorum
+        assert_eq!(handler.on_start_rmc(hash), OnStartRmcResponse::Noop);
+    }
+
+    #[test]
+    fn on_signed_hash_before_exceeding_quorum_returns_none() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let peer_keychain = Keychain::new(7.into(), 1.into());
+        let peer_signed = Signed::sign_with_index(hash, &peer_keychain);
+        assert_eq!(
+            handler.on_signed_hash(peer_signed.into_unchecked()),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn on_signed_hash_exceeding_quorum_returns_multisigned() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let peer_keychain = Keychain::new(7.into(), 1.into());
+        let multisigned = apply_signatures_and_get_multisigned(
+            &mut handler,
+            &hash,
+            7.into(),
+            (2..6).map(|i| i.into()),
+        )
+        .expect("passed nodes set is non-empty");
+        let peer_signed = Signed::sign_with_index(hash, &peer_keychain);
+        let multisigned = multisigned.add_signature(peer_signed.clone(), &peer_keychain);
+        match multisigned {
+            PartiallyMultisigned::Incomplete { .. } => panic!("multisignature should be complete"),
+            PartiallyMultisigned::Complete { multisigned } => assert_eq!(
+                handler.on_signed_hash(peer_signed.into_unchecked()),
+                Ok(Some(multisigned))
+            ),
+        }
+    }
+
+    #[test]
+    fn on_signed_hash_after_exceeding_quorum_returns_none() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        apply_signatures(&mut handler, &hash, 7.into(), (1..6).map(|i| i.into()));
+        let our_signed = Signed::sign_with_index(hash, &keychain);
+        assert_eq!(
+            handler.on_signed_hash(our_signed.into_unchecked()),
+            Ok(None)
+        );
+    }
+
+    #[test]
+    fn on_signed_hash_with_bad_signature_fails() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let bad_keychain: BadSigning<Keychain> = Keychain::new(NodeCount(7), NodeIndex(1)).into();
+        let bad_signed = Signed::sign_with_index(hash, &bad_keychain);
+        assert_eq!(
+            handler.on_signed_hash(bad_signed.into_unchecked()),
+            Err(Error::BadSignature)
+        );
+    }
+
+    #[test]
+    fn on_multisigned_hash_with_new_multisigned_returns_multisigned() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let peer_keychain = Keychain::new(7.into(), 1.into());
+        let mut peer_handler = Handler::new(peer_keychain);
+        let multisigned = apply_signatures_and_get_multisigned(
+            &mut peer_handler,
+            &hash,
+            7.into(),
+            (1..6).map(|i| i.into()),
+        )
+        .expect("passed nodes set is non-empty");
+        match multisigned {
+            PartiallyMultisigned::Incomplete { .. } => panic!("multisignature should be complete"),
+            PartiallyMultisigned::Complete { multisigned } => assert_eq!(
+                handler.on_multisigned_hash(multisigned.clone().into_unchecked()),
+                Ok(Some(multisigned))
+            ),
+        }
+    }
+
+    #[test]
+    fn on_multisigned_hash_with_known_multisigned_returns_none() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let multisigned = apply_signatures_and_get_multisigned(
+            &mut handler,
+            &hash,
+            7.into(),
+            (1..6).map(|i| i.into()),
+        )
+        .expect("passed nodes set is non-empty");
+        match multisigned {
+            PartiallyMultisigned::Incomplete { .. } => panic!("multisignature should be complete"),
+            PartiallyMultisigned::Complete { multisigned } => assert_eq!(
+                handler.on_multisigned_hash(multisigned.into_unchecked()),
+                Ok(None)
+            ),
+        }
+    }
+
+    #[test]
+    fn on_multisigned_hash_with_bad_multisignature_fails() {
+        let hash: Signable = "13".into();
+        let keychain = Keychain::new(7.into(), 0.into());
+        let mut handler = Handler::new(keychain);
+        let multisigned = apply_signatures_and_get_multisigned(
+            &mut handler,
+            &hash,
+            7.into(),
+            (1..5).map(|i| i.into()),
+        )
+        .expect("passed nodes set is non-empty");
+        match multisigned {
+            PartiallyMultisigned::Incomplete { unchecked } => assert_eq!(
+                handler.on_multisigned_hash(unchecked),
+                Err(Error::BadMultisignature)
+            ),
+            PartiallyMultisigned::Complete { .. } => {
+                panic!("multisignature should not be complete")
+            }
+        }
     }
 }
