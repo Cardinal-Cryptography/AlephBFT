@@ -176,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn on_start_rmc_before_exceeding_quorum_returns_signed() {
+    fn on_start_rmc_before_reaching_quorum_returns_signed() {
         let hash: Signable = "13".into();
         let keychain = Keychain::new(7.into(), 0.into());
         let mut handler = Handler::new(keychain);
@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn on_start_rmc_exceeding_quorum_returns_multisigned() {
+    fn on_start_rmc_reaching_quorum_returns_multisigned() {
         let hash: Signable = "13".into();
         let keychain = Keychain::new(7.into(), 0.into());
         let mut handler = Handler::new(keychain);
@@ -200,7 +200,7 @@ mod tests {
         )
         .expect("passed nodes set is non-empty");
         let multisigned =
-            multisigned.add_signature(Signed::sign_with_index(hash.clone(), &keychain), &keychain); // should exceed the quorum
+            multisigned.add_signature(Signed::sign_with_index(hash.clone(), &keychain), &keychain); // should reach the quorum
         match multisigned {
             PartiallyMultisigned::Incomplete { .. } => panic!("multisignature should be complete"),
             PartiallyMultisigned::Complete { multisigned } => assert_eq!(
@@ -211,16 +211,16 @@ mod tests {
     }
 
     #[test]
-    fn on_start_rmc_after_exceeding_quorum_returns_noop() {
+    fn on_start_rmc_after_reaching_quorum_returns_noop() {
         let hash: Signable = "13".into();
         let keychain = Keychain::new(7.into(), 0.into());
         let mut handler = Handler::new(keychain);
-        apply_signatures(&mut handler, &hash, 7.into(), (1..6).map(|i| i.into())); // should already exceed the quorum
+        apply_signatures(&mut handler, &hash, 7.into(), (1..6).map(|i| i.into())); // should already reach the quorum
         assert_eq!(handler.on_start_rmc(hash), OnStartRmcResponse::Noop);
     }
 
     #[test]
-    fn on_signed_hash_before_exceeding_quorum_returns_none() {
+    fn on_signed_hash_before_reaching_quorum_returns_none() {
         let hash: Signable = "13".into();
         let keychain = Keychain::new(7.into(), 0.into());
         let mut handler = Handler::new(keychain);
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn on_signed_hash_exceeding_quorum_returns_multisigned() {
+    fn on_signed_hash_reaching_quorum_returns_multisigned() {
         let hash: Signable = "13".into();
         let keychain = Keychain::new(7.into(), 0.into());
         let mut handler = Handler::new(keychain);
@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn on_signed_hash_after_exceeding_quorum_returns_none() {
+    fn on_signed_hash_after_reaching_quorum_returns_none() {
         let hash: Signable = "13".into();
         let keychain = Keychain::new(7.into(), 0.into());
         let mut handler = Handler::new(keychain);
