@@ -94,9 +94,11 @@ where
                 }
             },
             Message::MultisignedHash(unchecked) => {
-                match self.handler.on_multisigned_hash(unchecked.clone()) {
+                match self.handler.on_multisigned_hash(unchecked) {
                     Ok(Some(multisigned)) => {
-                        self.scheduler.add_task(Message::MultisignedHash(unchecked));
+                        self.scheduler.add_task(Message::MultisignedHash(
+                            multisigned.clone().into_unchecked(),
+                        ));
                         return Some(multisigned);
                     }
                     Ok(None) => {}
