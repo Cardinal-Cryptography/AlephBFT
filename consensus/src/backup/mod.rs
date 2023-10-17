@@ -8,6 +8,7 @@ use crate::{alerts::AlertData, units::UncheckedSignedUnit, Data, Hasher, MultiKe
 
 mod loader;
 mod saver;
+mod injector;
 
 #[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub enum BackupItem<H: Hasher, D: Data, MK: MultiKeychain> {

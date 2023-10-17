@@ -123,7 +123,7 @@ type CollectionResponse<H, D, MK> = UncheckedSigned<
     <MK as Keychain>::Signature,
 >;
 
-struct Runway<H, D, FH, MK>
+pub struct Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,

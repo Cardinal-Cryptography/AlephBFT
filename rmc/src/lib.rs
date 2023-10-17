@@ -10,7 +10,7 @@ mod handler;
 mod scheduler;
 mod service;
 
-pub use handler::Handler;
+pub use handler::{Handler, OnStartRmcResponse};
 pub use scheduler::DoublingDelayScheduler;
 pub use service::Service;
 
