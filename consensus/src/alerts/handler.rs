@@ -10,6 +10,7 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter},
 };
+use crate::units::UncheckedSignedUnit;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -47,12 +48,6 @@ impl Display for Error {
 
 type KnownAlerts<H, D, MK> =
     HashMap<<H as Hasher>::Hash, Signed<Alert<H, D, <MK as Keychain>::Signature>, MK>>;
-
-pub type OnOwnAlertResponse<H, D, MK> = (
-    AlertMessage<H, D, <MK as Keychain>::Signature, <MK as MultiKeychain>::PartialMultisignature>,
-    Recipient,
-    <H as Hasher>::Hash,
-);
 
 pub type OnNetworkAlertResponse<H, D, MK> = (
     Option<ForkingNotification<H, D, <MK as Keychain>::Signature>>,
@@ -173,16 +168,12 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
     pub fn on_own_alert(
         &mut self,
         alert: Alert<H, D, MK::Signature>,
-    ) -> OnOwnAlertResponse<H, D, MK> {
+    ) -> UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature> {
         let forker = alert.forker();
         self.known_forkers.insert(forker, alert.proof.clone());
         let alert = Signed::sign(alert, &self.keychain);
-        let hash = self.rmc_alert(forker, alert.clone());
-        (
-            AlertMessage::ForkAlert(alert.into_unchecked()),
-            Recipient::Everyone,
-            hash,
-        )
+        self.rmc_alert(forker, alert.clone());
+        alert.into_unchecked()
     }
 
     /// May return a `ForkingNotification`, which should be propagated
@@ -258,11 +249,11 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         }
     }
 
-    /// May return a `ForkingNotification`, which should be propagated
+    /// May return legit units associated to the multisigned hash which should be propagated
     pub fn alert_confirmed(
         &mut self,
         multisigned: Multisigned<H::Hash, MK>,
-    ) -> Result<ForkingNotification<H, D, MK::Signature>, Error> {
+    ) -> Result<Vec<UncheckedSignedUnit<H, D, MK::Signature>>, Error> {
         let alert = match self.known_alerts.get(multisigned.as_signable()) {
             Some(alert) => alert.as_signable(),
             None => return Err(Error::UnknownAlertRMC),
@@ -270,7 +261,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Handler<H, D, MK> {
         let forker = alert.proof.0.as_signable().creator();
         self.known_rmcs.insert((alert.sender, forker), alert.hash());
         self.verify_commitment(alert)?;
-        Ok(ForkingNotification::Units(alert.legit_units.clone()))
+        Ok(alert.legit_units.clone())
     }
 }
 
@@ -335,11 +326,7 @@ mod tests {
         let alert_hash = Signable::hash(&alert);
         assert_eq!(
             this.on_own_alert(alert),
-            (
-                AlertMessage::ForkAlert(signed_alert),
-                Recipient::Everyone,
-                alert_hash,
-            ),
+            signed_alert,
         );
     }
 
@@ -689,7 +676,7 @@ mod tests {
             PartiallyMultisigned::Incomplete { .. } => unreachable!(),
         };
         let expected = match (make_known, good_commitment) {
-            (true, true) => Ok(ForkingNotification::Units(vec![])),
+            (true, true) => Ok(vec![]),
             (true, false) => Err(Error::UnknownAlertRMC),
             (false, true) => Err(Error::UnknownAlertRMC),
             (false, false) => Err(Error::UnknownAlertRMC),

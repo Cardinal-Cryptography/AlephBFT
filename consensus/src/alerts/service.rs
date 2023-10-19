@@ -1,6 +1,6 @@
 use crate::{
     alerts::{
-        handler::{Handler, OnNetworkAlertResponse, OnOwnAlertResponse, RmcResponse},
+        handler::{Handler, OnNetworkAlertResponse, RmcResponse},
         Alert, AlertData, AlertMessage, ForkingNotification, NetworkMessage,
     },
     Data, Hasher, MultiKeychain, Multisigned, NodeIndex, Receiver, Recipient, Sender,
@@ -22,7 +22,6 @@ pub struct Service<H: Hasher, D: Data, MK: MultiKeychain> {
     alerts_from_units: Receiver<Alert<H, D, MK::Signature>>,
     data_for_backup: Sender<AlertData<H, D, MK>>,
     responses_from_backup: Receiver<AlertData<H, D, MK>>,
-    own_alert_responses: HashMap<H::Hash, OnOwnAlertResponse<H, D, MK>>,
     network_alert_responses: HashMap<H::Hash, OnNetworkAlertResponse<H, D, MK>>,
     multisigned_notifications: HashMap<H::Hash, ForkingNotification<H, D, MK::Signature>>,
     node_index: NodeIndex,
@@ -65,7 +64,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
             alerts_from_units,
             data_for_backup,
             responses_from_backup,
-            own_alert_responses: HashMap::new(),
             network_alert_responses: HashMap::new(),
             multisigned_notifications: HashMap::new(),
             node_index,
@@ -127,8 +125,8 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         match message {
             AlertMessage::ForkAlert(alert) => match self.handler.on_network_alert(alert.clone()) {
                 Ok(response) => {
-                    let alert = alert.as_signable().clone();
-                    self.network_alert_responses.insert(alert.hash(), response);
+                    let hash = alert.as_signable().hash().clone();
+                    self.network_alert_responses.insert(hash, response);
                     if self
                         .data_for_backup
                         .unbounded_send(AlertData::NetworkAlert(alert))
@@ -168,11 +166,10 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
     }
 
     fn handle_alert_from_runway(&mut self, alert: Alert<H, D, MK::Signature>) {
-        let response = self.handler.on_own_alert(alert.clone());
-        self.own_alert_responses.insert(alert.hash(), response);
+        let unchecked = self.handler.on_own_alert(alert);
         if self
             .data_for_backup
-            .unbounded_send(AlertData::OwnAlert(alert))
+            .unbounded_send(AlertData::OwnAlert(unchecked))
             .is_err()
         {
             error!(target: LOG_TARGET, "Own alert couldn't be sent to backup.");
@@ -181,9 +178,9 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
         match self.handler.alert_confirmed(multisigned.clone()) {
-            Ok(notification) => {
+            Ok(units) => {
                 self.multisigned_notifications
-                    .insert(*multisigned.as_signable(), notification);
+                    .insert(*multisigned.as_signable(), ForkingNotification::Units(units));
                 if self
                     .data_for_backup
                     .unbounded_send(AlertData::MultisignedHash(multisigned))
@@ -201,17 +198,15 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
 
     fn handle_data_from_backup(&mut self, data: AlertData<H, D, MK>) {
         match data {
-            AlertData::OwnAlert(alert) => match self.own_alert_responses.remove(&alert.hash()) {
-                Some((message, recipient, hash)) => {
-                    self.send_message_for_network(message, recipient);
-                    if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
-                        self.handle_multisigned(multisigned);
-                    }
+            AlertData::OwnAlert(alert) => {
+                let hash = alert.as_signable().hash().clone();
+                self.send_message_for_network(AlertMessage::ForkAlert(alert), Recipient::Everyone);
+                if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
+                    self.handle_multisigned(multisigned);
                 }
-                None => warn!(target: LOG_TARGET, "Alert response missing from storage."),
             },
             AlertData::NetworkAlert(alert) => {
-                match self.network_alert_responses.remove(&alert.hash()) {
+                match self.network_alert_responses.remove(&alert.as_signable().hash()) {
                     Some((maybe_notification, hash)) => {
                         if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
                             self.handle_multisigned(multisigned);

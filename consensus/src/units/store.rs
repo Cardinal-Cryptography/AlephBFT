@@ -160,13 +160,17 @@ impl<H: Hasher, D: Data, K: Keychain> UnitStore<H, D, K> {
         self.is_forker[node_id]
     }
 
+    pub fn mark_forker(&mut self, forker: NodeIndex) {
+        self.is_forker.insert(forker);
+    }
+
     // Marks a node as a forker and outputs all units in store created by this node.
     // The returned vector is sorted w.r.t. increasing rounds.
-    pub(crate) fn mark_forker(&mut self, forker: NodeIndex) -> Vec<SignedUnit<H, D, K>> {
+    pub(crate) fn mark_forker_and_return_legit_units(&mut self, forker: NodeIndex) -> Vec<SignedUnit<H, D, K>> {
         if self.is_forker[forker] {
             warn!(target: "AlephBFT-unit-store", "Trying to mark the node {:?} as forker for the second time.", forker);
         }
-        self.is_forker.insert(forker);
+        self.mark_forker(forker);
         (0..=self.max_round)
             .filter_map(|r| self.unit_by_coord(UnitCoord::new(r, forker)).cloned())
             .collect()
@@ -259,7 +263,7 @@ mod tests {
         }
 
         let forker_units: Vec<_> = store
-            .mark_forker(NodeIndex(0))
+            .mark_forker_and_return_legit_units(NodeIndex(0))
             .iter()
             .map(|unit| unit.clone().into_unchecked().as_signable().round())
             .collect();

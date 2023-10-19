@@ -60,7 +60,7 @@ impl<H: Hasher, D: Data, S: Signature> Alert<H, D, S> {
         }
     }
 
-    fn hash(&self) -> H::Hash {
+    pub fn hash(&self) -> H::Hash {
         let hash = *self.hash.read();
         match hash {
             Some(hash) => hash,
@@ -74,7 +74,7 @@ impl<H: Hasher, D: Data, S: Signature> Alert<H, D, S> {
 
     // Simplified forker check, should only be called for alerts that have already been checked to
     // contain valid proofs.
-    fn forker(&self) -> NodeIndex {
+    pub fn forker(&self) -> NodeIndex {
         self.proof.0.as_signable().creator()
     }
 
@@ -131,7 +131,7 @@ pub enum ForkingNotification<H: Hasher, D: Data, S: Signature> {
 
 #[derive(Clone, Debug, Decode, Encode, PartialEq)]
 pub enum AlertData<H: Hasher, D: Data, MK: MultiKeychain> {
-    OwnAlert(Alert<H, D, MK::Signature>),
-    NetworkAlert(Alert<H, D, MK::Signature>),
+    OwnAlert(UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature>),
+    NetworkAlert(UncheckedSigned<Alert<H, D, MK::Signature>, MK::Signature>),
     MultisignedHash(Multisigned<H::Hash, MK>),
 }

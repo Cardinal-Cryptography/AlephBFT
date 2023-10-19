@@ -409,8 +409,16 @@ where
         self.store.add_unit(su, false);
     }
 
+    pub fn add_unit(&mut self, su: SignedUnit<H, D, MK>, alert: bool) {
+        self.store.add_unit(su, alert);
+    }
+
+    pub fn mark_forker(&mut self, forker: NodeIndex) {
+        self.store.mark_forker(forker);
+    }
+
     fn on_new_forker_detected(&mut self, forker: NodeIndex, proof: ForkProof<H, D, MK::Signature>) {
-        let alerted_units = self.store.mark_forker(forker);
+        let alerted_units = self.store.mark_forker_and_return_legit_units(forker);
         let alert = self.form_alert(proof, alerted_units);
         if self.alerts_for_alerter.unbounded_send(alert).is_err() {
             warn!(target: "AlephBFT-runway", "{:?} Channel to alerter should be open", self.index());
