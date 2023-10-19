@@ -4,24 +4,19 @@ use std::{
 use std::marker::PhantomData;
 use std::time::Duration;
 use log::error;
-use crate::{alerts::{AlertData, ForkingNotification, Handler as AlerterHandler}, backup::{BackupItem}, units::{UncheckedSignedUnit, UnitCoord}, Data, Hasher, MultiKeychain, NodeIndex, SessionId, Multisigned};
+use crate::{alerts::{AlertData, ForkingNotification, Handler as AlerterHandler}, backup::{BackupItem}, units::{UncheckedSignedUnit, UnitCoord}, Data, Hasher, MultiKeychain, SessionId, Multisigned};
 use aleph_bft_rmc::{DoublingDelayScheduler, Handler as RmcHandler, Message as RmcMessage, OnStartRmcResponse};
 use aleph_bft_types::{FinalizationHandler};
-use crate::alerts::ForkProof;
 use crate::runway::Runway;
 use crate::units::SignedUnit;
 
 const LOG_TARGET: &str = "AlephBFT-backup-injector";
 
-pub struct BackupInjectError {
-
-}
-
 pub struct InitialState<H: Hasher, D: Data, MK: MultiKeychain> {
-    alerter_handler: AlerterHandler<H, D, MK>,
-    rmc_handler: RmcHandler<H::Hash, MK>,
-    forking_notifications: Vec<ForkingNotification<H, D, MK::Signature>>,
-    scheduler: DoublingDelayScheduler<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
+    pub alerter_handler: AlerterHandler<H, D, MK>,
+    pub rmc_handler: RmcHandler<H::Hash, MK>,
+    pub forking_notifications: Vec<ForkingNotification<H, D, MK::Signature>>,
+    pub scheduler: DoublingDelayScheduler<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>,
 }
 
 pub struct BackupInjector<H: Hasher, D: Data, MK: MultiKeychain> {

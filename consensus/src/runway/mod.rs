@@ -30,7 +30,7 @@ use std::{
 mod collection;
 mod packer;
 
-use crate::backup::{BackupLoader, BackupSaver, LoadedData};
+use crate::backup::{BackupInjector, BackupLoader, BackupSaver, InitialState};
 #[cfg(feature = "initial_unit_collection")]
 use collection::{Collection, IO as CollectionIO};
 pub use collection::{NewestUnitResponse, Salt};
@@ -732,27 +732,11 @@ where
 
     async fn run(
         mut self,
-        data_from_backup: oneshot::Receiver<LoadedData<H, D, MK>>,
         mut terminator: Terminator,
     ) {
         let index = self.index();
-        let data_from_backup = data_from_backup.fuse();
-        pin_mut!(data_from_backup);
-
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
-
-        match data_from_backup.await {
-            Ok((units, _alert_data)) => {
-                for unit in units {
-                    self.on_unit_received(unit, false);
-                }
-            }
-            Err(e) => {
-                error!(target: "AlephBFT-runway", "{:?} Units message from backup channel closed: {:?}", index, e);
-                return;
-            }
-        }
 
         debug!(target: "AlephBFT-runway", "{:?} Runway started.", index);
         loop {
@@ -842,7 +826,7 @@ fn initial_unit_collection<'a, H: Hasher, D: Data, MK: MultiKeychain>(
     keychain: &'a MK,
     validator: &'a Validator<MK>,
     threshold: NodeCount,
-    unit_messages_for_network: &Sender<RunwayNotificationOut<H, D, MK::Signature>>,
+    unit_messages_for_network: Sender<RunwayNotificationOut<H, D, MK::Signature>>,
     unit_collection_sender: oneshot::Sender<Round>,
     responses_from_runway: Receiver<CollectionResponse<H, D, MK>>,
     resolved_requests: Sender<Request<H>>,
@@ -937,74 +921,22 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     let (tx_consensus, consensus_stream) = mpsc::unbounded();
     let (consensus_sink, rx_consensus) = mpsc::unbounded();
     let (ordered_batch_tx, ordered_batch_rx) = mpsc::unbounded();
-
     let consensus_terminator = terminator.add_offspring_connection("AlephBFT-consensus");
     let consensus_config = config.clone();
     let consensus_spawner = spawn_handle.clone();
     let (starting_round_sender, starting_round) = oneshot::channel();
 
-    let consensus_handle = spawn_handle.spawn_essential("runway/consensus", async move {
-        consensus::run(
-            consensus_config,
-            consensus_stream,
-            consensus_sink,
-            ordered_batch_tx,
-            consensus_spawner,
-            starting_round,
-            consensus_terminator,
-        )
-        .await
-    });
-    let mut consensus_handle = consensus_handle.fuse();
-
     let (backup_units_for_saver, backup_units_from_runway) = mpsc::unbounded();
     let (backup_units_for_runway, backup_units_from_saver) = mpsc::unbounded();
     let (alert_data_for_saver, alert_data_from_alerter) = mpsc::unbounded();
     let (alert_data_for_alerter, alert_data_from_saver) = mpsc::unbounded();
-
     let backup_saver_terminator = terminator.add_offspring_connection("AlephBFT-backup-saver");
-    let backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", {
-        let mut backup_saver: BackupSaver<_, _, MK, _> = BackupSaver::new(
-            backup_units_from_runway,
-            alert_data_from_alerter,
-            backup_units_for_runway,
-            alert_data_for_alerter,
-            runway_io.backup_write,
-        );
-        async move {
-            backup_saver.run(backup_saver_terminator).await;
-        }
-    });
-    let mut backup_saver_handle = backup_saver_handle.fuse();
 
     let (alert_notifications_for_units, notifications_from_alerter) = mpsc::unbounded();
     let (alerts_for_alerter, alerts_from_units) = mpsc::unbounded();
-
     let alerter_terminator = terminator.add_offspring_connection("AlephBFT-alerter");
-    let alerter_keychain = keychain.clone();
     let alert_messages_for_network = network_io.alert_messages_for_network;
     let alert_messages_from_network = network_io.alert_messages_from_network;
-    let alerter_handler =
-        crate::alerts::Handler::new(alerter_keychain.clone(), config.session_id());
-
-    let mut alerter_service = crate::alerts::Service::new(
-        alerter_keychain,
-        crate::alerts::IO {
-            messages_for_network: alert_messages_for_network,
-            messages_from_network: alert_messages_from_network,
-            notifications_for_units: alert_notifications_for_units,
-            alerts_from_units,
-            data_for_backup: alert_data_for_saver,
-            responses_from_backup: alert_data_from_saver,
-        },
-        alerter_handler,
-    );
-
-    let mut alerter_handle = spawn_handle
-        .spawn_essential("runway/alerter", async move {
-            alerter_service.run(alerter_terminator).await;
-        })
-        .fuse();
 
     let index = keychain.index();
     let threshold = (keychain.node_count() * 2) / 3 + NodeCount(1);
@@ -1016,8 +948,35 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     );
     let (responses_for_collection, responses_from_runway) = mpsc::unbounded();
     let (unit_collections_sender, unit_collection_result) = oneshot::channel();
-    let (loaded_data_tx, loaded_data_rx) = oneshot::channel();
+    let (loaded_data_tx, mut loaded_data_rx) = oneshot::channel();
     let session_id = config.session_id();
+
+    let RunwayIO {
+        data_provider,
+        finalization_handler,
+        ..
+    } = runway_io;
+    let (preunits_for_packer, preunits_from_runway) = mpsc::unbounded();
+    let (signed_units_for_runway, signed_units_from_packer) = mpsc::unbounded();
+    let runway_config = RunwayConfig {
+        finalization_handler,
+        backup_units_for_saver,
+        backup_units_from_saver,
+        alerts_for_alerter,
+        notifications_from_alerter,
+        tx_consensus,
+        rx_consensus,
+        unit_messages_from_network: network_io.unit_messages_from_network,
+        unit_messages_for_network: network_io.unit_messages_for_network.clone(),
+        ordered_batch_rx,
+        responses_for_collection,
+        resolved_requests: network_io.resolved_requests.clone(),
+        max_round: config.max_round(),
+        preunits_for_packer,
+        signed_units_from_packer,
+    };
+    let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
+    let mut runway = Runway::new(runway_config, keychain.clone(), validator.clone());
 
     let backup_loading_handle = spawn_handle
         .spawn_essential("runway/loading", {
@@ -1035,15 +994,101 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         .fuse();
     pin_mut!(backup_loading_handle);
 
+    let backup = loop {
+        futures::select! {
+            _ = backup_loading_handle => {
+                debug!(target: "AlephBFT-runway", "{:?} Backup loading task terminated.", index);
+                return;
+            },
+            backup = loaded_data_rx => {
+                match backup {
+                    Ok(backup) => break backup,
+                    Err(_) => {
+                        error!(target: "AlephBFT-runway", "loaded data receiver closed.");
+                        return;
+                    }
+                }
+            },
+        };
+    };
+
+    let injector = BackupInjector::new(session_id, keychain.clone());
+    let InitialState {
+        alerter_handler,
+        rmc_handler,
+        forking_notifications,
+        scheduler,
+    } = match injector.get_initial_state(backup, &mut runway) {
+        Some(initial_state) => initial_state,
+        None => {
+            error!(target: "AlephBFT-runway", "couldn't inject backup data. Exiting");
+            return;
+        }
+    };
+    for notification in forking_notifications {
+        if alert_notifications_for_units.unbounded_send(notification).is_err() {
+            error!(target: "AlephBFT-runway", "couldn't send initial forking notifications. Exiting");
+            return;
+        }
+    }
+
+    let mut backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", {
+        let mut backup_saver: BackupSaver<_, _, MK, _> = BackupSaver::new(
+            backup_units_from_runway,
+            alert_data_from_alerter,
+            backup_units_for_runway,
+            alert_data_for_alerter,
+            runway_io.backup_write,
+        );
+        async move {
+            backup_saver.run(backup_saver_terminator).await;
+        }
+    }).fuse();
+
+    let consensus_handle = spawn_handle.spawn_essential("runway/consensus", async move {
+        consensus::run(
+            consensus_config,
+            consensus_stream,
+            consensus_sink,
+            ordered_batch_tx,
+            consensus_spawner,
+            starting_round,
+            consensus_terminator,
+        )
+            .await
+    });
+    let mut consensus_handle = consensus_handle.fuse();
+
+    let mut alerter_service = crate::alerts::Service::new(
+        keychain.clone(),
+        crate::alerts::IO {
+            messages_for_network: alert_messages_for_network,
+            messages_from_network: alert_messages_from_network,
+            notifications_for_units: alert_notifications_for_units,
+            alerts_from_units,
+            data_for_backup: alert_data_for_saver,
+            responses_from_backup: alert_data_from_saver,
+        },
+        alerter_handler,
+        rmc_handler,
+        scheduler,
+    );
+
+    let mut alerter_handle = spawn_handle
+        .spawn_essential("runway/alerter", async move {
+            alerter_service.run(alerter_terminator).await;
+        })
+        .fuse();
+
     #[cfg(feature = "initial_unit_collection")]
     let starting_round_handle = match initial_unit_collection(
         keychain,
         &validator,
         threshold,
-        &network_io.unit_messages_for_network,
+        network_io.unit_messages_for_network,
         unit_collections_sender,
         responses_from_runway,
-        network_io.resolved_requests.clone(),
+        network_io.resolved_requests,
     ) {
         Ok(handle) => handle.fuse(),
         Err(_) => return,
@@ -1055,39 +1100,9 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     };
     pin_mut!(starting_round_handle);
 
-    let RunwayIO {
-        data_provider,
-        finalization_handler,
-        ..
-    } = runway_io;
-    let (preunits_for_packer, preunits_from_runway) = mpsc::unbounded();
-    let (signed_units_for_runway, signed_units_from_packer) = mpsc::unbounded();
-
     let runway_handle = spawn_handle
         .spawn_essential("runway", {
-            let runway_config = RunwayConfig {
-                finalization_handler,
-                backup_units_for_saver,
-                backup_units_from_saver,
-                alerts_for_alerter,
-                notifications_from_alerter,
-                tx_consensus,
-                rx_consensus,
-                unit_messages_from_network: network_io.unit_messages_from_network,
-                unit_messages_for_network: network_io.unit_messages_for_network,
-                ordered_batch_rx,
-                responses_for_collection,
-                resolved_requests: network_io.resolved_requests,
-                max_round: config.max_round(),
-                preunits_for_packer,
-                signed_units_from_packer,
-            };
-            let runway_terminator = terminator.add_offspring_connection("AlephBFT-runway");
-            let validator = validator.clone();
-            let keychain = keychain.clone();
-            let runway = Runway::new(runway_config, keychain, validator);
-
-            async move { runway.run(loaded_data_rx, runway_terminator).await }
+            async move { runway.run(runway_terminator).await }
         })
         .fuse();
     pin_mut!(runway_handle);

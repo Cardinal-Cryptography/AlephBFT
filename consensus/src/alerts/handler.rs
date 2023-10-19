@@ -1,5 +1,5 @@
 use crate::{
-    alerts::{Alert, AlertMessage, ForkProof, ForkingNotification},
+    alerts::{Alert, ForkProof, ForkingNotification},
     Data, Hasher, Keychain, MultiKeychain, Multisigned, NodeIndex, PartialMultisignature,
     Recipient, SessionId, Signature, Signed, UncheckedSigned,
 };
@@ -270,7 +270,7 @@ mod tests {
     use crate::{
         alerts::{
             handler::{Error, Handler, RmcResponse},
-            Alert, AlertMessage, ForkProof, ForkingNotification,
+            Alert, ForkProof, ForkingNotification,
         },
         units::{ControlHash, FullUnit, PreUnit},
         PartiallyMultisigned, Recipient, Round,

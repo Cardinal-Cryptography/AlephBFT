@@ -5,7 +5,7 @@ use crate::{
     Signed, UncheckedSigned,
 };
 use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
-use aleph_bft_rmc::Message as RmcMessage;
+use aleph_bft_rmc::{DoublingDelayScheduler, Handler as RmcHandler, Message as RmcMessage};
 use aleph_bft_types::Terminator;
 use futures::{
     channel::{mpsc, oneshot},
@@ -219,6 +219,8 @@ impl TestCase {
         let (data_for_backup, responses_from_backup) = mpsc::unbounded();
 
         let alerter_handler = Handler::new(keychain, 0);
+        let rmc_handler = RmcHandler::new(keychain);
+        let scheduler = DoublingDelayScheduler::new(Duration::from_millis(10));
         let mut alerter_service = Service::new(
             keychain,
             crate::alerts::IO {
@@ -230,6 +232,8 @@ impl TestCase {
                 responses_from_backup,
             },
             alerter_handler,
+            rmc_handler,
+            scheduler,
         );
 
         tokio::spawn(async move {

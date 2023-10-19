@@ -111,12 +111,7 @@ mod tests {
     use aleph_bft_mock::{Data, Hasher64, Keychain, Saver, Signature};
     use aleph_bft_types::Terminator;
 
-    use crate::{
-        alerts::{Alert, AlertData},
-        backup::BackupSaver,
-        units::{creator_set, preunit_to_unchecked_signed_unit, UncheckedSignedUnit},
-        NodeCount, NodeIndex,
-    };
+    use crate::{alerts::{Alert, AlertData}, backup::BackupSaver, units::{creator_set, preunit_to_unchecked_signed_unit, UncheckedSignedUnit}, NodeCount, NodeIndex, Signed};
 
     type TestBackupSaver = BackupSaver<Hasher64, Data, Keychain, Saver>;
     type TestUnit = UncheckedSignedUnit<Hasher64, Data, Signature>;
@@ -197,11 +192,13 @@ mod tests {
             .collect();
         let alerts: Vec<TestAlertData> = (0..5)
             .map(|k| {
-                TestAlertData::OwnAlert(Alert::new(
+                let alert = Alert::new(
                     NodeIndex(0),
                     (units[k].clone(), units[k].clone()),
                     vec![],
-                ))
+                );
+                let unchecked = Signed::sign(alert, &keychains[0]).into_unchecked();
+                TestAlertData::OwnAlert(unchecked)
             })
             .collect();
 
