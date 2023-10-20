@@ -179,17 +179,38 @@ impl<H: Hasher, D: Data, K: Keychain> UnitStore<H, D, K> {
             .collect()
     }
 
-    pub(crate) fn add_unit(&mut self, su: SignedUnit<H, D, K>, alert: bool) {
+    /// Pushes unit to the legit units buffer. Call it after ensuring that unit was saved in the backup.
+    pub fn make_legit(&mut self, su: SignedUnit<H, D, K>) {
+        if self.by_hash.contains_key(&su.as_signable().hash()) {
+            self.legit_buffer.push(su);
+        }
+    }
+
+    /// Adds unit to the storage. Assumes that the unit doesn't fork. Returns true if and only if
+    /// the unit was not a duplicate. Doesn't push unit to the legit buffer as it needs to be saved
+    /// in the backup first.
+    pub fn add_non_forking_unit(&mut self, su: SignedUnit<H, D, K>) -> bool {
+        let hash = su.as_signable().hash();
+        if self.contains_hash(&hash) {
+            // Ignoring a duplicate.
+            trace!(target: "AlephBFT-unit-store", "A unit ignored as a duplicate {:?}.", su.as_signable());
+            return false;
+        }
+        self.by_hash.insert(hash, su.clone());
+        self.by_coord.insert(su.as_signable().coord(), su.clone());
+        true
+    }
+
+    /// Adds unit to the storage. Requires that the unit is forking and comes from the `legit_units`
+    /// of some alert. Pushes the unit into `legit_buffer` at the end.
+    pub fn add_forking_unit(&mut self, su: SignedUnit<H, D, K>) {
         let hash = su.as_signable().hash();
         let creator = su.as_signable().creator();
-
-        if alert {
-            trace!(target: "AlephBFT-unit-store", "Adding unit with alert {:?}.", su.as_signable());
-            assert!(
-                self.is_forker[creator],
-                "The forker must be marked before adding alerted units."
-            );
-        }
+        trace!(target: "AlephBFT-unit-store", "Adding unit with alert {:?}.", su.as_signable());
+        assert!(
+            self.is_forker[creator],
+            "The forker must be marked before adding alerted units."
+        );
         if self.contains_hash(&hash) {
             // Ignoring a duplicate.
             trace!(target: "AlephBFT-unit-store", "A unit ignored as a duplicate {:?}.", su.as_signable());
@@ -197,10 +218,7 @@ impl<H: Hasher, D: Data, K: Keychain> UnitStore<H, D, K> {
         }
         self.by_hash.insert(hash, su.clone());
         self.by_coord.insert(su.as_signable().coord(), su.clone());
-
-        if alert || !self.is_forker[creator] {
-            self.legit_buffer.push(su);
-        }
+        self.legit_buffer.push(su);
     }
 
     pub(crate) fn add_parents(&mut self, hash: H::Hash, parents: Vec<H::Hash>) {

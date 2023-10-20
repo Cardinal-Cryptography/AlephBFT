@@ -145,8 +145,8 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     finalization_handler: FH,
-    backup_units_for_saver: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    backup_units_from_saver: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_for_saver: Sender<SignedUnit<H, D, MK>>,
+    backup_units_from_saver: Receiver<SignedUnit<H, D, MK>>,
     preunits_for_packer: Sender<PreUnit<H>>,
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
     exiting: bool,
@@ -248,8 +248,8 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
 struct RunwayConfig<H: Hasher, D: Data, FH: FinalizationHandler<D>, MK: MultiKeychain> {
     max_round: Round,
     finalization_handler: FH,
-    backup_units_for_saver: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    backup_units_from_saver: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_for_saver: Sender<SignedUnit<H, D, MK>>,
+    backup_units_from_saver: Receiver<SignedUnit<H, D, MK>>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -371,7 +371,7 @@ where
                 self.resolve_missing_coord(&su.as_signable().coord());
                 if alert {
                     // Units from alerts explicitly come from forkers, and we want them anyway.
-                    self.store.add_unit(su, true);
+                    self.store.add_forking_unit(su);
                 } else {
                     self.add_unit_to_store_unless_fork(su);
                 }
@@ -406,11 +406,12 @@ where
             return;
         }
 
-        self.store.add_unit(su, false);
+        self.store.add_non_forking_unit(su.clone());
+        self.send_unit_to_backup(su);
     }
 
-    pub fn add_unit(&mut self, su: SignedUnit<H, D, MK>, alert: bool) {
-        self.store.add_unit(su, alert);
+    pub fn add_unit(&mut self, su: SignedUnit<H, D, MK>) {
+        self.store.add_non_forking_unit(su);
     }
 
     pub fn mark_forker(&mut self, forker: NodeIndex) {
@@ -574,7 +575,8 @@ where
 
     fn on_packed(&mut self, signed_unit: SignedUnit<H, D, MK>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
-        self.store.add_unit(signed_unit, false);
+        self.store.add_non_forking_unit(signed_unit.clone());
+        self.send_unit_to_backup(signed_unit);
     }
 
     fn on_alert_notification(&mut self, notification: ForkingNotification<H, D, MK::Signature>) {
@@ -627,15 +629,6 @@ where
         }
     }
 
-    fn on_unit_backup_saved(&mut self, unit: UncheckedSignedUnit<H, D, MK::Signature>) {
-        self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(unit.clone()));
-
-        if unit.as_signable().creator() == self.index() {
-            trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), unit.as_signable().hash());
-            self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(unit));
-        }
-    }
-
     fn on_missing_coords(&mut self, mut coords: Vec<UnitCoord>) {
         trace!(target: "AlephBFT-runway", "{:?} Dealing with missing coords notification {:?}.", self.index(), coords);
         coords.retain(|coord| !self.store.contains_coord(coord));
@@ -680,6 +673,12 @@ where
             if let Some(d) = d {
                 self.finalization_handler.data_finalized(d, creator);
             }
+        }
+    }
+
+    fn send_unit_to_backup(&self, su: SignedUnit<H, D, MK>) {
+        if self.backup_units_for_saver.unbounded_send(su).is_err() {
+            error!(target: "AlephBFT-runway", "couldn't sent a unit to backup.")
         }
     }
 
@@ -773,7 +772,7 @@ where
                 },
 
                 message = self.backup_units_from_saver.next() => match message {
-                    Some(unit) => self.on_unit_backup_saved(unit),
+                    Some(unit) => self.store.make_legit(unit),
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Saved units receiver closed.", index);
                     }
