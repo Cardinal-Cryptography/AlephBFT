@@ -28,7 +28,7 @@ pub type ReconnectSender = ReconnectSenderGeneric<NetworkData>;
 
 pub fn init_log() {
     let _ = env_logger::builder()
-        .filter_level(log::LevelFilter::max())
+        .filter_level(log::LevelFilter::Error)
         .is_test(true)
         .try_init();
 }

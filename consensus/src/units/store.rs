@@ -272,7 +272,7 @@ mod tests {
                 if i == 0 {
                     forker_hashes.push(unit.as_signable().hash());
                 }
-                store.add_unit(unit, false);
+                store.add_non_forking_unit(unit);
             }
         }
 
@@ -280,7 +280,7 @@ mod tests {
         for round in 4..7 {
             let unit = create_unit(round, NodeIndex(0), n_nodes, 0, &keychains[0]);
             forker_hashes.push(unit.as_signable().hash());
-            store.add_unit(unit, false);
+            store.add_non_forking_unit(unit);
         }
 
         let forker_units: Vec<_> = store

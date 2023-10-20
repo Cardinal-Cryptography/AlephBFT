@@ -21,7 +21,6 @@ use std::{
 #[derive(Debug)]
 pub enum Error {
     WrongSession(SessionId, SessionId),
-    ParentMissing,
     ForkInUnitBackup,
     BadUnit,
     BadAlert,
@@ -49,7 +48,6 @@ impl Display for Error {
                 "found unit of wrong session ({:?}) in backup for session {:?}.",
                 actual, expected
             ),
-            Error::ParentMissing => write!(f, "parent of a unit missing from the backup."),
             Error::ForkInUnitBackup => write!(
                 f,
                 "forking units not coming from alerts found in the backup."
@@ -87,21 +85,13 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
         }
     }
 
-    fn verify_unit_parents(
+    fn verify_unit_session(
         &self,
         unit: &UncheckedSignedUnit<H, D, MK::Signature>,
     ) -> Result<(), Error> {
         let full_unit = unit.as_signable();
-        let coord = full_unit.coord();
         if full_unit.session_id() != self.session_id {
             return Err(Error::WrongSession(full_unit.session_id(), self.session_id));
-        }
-        let parent_ids = &full_unit.as_pre_unit().control_hash().parents_mask;
-        for parent_id in parent_ids.elements() {
-            let parent = UnitCoord::new(coord.round() - 1, parent_id);
-            if !self.dag.contains(&parent) {
-                return Err(Error::ParentMissing);
-            }
         }
         Ok(())
     }
@@ -134,7 +124,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
         for item in backup_data {
             match item {
                 BackupItem::Unit(unit) => {
-                    self.verify_unit_parents(&unit)?;
+                    self.verify_unit_session(&unit)?;
                     let signed_unit = unit.check(&self.keychain).map_err(|_| Error::BadUnit)?;
 
                     // in self.dag we store units which were saved as the Unit variant of BackupData
@@ -145,7 +135,8 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
                         return Err(Error::ForkInUnitBackup);
                     }
 
-                    runway.add_unit(signed_unit, false); // synchronous simulation
+                    runway.add_non_forking_unit(signed_unit.clone()); // synchronous simulation
+                    runway.make_unit_legit(signed_unit);
                     self.dag.insert(coord);
                 }
                 BackupItem::AlertData(AlertData::OwnAlert(alert)) => {
@@ -192,7 +183,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
                     let legit_units =
                         self.handle_multisigned(multisigned.clone(), &mut alerter_handler)?;
                     for unit in legit_units {
-                        runway.add_unit(unit, true);
+                        runway.add_forking_unit(unit);
                     }
 
                     // we don't need to start rmc on this hash as we already have the multisignature
@@ -213,7 +204,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
                     ));
                     let legit_units = self.handle_multisigned(multisigned, &mut alerter_handler)?;
                     for unit in legit_units {
-                        runway.add_unit(unit, true);
+                        runway.add_forking_unit(unit);
                     }
                 }
                 _ => {}

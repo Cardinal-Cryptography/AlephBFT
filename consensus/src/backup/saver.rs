@@ -6,10 +6,9 @@ use futures::{FutureExt, StreamExt};
 use log::{debug, error};
 
 use crate::{
-    alerts::AlertData, backup::BackupItem, units::UncheckedSignedUnit, Data, Hasher, MultiKeychain,
+    alerts::AlertData, backup::BackupItem, units::SignedUnit, Data, Hasher, MultiKeychain,
     Receiver, Sender,
 };
-use crate::units::SignedUnit;
 
 const LOG_TARGET: &str = "AlephBFT-backup-saver";
 
@@ -109,16 +108,15 @@ mod tests {
         StreamExt,
     };
 
-    use aleph_bft_mock::{Data, Hasher64, Keychain, Saver, Signature};
+    use aleph_bft_mock::{Data, Hasher64, Keychain, Saver};
     use aleph_bft_types::Terminator;
 
     use crate::{
         alerts::{Alert, AlertData},
         backup::BackupSaver,
-        units::{creator_set, preunit_to_unchecked_signed_unit, UncheckedSignedUnit},
+        units::{creator_set, FullUnit, SignedUnit},
         NodeCount, NodeIndex, Signed,
     };
-    use crate::units::{FullUnit, SignedUnit};
 
     type TestBackupSaver = BackupSaver<Hasher64, Data, Keychain, Saver>;
     type TestUnit = SignedUnit<Hasher64, Data, Keychain>;
@@ -197,7 +195,14 @@ mod tests {
             .collect();
         let alerts: Vec<TestAlertData> = (0..5)
             .map(|k| {
-                let alert = Alert::new(NodeIndex(0), (units[k].clone().into_unchecked(), units[k].clone().into_unchecked()), vec![]);
+                let alert = Alert::new(
+                    NodeIndex(0),
+                    (
+                        units[k].clone().into_unchecked(),
+                        units[k].clone().into_unchecked(),
+                    ),
+                    vec![],
+                );
                 let unchecked = Signed::sign(alert, &keychains[0]).into_unchecked();
                 TestAlertData::OwnAlert(unchecked)
             })

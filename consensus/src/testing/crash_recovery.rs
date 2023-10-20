@@ -126,9 +126,8 @@ async fn reconnect_nodes(
     reconnected_nodes
 }
 
-fn verify_backup(buf: &mut &[u8]) -> HashSet<UnitCoord> {
+fn get_saved_coords(buf: &mut &[u8]) -> HashSet<UnitCoord> {
     let mut already_saved = HashSet::new();
-
     while !buf.is_empty() {
         let item = BackupItem::<Hasher64, Data, Keychain>::decode(buf).unwrap();
         let unit = match item {
@@ -137,16 +136,8 @@ fn verify_backup(buf: &mut &[u8]) -> HashSet<UnitCoord> {
         };
         let full_unit = unit.as_signable();
         let coord = full_unit.coord();
-        let parent_ids = &full_unit.as_pre_unit().control_hash().parents_mask;
-
-        for parent_id in parent_ids.elements() {
-            let parent = UnitCoord::new(coord.round() - 1, parent_id);
-            assert!(already_saved.contains(&parent));
-        }
-
         already_saved.insert(coord);
     }
-
     already_saved
 }
 
@@ -228,11 +219,11 @@ async fn crashed_nodes_recover(n_members: NodeCount, n_batches: usize) {
     }
 
     for (ix, (_, saved_units_before)) in killed {
-        let saved_before_coords = verify_backup(&mut &saved_units_before[..]);
+        let saved_before_coords = get_saved_coords(&mut &saved_units_before[..]);
         let NodeData { saved_units, .. } = node_data.get(&ix).expect("should contain killed node");
 
-        let saved_after_coords = verify_backup(&mut &saved_units.lock()[..]);
-        assert!(saved_before_coords.is_subset(&saved_after_coords));
+        let saved_after_coords = get_saved_coords(&mut &saved_units.lock()[..]);
+        assert!(saved_before_coords.is_disjoint(&saved_after_coords));
     }
 
     shutdown(node_data).await;
@@ -265,7 +256,7 @@ async fn saves_units_properly() {
     }
 
     for (_, saved_units) in killed {
-        let _ = verify_backup(&mut &saved_units[..]);
+        let _ = get_saved_coords(&mut &saved_units[..]);
     }
 }
 

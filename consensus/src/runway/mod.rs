@@ -406,12 +406,21 @@ where
             return;
         }
 
-        self.store.add_non_forking_unit(su.clone());
-        self.send_unit_to_backup(su);
+        if self.store.add_non_forking_unit(su.clone()) {
+            self.send_unit_to_backup(su);
+        }
     }
 
-    pub fn add_unit(&mut self, su: SignedUnit<H, D, MK>) {
+    pub fn add_non_forking_unit(&mut self, su: SignedUnit<H, D, MK>) {
         self.store.add_non_forking_unit(su);
+    }
+
+    pub fn add_forking_unit(&mut self, su: SignedUnit<H, D, MK>) {
+        self.store.add_forking_unit(su);
+    }
+
+    pub fn make_unit_legit(&mut self, su: SignedUnit<H, D, MK>) {
+        self.store.make_legit(su);
     }
 
     pub fn mark_forker(&mut self, forker: NodeIndex) {
@@ -615,12 +624,14 @@ where
                 self.store.add_parents(h, p_hashes);
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
-                    if self
-                        .backup_units_for_saver
-                        .unbounded_send(su.into())
-                        .is_err()
-                    {
-                        error!(target: "AlephBFT-runway", "{:?} A unit couldn't be sent to backup: {:?}.", self.index(), h);
+                    self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(
+                        su.clone().into(),
+                    ));
+                    if su.as_signable().creator() == self.index() {
+                        trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), h);
+                        self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(
+                            su.into(),
+                        ));
                     }
                 } else {
                     error!(target: "AlephBFT-runway", "{:?} A unit already added to DAG is not in our store: {:?}.", self.index(), h);
@@ -1015,7 +1026,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
     } = match injector.get_initial_state(backup, &mut runway) {
         Ok(initial_state) => initial_state,
         Err(e) => {
-            error!(target: "AlephBFT-runway", "error when injecting backup data: {:?}. Exiting", e);
+            error!(target: "AlephBFT-runway", "error when injecting backup data: {}. Exiting", e);
             return;
         }
     };
