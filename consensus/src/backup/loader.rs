@@ -4,10 +4,7 @@ use codec::{Decode, Error as CodecError};
 use futures::channel::oneshot;
 use log::{error, info, warn};
 
-use crate::{
-    backup::BackupItem,
-    Data, Hasher, MultiKeychain, NodeIndex, Round, SessionId,
-};
+use crate::{backup::BackupItem, Data, Hasher, MultiKeychain, NodeIndex, Round};
 
 const LOG_TARGET: &str = "AlephBFT-backup-loader";
 
@@ -50,16 +47,14 @@ impl From<CodecError> for LoaderError {
 pub struct BackupLoader<H: Hasher, D: Data, MK: MultiKeychain, R: Read> {
     backup: R,
     index: NodeIndex,
-    session_id: SessionId,
     _phantom: PhantomData<(H, D, MK)>,
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
-    pub fn new(backup: R, index: NodeIndex, session_id: SessionId) -> BackupLoader<H, D, MK, R> {
+    pub fn new(backup: R, index: NodeIndex) -> BackupLoader<H, D, MK, R> {
         BackupLoader {
             backup,
             index,
-            session_id,
             _phantom: PhantomData,
         }
     }
@@ -127,10 +122,10 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, R: Read> BackupLoader<H, D, MK, R> {
 
         let next_round_backup: Round = items
             .iter()
-            .filter_map(|i| { match i {
+            .filter_map(|i| match i {
                 BackupItem::Unit(u) => Some(u),
                 BackupItem::AlertData(_) => None,
-            }})
+            })
             .filter(|u| u.as_signable().creator() == self.index)
             .map(|u| u.as_signable().round())
             .max()
@@ -246,16 +241,6 @@ mod tests {
         units_per_round
     }
 
-    fn units_of_creator(
-        units: Vec<Vec<UncheckedSignedUnit>>,
-        creator: NodeIndex,
-    ) -> Vec<UncheckedSignedUnit> {
-        units
-            .into_iter()
-            .map(|units_per_round| units_per_round[creator.0].clone())
-            .collect()
-    }
-
     fn encode_all(items: Vec<TestBackupItem>) -> Vec<Vec<u8>> {
         items.iter().map(|u| u.encode()).collect()
     }
@@ -266,8 +251,7 @@ mod tests {
         let (highest_response_tx, highest_response_rx) = oneshot::channel();
 
         let task = {
-            let mut backup_loader =
-                BackupLoader::new(Loader::new(encoded_items), NODE_ID, SESSION_ID);
+            let mut backup_loader = BackupLoader::new(Loader::new(encoded_items), NODE_ID);
 
             async move {
                 backup_loader
@@ -323,7 +307,7 @@ mod tests {
 
         highest_response_tx.send(0).unwrap();
         handle.await.unwrap();
-        let items = units.into_iter().map(|u| BackupItem::Unit(u)).collect_vec();
+        let items = units.into_iter().map(BackupItem::Unit).collect_vec();
 
         assert_eq!(starting_round_rx.await, Ok(Some(5)));
         assert_eq!(loaded_data_rx.await, Ok(items));
@@ -348,7 +332,7 @@ mod tests {
 
         highest_response_tx.send(5).unwrap();
         handle.await.unwrap();
-        let items = units.into_iter().map(|u| BackupItem::Unit(u)).collect_vec();
+        let items = units.into_iter().map(BackupItem::Unit).collect_vec();
 
         assert_eq!(starting_round_rx.await, Ok(Some(5)));
         assert_eq!(loaded_data_rx.await, Ok(items));
@@ -393,7 +377,7 @@ mod tests {
 
         highest_response_tx.send(4).unwrap();
         handle.await.unwrap();
-        let items = units.into_iter().map(|u| BackupItem::Unit(u)).collect_vec();
+        let items = units.into_iter().map(BackupItem::Unit).collect_vec();
 
         assert_eq!(starting_round_rx.await, Ok(None));
         assert_eq!(loaded_data_rx.await, Ok(items));
@@ -418,7 +402,7 @@ mod tests {
 
         drop(highest_response_tx);
         handle.await.unwrap();
-        let items = units.into_iter().map(|u| BackupItem::Unit(u)).collect_vec();
+        let items = units.into_iter().map(BackupItem::Unit).collect_vec();
 
         assert_eq!(starting_round_rx.await, Ok(None));
         assert_eq!(loaded_data_rx.await, Ok(items));
@@ -450,30 +434,6 @@ mod tests {
         assert!(loaded_data_rx.await.is_err());
     }
 
-    // #[tokio::test]
-    // async fn backup_with_missing_parent_fails() {
-    //     let units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
-    //     let mut items: Vec<_> = units.into_iter().map(BackupItem::Unit).collect();
-    //     items.remove(2); // it is a parent of all units of round 3
-    //     let encoded_items = encode_all(items).into_iter().flatten().collect();
-    //
-    //     let PrepareTestResponse {
-    //         task,
-    //         loaded_data_rx,
-    //         highest_response_tx,
-    //         starting_round_rx,
-    //     } = prepare_test(encoded_items);
-    //     let handle = tokio::spawn(async {
-    //         task.await;
-    //     });
-    //
-    //     highest_response_tx.send(0).unwrap();
-    //     handle.await.unwrap();
-    //
-    //     assert_eq!(starting_round_rx.await, Ok(None));
-    //     assert!(loaded_data_rx.await.is_err());
-    // }
-
     #[tokio::test]
     async fn backup_with_duplicate_unit_succeeds() {
         let mut units: Vec<_> = produce_units(5, SESSION_ID).into_iter().flatten().collect();
@@ -495,60 +455,9 @@ mod tests {
 
         highest_response_tx.send(0).unwrap();
         handle.await.unwrap();
-        let items = units.into_iter().map(|u| BackupItem::Unit(u)).collect_vec();
+        let items = units.into_iter().map(BackupItem::Unit).collect_vec();
 
         assert_eq!(starting_round_rx.await, Ok(Some(5)));
         assert_eq!(loaded_data_rx.await, Ok(items));
     }
-
-    // #[tokio::test]
-    // async fn backup_with_units_of_one_creator_fails() {
-    //     let units = units_of_creator(produce_units(5, SESSION_ID), NodeIndex(NODE_ID.0 + 1));
-    //     let items: Vec<_> = units.into_iter().map(BackupItem::Unit).collect();
-    //     let encoded_items = encode_all(items).into_iter().flatten().collect();
-    //
-    //     let PrepareTestResponse {
-    //         task,
-    //         loaded_data_rx,
-    //         highest_response_tx,
-    //         starting_round_rx,
-    //     } = prepare_test(encoded_items);
-    //
-    //     let handle = tokio::spawn(async {
-    //         task.await;
-    //     });
-    //
-    //     highest_response_tx.send(0).unwrap();
-    //     handle.await.unwrap();
-    //
-    //     assert_eq!(starting_round_rx.await, Ok(None));
-    //     assert!(loaded_data_rx.await.is_err());
-    // }
-
-    // #[tokio::test]
-    // async fn backup_with_wrong_session_fails() {
-    //     let units: Vec<_> = produce_units(5, SESSION_ID + 1)
-    //         .into_iter()
-    //         .flatten()
-    //         .collect();
-    //     let items: Vec<_> = units.into_iter().map(BackupItem::Unit).collect();
-    //     let encoded_items = encode_all(items).into_iter().flatten().collect();
-    //
-    //     let PrepareTestResponse {
-    //         task,
-    //         loaded_data_rx,
-    //         highest_response_tx,
-    //         starting_round_rx,
-    //     } = prepare_test(encoded_items);
-    //
-    //     let handle = tokio::spawn(async {
-    //         task.await;
-    //     });
-    //
-    //     highest_response_tx.send(0).unwrap();
-    //     handle.await.unwrap();
-    //
-    //     assert_eq!(starting_round_rx.await, Ok(None));
-    //     assert!(loaded_data_rx.await.is_err());
-    // }
 }

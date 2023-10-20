@@ -9,7 +9,7 @@ use aleph_bft_rmc::{DoublingDelayScheduler, Handler as RmcHandler, Message as Rm
 use aleph_bft_types::Terminator;
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, warn};
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 const LOG_TARGET: &str = "AlephBFT-alerter";
 type RmcService<H, MK, S, M> =
@@ -40,7 +40,15 @@ pub struct IO<H: Hasher, D: Data, MK: MultiKeychain> {
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
-    pub fn new(keychain: MK, io: IO<H, D, MK>, handler: Handler<H, D, MK>, rmc_handler: RmcHandler<H::Hash, MK>, rmc_scheduler: DoublingDelayScheduler<RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>>) -> Service<H, D, MK> {
+    pub fn new(
+        keychain: MK,
+        io: IO<H, D, MK>,
+        handler: Handler<H, D, MK>,
+        rmc_handler: RmcHandler<H::Hash, MK>,
+        rmc_scheduler: DoublingDelayScheduler<
+            RmcMessage<H::Hash, MK::Signature, MK::PartialMultisignature>,
+        >,
+    ) -> Service<H, D, MK> {
         let IO {
             messages_for_network,
             messages_from_network,
@@ -51,10 +59,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         } = io;
 
         let node_index = keychain.index();
-        let rmc_service = aleph_bft_rmc::Service::new(
-            rmc_scheduler,
-            rmc_handler,
-        );
+        let rmc_service = aleph_bft_rmc::Service::new(rmc_scheduler, rmc_handler);
 
         Service {
             messages_for_network,
@@ -124,7 +129,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
         match message {
             AlertMessage::ForkAlert(alert) => match self.handler.on_network_alert(alert.clone()) {
                 Ok(response) => {
-                    let hash = alert.as_signable().hash().clone();
+                    let hash = alert.as_signable().hash();
                     self.network_alert_responses.insert(hash, response);
                     if self
                         .data_for_backup
@@ -178,8 +183,10 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
     fn handle_multisigned(&mut self, multisigned: Multisigned<H::Hash, MK>) {
         match self.handler.alert_confirmed(multisigned.clone()) {
             Ok(units) => {
-                self.multisigned_notifications
-                    .insert(*multisigned.as_signable(), ForkingNotification::Units(units));
+                self.multisigned_notifications.insert(
+                    *multisigned.as_signable(),
+                    ForkingNotification::Units(units),
+                );
                 if self
                     .data_for_backup
                     .unbounded_send(AlertData::MultisignedHash(multisigned))
@@ -198,14 +205,17 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Service<H, D, MK> {
     fn handle_data_from_backup(&mut self, data: AlertData<H, D, MK>) {
         match data {
             AlertData::OwnAlert(alert) => {
-                let hash = alert.as_signable().hash().clone();
+                let hash = alert.as_signable().hash();
                 self.send_message_for_network(AlertMessage::ForkAlert(alert), Recipient::Everyone);
                 if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
                     self.handle_multisigned(multisigned);
                 }
-            },
+            }
             AlertData::NetworkAlert(alert) => {
-                match self.network_alert_responses.remove(&alert.as_signable().hash()) {
+                match self
+                    .network_alert_responses
+                    .remove(&alert.as_signable().hash())
+                {
                     Some((maybe_notification, hash)) => {
                         if let Some(multisigned) = self.rmc_service.start_rmc(hash) {
                             self.handle_multisigned(multisigned);

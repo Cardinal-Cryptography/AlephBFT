@@ -1,5 +1,6 @@
 use crate::{
     alerts::{Alert, ForkProof, ForkingNotification},
+    units::UncheckedSignedUnit,
     Data, Hasher, Keychain, MultiKeychain, Multisigned, NodeIndex, PartialMultisignature,
     Recipient, SessionId, Signature, Signed, UncheckedSigned,
 };
@@ -10,7 +11,6 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter},
 };
-use crate::units::UncheckedSignedUnit;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -323,11 +323,8 @@ mod tests {
         let fork_proof = make_fork_proof(forker_index, &forker_keychain, 0, n_members);
         let alert = Alert::new(own_index, fork_proof, vec![]);
         let signed_alert = Signed::sign(alert.clone(), &this.keychain).into_unchecked();
-        let alert_hash = Signable::hash(&alert);
-        assert_eq!(
-            this.on_own_alert(alert),
-            signed_alert,
-        );
+        let _alert_hash = Signable::hash(&alert);
+        assert_eq!(this.on_own_alert(alert), signed_alert,);
     }
 
     #[test]

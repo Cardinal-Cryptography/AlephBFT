@@ -730,10 +730,7 @@ where
         info!(target: "AlephBFT-runway", "{}", runway_status);
     }
 
-    async fn run(
-        mut self,
-        mut terminator: Terminator,
-    ) {
+    async fn run(mut self, mut terminator: Terminator) {
         let index = self.index();
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
@@ -980,7 +977,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 
     let backup_loading_handle = spawn_handle
         .spawn_essential("runway/loading", {
-            let mut backup_loader = BackupLoader::new(runway_io.backup_read, index, session_id);
+            let mut backup_loader = BackupLoader::new(runway_io.backup_read, index);
             async move {
                 backup_loader
                     .run(
@@ -994,22 +991,20 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         .fuse();
     pin_mut!(backup_loading_handle);
 
-    let backup = loop {
-        futures::select! {
-            _ = backup_loading_handle => {
-                debug!(target: "AlephBFT-runway", "{:?} Backup loading task terminated.", index);
-                return;
-            },
-            backup = loaded_data_rx => {
-                match backup {
-                    Ok(backup) => break backup,
-                    Err(_) => {
-                        error!(target: "AlephBFT-runway", "loaded data receiver closed.");
-                        return;
-                    }
+    let backup = futures::select! {
+        _ = backup_loading_handle => {
+            debug!(target: "AlephBFT-runway", "{:?} Backup loading task terminated.", index);
+            return;
+        },
+        backup = loaded_data_rx => {
+            match backup {
+                Ok(backup) => backup,
+                Err(_) => {
+                    error!(target: "AlephBFT-runway", "loaded data receiver closed.");
+                    return;
                 }
-            },
-        };
+            }
+        },
     };
 
     let injector = BackupInjector::new(session_id, keychain.clone());
@@ -1019,31 +1014,36 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
         forking_notifications,
         scheduler,
     } = match injector.get_initial_state(backup, &mut runway) {
-        Some(initial_state) => initial_state,
-        None => {
-            error!(target: "AlephBFT-runway", "couldn't inject backup data. Exiting");
+        Ok(initial_state) => initial_state,
+        Err(e) => {
+            error!(target: "AlephBFT-runway", "error when injecting backup data: {:?}. Exiting", e);
             return;
         }
     };
     for notification in forking_notifications {
-        if alert_notifications_for_units.unbounded_send(notification).is_err() {
+        if alert_notifications_for_units
+            .unbounded_send(notification)
+            .is_err()
+        {
             error!(target: "AlephBFT-runway", "couldn't send initial forking notifications. Exiting");
             return;
         }
     }
 
-    let mut backup_saver_handle = spawn_handle.spawn_essential("runway/backup_saver", {
-        let mut backup_saver: BackupSaver<_, _, MK, _> = BackupSaver::new(
-            backup_units_from_runway,
-            alert_data_from_alerter,
-            backup_units_for_runway,
-            alert_data_for_alerter,
-            runway_io.backup_write,
-        );
-        async move {
-            backup_saver.run(backup_saver_terminator).await;
-        }
-    }).fuse();
+    let mut backup_saver_handle = spawn_handle
+        .spawn_essential("runway/backup_saver", {
+            let mut backup_saver: BackupSaver<_, _, MK, _> = BackupSaver::new(
+                backup_units_from_runway,
+                alert_data_from_alerter,
+                backup_units_for_runway,
+                alert_data_for_alerter,
+                runway_io.backup_write,
+            );
+            async move {
+                backup_saver.run(backup_saver_terminator).await;
+            }
+        })
+        .fuse();
 
     let consensus_handle = spawn_handle.spawn_essential("runway/consensus", async move {
         consensus::run(
@@ -1055,7 +1055,7 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
             starting_round,
             consensus_terminator,
         )
-            .await
+        .await
     });
     let mut consensus_handle = consensus_handle.fuse();
 

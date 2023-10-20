@@ -166,7 +166,10 @@ impl<H: Hasher, D: Data, K: Keychain> UnitStore<H, D, K> {
 
     // Marks a node as a forker and outputs all units in store created by this node.
     // The returned vector is sorted w.r.t. increasing rounds.
-    pub(crate) fn mark_forker_and_return_legit_units(&mut self, forker: NodeIndex) -> Vec<SignedUnit<H, D, K>> {
+    pub(crate) fn mark_forker_and_return_legit_units(
+        &mut self,
+        forker: NodeIndex,
+    ) -> Vec<SignedUnit<H, D, K>> {
         if self.is_forker[forker] {
             warn!(target: "AlephBFT-unit-store", "Trying to mark the node {:?} as forker for the second time.", forker);
         }
