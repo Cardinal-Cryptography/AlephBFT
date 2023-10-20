@@ -17,7 +17,6 @@ use std::{
     marker::PhantomData,
     time::Duration,
 };
-use log::error;
 
 #[derive(Debug)]
 pub enum Error {
@@ -132,8 +131,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
         let mut fork_proofs = HashMap::new();
         let mut rmcs = HashSet::new();
 
-        error!(target: "SIEMA", "read {:?} items", backup_data.len());
-
         for item in backup_data {
             match item {
                 BackupItem::Unit(unit) => {
@@ -224,8 +221,6 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> BackupInjector<H, D, MK> {
         }
 
         let scheduler = DoublingDelayScheduler::with_tasks(tasks, Duration::from_millis(500));
-
-        error!(target: "SIEMA", "injected items");
 
         Ok(InitialState {
             alerter_handler,
