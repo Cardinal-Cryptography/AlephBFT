@@ -6,9 +6,10 @@ use futures::{FutureExt, StreamExt};
 use log::{debug, error};
 
 use crate::{
-    alerts::AlertData, backup::BackupItem, units::UncheckedSignedUnit, Data, Hasher, MultiKeychain,
+    alerts::AlertData, backup::BackupItem, Data, Hasher, MultiKeychain,
     Receiver, Sender,
 };
+use crate::units::SignedUnit;
 
 const LOG_TARGET: &str = "AlephBFT-backup-saver";
 
@@ -16,18 +17,18 @@ const LOG_TARGET: &str = "AlephBFT-backup-saver";
 /// It waits for items to appear on its receivers, and writes them to backup.
 /// It announces a successful write through an appropriate response sender.
 pub struct BackupSaver<H: Hasher, D: Data, MK: MultiKeychain, W: Write> {
-    units_from_runway: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    units_from_runway: Receiver<SignedUnit<H, D, MK>>,
     data_from_alerter: Receiver<AlertData<H, D, MK>>,
-    responses_for_runway: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
+    responses_for_runway: Sender<SignedUnit<H, D, MK>>,
     responses_for_alerter: Sender<AlertData<H, D, MK>>,
     backup: W,
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain, W: Write> BackupSaver<H, D, MK, W> {
     pub fn new(
-        units_from_runway: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+        units_from_runway: Receiver<SignedUnit<H, D, MK>>,
         data_from_alerter: Receiver<AlertData<H, D, MK>>,
-        responses_for_runway: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
+        responses_for_runway: Sender<SignedUnit<H, D, MK>>,
         responses_for_alerter: Sender<AlertData<H, D, MK>>,
         backup: W,
     ) -> BackupSaver<H, D, MK, W> {
@@ -58,7 +59,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, W: Write> BackupSaver<H, D, MK, W> {
                             break;
                         },
                     };
-                    let item = BackupItem::Unit(unit.clone());
+                    let item = BackupItem::Unit(unit.clone().into_unchecked());
                     if let Err(e) = self.save_item(item) {
                         error!(target: LOG_TARGET, "couldn't save item to backup: {:?}", e);
                         break;
@@ -108,18 +109,19 @@ mod tests {
         StreamExt,
     };
 
-    use aleph_bft_mock::{Data, Hasher64, Keychain, Saver, Signature};
+    use aleph_bft_mock::{Data, Hasher64, Keychain, Saver};
     use aleph_bft_types::Terminator;
 
     use crate::{
         alerts::{Alert, AlertData},
         backup::BackupSaver,
-        units::{creator_set, preunit_to_unchecked_signed_unit, UncheckedSignedUnit},
+        units::{creator_set},
         NodeCount, NodeIndex, Signed,
     };
+    use crate::units::{FullUnit, SignedUnit};
 
     type TestBackupSaver = BackupSaver<Hasher64, Data, Keychain, Saver>;
-    type TestUnit = UncheckedSignedUnit<Hasher64, Data, Signature>;
+    type TestUnit = SignedUnit<Hasher64, Data, Keychain>;
     type TestAlertData = AlertData<Hasher64, Data, Keychain>;
     struct PrepareSaverResponse<F: futures::Future> {
         task: F,
@@ -188,16 +190,14 @@ mod tests {
             .collect();
         let units: Vec<TestUnit> = (0..5)
             .map(|k| {
-                preunit_to_unchecked_signed_unit(
-                    creators[k].create_unit(0).unwrap().0,
-                    0,
-                    &keychains[k],
-                )
+                let pu = creators[k].create_unit(0).unwrap().0;
+                let fu = FullUnit::new(pu, Some(0), 0);
+                Signed::sign(fu, &keychains[k])
             })
             .collect();
         let alerts: Vec<TestAlertData> = (0..5)
             .map(|k| {
-                let alert = Alert::new(NodeIndex(0), (units[k].clone(), units[k].clone()), vec![]);
+                let alert = Alert::new(NodeIndex(0), (units[k].clone().into_unchecked(), units[k].clone().into_unchecked()), vec![]);
                 let unchecked = Signed::sign(alert, &keychains[0]).into_unchecked();
                 TestAlertData::OwnAlert(unchecked)
             })

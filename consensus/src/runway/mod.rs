@@ -145,8 +145,8 @@ where
     rx_consensus: Receiver<NotificationOut<H>>,
     ordered_batch_rx: Receiver<Vec<H::Hash>>,
     finalization_handler: FH,
-    backup_units_for_saver: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    backup_units_from_saver: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_for_saver: Sender<SignedUnit<H, D, MK>>,
+    backup_units_from_saver: Receiver<SignedUnit<H, D, MK>>,
     preunits_for_packer: Sender<PreUnit<H>>,
     signed_units_from_packer: Receiver<SignedUnit<H, D, MK>>,
     exiting: bool,
@@ -248,8 +248,8 @@ impl<'a, H: Hasher> fmt::Display for RunwayStatus<'a, H> {
 struct RunwayConfig<H: Hasher, D: Data, FH: FinalizationHandler<D>, MK: MultiKeychain> {
     max_round: Round,
     finalization_handler: FH,
-    backup_units_for_saver: Sender<UncheckedSignedUnit<H, D, MK::Signature>>,
-    backup_units_from_saver: Receiver<UncheckedSignedUnit<H, D, MK::Signature>>,
+    backup_units_for_saver: Sender<SignedUnit<H, D, MK>>,
+    backup_units_from_saver: Receiver<SignedUnit<H, D, MK>>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     tx_consensus: Sender<NotificationIn<H>>,
@@ -373,7 +373,7 @@ where
                     // Units from alerts explicitly come from forkers, and we want them anyway.
                     self.store.add_unit(su, true);
                 } else {
-                    self.add_unit_to_store_unless_fork(su);
+                    self.send_to_backup_unless_fork(su);
                 }
             }
             Err(e) => warn!(target: "AlephBFT-member", "Received unit failing validation: {}", e),
@@ -386,7 +386,7 @@ where
         }
     }
 
-    fn add_unit_to_store_unless_fork(&mut self, su: SignedUnit<H, D, MK>) {
+    fn send_to_backup_unless_fork(&mut self, su: SignedUnit<H, D, MK>) {
         let full_unit = su.as_signable();
         trace!(target: "AlephBFT-member", "{:?} Adding member unit to store {:?}", self.index(), full_unit);
         if self.store.is_forker(full_unit.creator()) {
@@ -406,7 +406,7 @@ where
             return;
         }
 
-        self.store.add_unit(su, false);
+        self.send_unit_to_backup(su);
     }
 
     pub fn add_unit(&mut self, su: SignedUnit<H, D, MK>, alert: bool) {
@@ -553,7 +553,7 @@ where
             // There might be some optimization possible here to not validate twice, but overall
             // this piece of code should be executed extremely rarely.
             self.resolve_missing_coord(&su.as_signable().coord());
-            self.add_unit_to_store_unless_fork(su);
+            self.send_to_backup_unless_fork(su);
         }
 
         if ControlHash::<H>::combine_hashes(&p_hashes_node_map) != u_control_hash {
@@ -572,9 +572,9 @@ where
         }
     }
 
-    fn on_packed(&mut self, signed_unit: SignedUnit<H, D, MK>) {
+    fn on_packed(&mut self, unit: SignedUnit<H, D, MK>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
-        self.store.add_unit(signed_unit, false);
+        self.send_unit_to_backup(unit);
     }
 
     fn on_alert_notification(&mut self, notification: ForkingNotification<H, D, MK::Signature>) {
@@ -613,12 +613,14 @@ where
                 self.store.add_parents(h, p_hashes);
                 self.resolve_missing_parents(&h);
                 if let Some(su) = self.store.unit_by_hash(&h).cloned() {
-                    if self
-                        .backup_units_for_saver
-                        .unbounded_send(su.into())
-                        .is_err()
-                    {
-                        error!(target: "AlephBFT-runway", "{:?} A unit couldn't be sent to backup: {:?}.", self.index(), h);
+                    self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(
+                        su.clone().into(),
+                    ));
+                    if su.as_signable().creator() == self.index() {
+                        trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), h);
+                        self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(
+                            su.into(),
+                        ));
                     }
                 } else {
                     error!(target: "AlephBFT-runway", "{:?} A unit already added to DAG is not in our store: {:?}.", self.index(), h);
@@ -627,13 +629,8 @@ where
         }
     }
 
-    fn on_unit_backup_saved(&mut self, unit: UncheckedSignedUnit<H, D, MK::Signature>) {
-        self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(unit.clone()));
-
-        if unit.as_signable().creator() == self.index() {
-            trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), unit.as_signable().hash());
-            self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(unit));
-        }
+    fn on_unit_backup_saved(&mut self, unit: SignedUnit<H, D, MK>) {
+        self.store.add_unit(unit, false);
     }
 
     fn on_missing_coords(&mut self, mut coords: Vec<UnitCoord>) {
@@ -680,6 +677,12 @@ where
             if let Some(d) = d {
                 self.finalization_handler.data_finalized(d, creator);
             }
+        }
+    }
+
+    fn send_unit_to_backup(&self, unit: SignedUnit<H, D, MK>) {
+        if self.backup_units_for_saver.unbounded_send(unit).is_err() {
+            error!(target: "AlephBFT-runway", "a unit couldn't be sent to backup");
         }
     }
 
