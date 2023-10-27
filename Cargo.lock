@@ -79,7 +79,6 @@ version = "0.0.3"
 dependencies = [
  "aleph-bft",
  "aleph-bft-mock",
- "aleph-bft-types",
  "async-trait",
  "clap 4.4.6",
  "env_logger",
@@ -119,7 +118,6 @@ dependencies = [
  "afl",
  "aleph-bft",
  "aleph-bft-mock",
- "aleph-bft-types",
  "async-trait",
  "env_logger",
  "futures",
@@ -169,9 +167,7 @@ dependencies = [
  "aleph-bft-crypto",
  "async-trait",
  "futures",
- "log",
  "parity-scale-codec",
- "tokio",
 ]
 
 [[package]]
