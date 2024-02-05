@@ -35,8 +35,15 @@ impl<H: Hasher> Units<H> {
     }
 
     /// Get the list of unit hashes from the given round.
-    pub fn in_round(&self, round: Round) -> Option<Vec<H::Hash>> {
-        self.by_round.get(&round).cloned()
+    /// Panics if called for a round greater or equal to the round
+    /// of the highest head of a removed batch.
+    pub fn in_round(&self, round: Round) -> Option<Vec<&ExtenderUnit<H>>> {
+        self.by_round.get(&round).map(|hashes| {
+            hashes
+                .iter()
+                .map(|hash| self.units.get(hash).expect("we have all the units"))
+                .collect()
+        })
     }
 
     /// The highest round among all added units, or 0 if there are none.
@@ -91,7 +98,7 @@ mod test {
         let unit = construct_unit_all_parents(NodeIndex(0), 0, n_members);
         units.add_unit(unit.clone());
         assert_eq!(units.highest_round(), 0);
-        assert_eq!(units.in_round(0), Some(vec![unit.hash]));
+        assert_eq!(units.in_round(0), Some(vec![&unit]));
         assert_eq!(units.get(&unit.hash), Some(&unit));
     }
 
@@ -115,6 +122,34 @@ mod test {
         for head in heads {
             let mut batch = units.remove_batch(head);
             assert_eq!(batch.pop(), Some(head));
+        }
+    }
+
+    #[test]
+    fn batch_order_constant_with_different_insertion_order() {
+        let mut units = Units::new();
+        let mut units_but_backwards = Units::new();
+        let n_members = NodeCount(4);
+        let max_round = 43;
+        let mut heads = Vec::new();
+        for round in 0..=max_round {
+            let mut round_units = Vec::new();
+            for creator in n_members.into_iterator() {
+                let unit = construct_unit_all_parents(creator, round, n_members);
+                if round as usize % n_members.0 == creator.0 {
+                    heads.push(unit.hash)
+                }
+                round_units.push(unit.clone());
+                units.add_unit(unit);
+            }
+            for unit in round_units.into_iter().rev() {
+                units_but_backwards.add_unit(unit);
+            }
+        }
+        for head in heads {
+            let batch1 = units.remove_batch(head);
+            let batch2 = units_but_backwards.remove_batch(head);
+            assert_eq!(batch1, batch2);
         }
     }
 }

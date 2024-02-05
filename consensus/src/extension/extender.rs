@@ -41,8 +41,9 @@ impl<H: Hasher> Extender<H> {
 
     /// Add a unit to the extender. Might return several batches of ordered units as a result.
     pub fn add_unit(&mut self, u: ExtenderUnit<H>) -> Vec<Vec<H::Hash>> {
-        let unit = u.hash;
+        let hash = u.hash;
         self.units.add_unit(u);
+        let unit = self.units.get(&hash).expect("just added");
         let mut result = Vec::new();
         // If we have an ongoing election try to finish it.
         if let Some(election) = self.election.take() {

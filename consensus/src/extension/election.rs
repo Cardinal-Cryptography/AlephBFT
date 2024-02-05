@@ -17,8 +17,8 @@ fn common_vote(relative_round: Round) -> bool {
     relative_round % 2 == 1
 }
 
-enum VoteError<H: Hasher> {
-    EliminateCandidate,
+enum CandidateOutcome<H: Hasher> {
+    Eliminate,
     ElectionDone(H::Hash),
 }
 
@@ -32,26 +32,27 @@ struct CandidateElection<H: Hasher> {
 impl<H: Hasher> CandidateElection<H> {
     /// Creates an election for the given candidate.
     /// The candidate will eventually either get elected or eliminated.
-    pub fn new(candidate: &ExtenderUnit<H>) -> Self {
+    /// Might immediately return an outcome.
+    pub fn for_candidate(
+        candidate: &ExtenderUnit<H>,
+        units: &Units<H>,
+    ) -> Result<Self, CandidateOutcome<H>> {
         CandidateElection {
             round: candidate.round,
             candidate_creator: candidate.creator,
             candidate_hash: candidate.hash,
             votes: HashMap::new(),
         }
+        .compute_votes(units)
     }
 
     fn parent_votes(
         &mut self,
         parents: &NodeMap<H::Hash>,
-        units: &Units<H>,
-    ) -> Result<(NodeCount, NodeCount), VoteError<H>> {
+    ) -> Result<(NodeCount, NodeCount), CandidateOutcome<H>> {
         let (mut votes_for, mut votes_against) = (NodeCount(0), NodeCount(0));
         for parent in parents.values() {
-            // Since this code is being called round-by-round we should only ever hit the cache here.
-            // In particular this should always return `Ok`, but this way the code is fine even if
-            // someone were to call it in a different order.
-            match self.vote(*parent, units)? {
+            match self.votes.get(parent).expect("units are added in order") {
                 true => votes_for += NodeCount(1),
                 false => votes_against += NodeCount(1),
             }
@@ -63,12 +64,11 @@ impl<H: Hasher> CandidateElection<H> {
         &mut self,
         parents: &NodeMap<H::Hash>,
         relative_round: Round,
-        units: &Units<H>,
-    ) -> Result<bool, VoteError<H>> {
-        use VoteError::*;
+    ) -> Result<bool, CandidateOutcome<H>> {
+        use CandidateOutcome::*;
         let threshold = (parents.size() * 2) / 3 + NodeCount(1);
         // Gather parents' votes.
-        let (votes_for, votes_against) = self.parent_votes(parents, units)?;
+        let (votes_for, votes_against) = self.parent_votes(parents)?;
         assert!(votes_for + votes_against >= threshold);
         let common_vote = common_vote(relative_round);
         // If the round is sufficiently high we are done voting for the candidate if
@@ -77,7 +77,7 @@ impl<H: Hasher> CandidateElection<H> {
                 // the default vote is for the candidate and the parents' votes are for over the threshold,
                 true if votes_for >= threshold => return Err(ElectionDone(self.candidate_hash)),
                 // or the default vote is against the candidate and the parents' votes are against over the threshold.
-                false if votes_against >= threshold => return Err(EliminateCandidate),
+                false if votes_against >= threshold => return Err(Eliminate),
                 _ => (),
                 // Note that this means the earliest we can have a head elected is round 4.
             }
@@ -91,50 +91,40 @@ impl<H: Hasher> CandidateElection<H> {
         })
     }
 
-    fn compute_vote(
-        &mut self,
-        voter: &ExtenderUnit<H>,
-        units: &Units<H>,
-    ) -> Result<bool, VoteError<H>> {
-        // This should never happen, but this preserves correctness even if someone calls this for too old units.
+    fn vote(&mut self, voter: &ExtenderUnit<H>) -> Result<(), CandidateOutcome<H>> {
+        // If the vote is already computed we are done.
+        if self.votes.get(&voter.hash).is_some() {
+            return Ok(());
+        }
+        // Votes for old units are never used, so we just return.
         if voter.round <= self.round {
-            return Ok(false);
+            return Ok(());
         }
         let relative_round = voter.round - self.round;
-        // Direct descendands vote for, all other units of that round against.
-        if relative_round == 1 {
-            return Ok(voter.parents.get(self.candidate_creator) == Some(&self.candidate_hash));
-        }
-        // Otherwise we compute the vote based on the parents' votes.
-        self.vote_from_parents(&voter.parents, relative_round, units)
+        let vote = match relative_round {
+            0 => unreachable!("just checked that voter and election rounds are not equal"),
+            // Direct descendands vote for, all other units of that round against.
+            1 => voter.parents.get(self.candidate_creator) == Some(&self.candidate_hash),
+            // Otherwise we compute the vote based on the parents' votes.
+            _ => self.vote_from_parents(&voter.parents, relative_round)?,
+        };
+        self.votes.insert(voter.hash, vote);
+        Ok(())
     }
 
-    fn vote(&mut self, voter: H::Hash, units: &Units<H>) -> Result<bool, VoteError<H>> {
-        // Check the vote cache.
-        if let Some(vote) = self.votes.get(&voter) {
-            return Ok(*vote);
-        }
-        let voter = units
-            .get(&voter)
-            .expect("only requesting votes from units we have");
-        let result = self.compute_vote(voter, units)?;
-        self.votes.insert(voter.hash, result);
-        Ok(result)
-    }
-
-    /// Add a single voter and copute their vote. This might end up electing or eliminating the candidate.
-    pub fn add_voter(mut self, voter: H::Hash, units: &Units<H>) -> Result<Self, VoteError<H>> {
-        self.vote(voter, units).map(|_| self)
-    }
-
-    /// Compute all the votes for units we have at the moment. This might end up electing or eliminating the candidate.
-    pub fn compute_votes(mut self, units: &Units<H>) -> Result<Self, VoteError<H>> {
+    fn compute_votes(mut self, units: &Units<H>) -> Result<Self, CandidateOutcome<H>> {
         for round in self.round + 1..=units.highest_round() {
-            for voter in units.in_round(round).expect("units come in order") {
-                self.vote(voter, units)?;
+            for voter in units.in_round(round).expect("units are added in order") {
+                self.vote(voter)?;
             }
         }
         Ok(self)
+    }
+
+    /// Add a single voter and compute their vote. This might end up electing or eliminating the candidate.
+    /// Might panic if called for a unit before its parents.
+    pub fn add_voter(mut self, voter: &ExtenderUnit<H>) -> Result<Self, CandidateOutcome<H>> {
+        self.vote(voter).map(|()| self)
     }
 }
 
@@ -156,59 +146,65 @@ pub enum ElectionResult<H: Hasher> {
 impl<H: Hasher> RoundElection<H> {
     /// Create a new round election. It might immediately be decided, so this might return an election result rather than a pending election.
     /// Returns an error when it's too early to finalize the candidate list, i.e. we are not at least 3 rounds ahead of the election round.
+    ///
+    /// Note: it is crucial that units are added to `Units` only when all their parents are there, otherwise this might panic.
     pub fn for_round(round: Round, units: &Units<H>) -> Result<ElectionResult<H>, ()> {
         // If we don't yet have a unit of round + 3 we might not know about the winning candidate, so we cannot start the election.
         if units.highest_round() < round + 3 {
             return Err(());
         }
-        // We might be missing units from this round, but they are guaranteed to get consistently eliminated.
-        let mut candidates = units
+        // We might be missing units from this round, but any unit that is not an ancestor of an arbitrary unit from round + 3
+        // will always eventually be eliminated in the voting, so we can freely skip it.
+        let mut candidates: Vec<_> = units
             .in_round(round)
-            .expect("units come in order, so we definitely have units from this round");
+            .expect("units come in order, so we definitely have units from this round")
+            .iter()
+            .map(|candidate| candidate.hash)
+            .collect();
         candidates.sort();
         // We will be `pop`ing the candidates from the back.
         candidates.reverse();
         let candidate = units
             .get(&candidates.pop().expect("there is a candidate"))
             .expect("we have all the units we work with");
-        let voting = CandidateElection::new(candidate);
-        let election = RoundElection { candidates, voting };
-        // We might already have enough units to pick a head.
-        Ok(election.compute_votes(units))
+        Ok(Self::handle_candidate_election_result(
+            CandidateElection::for_candidate(candidate, units),
+            candidates,
+            units,
+        ))
     }
 
     fn handle_candidate_election_result(
-        result: Result<CandidateElection<H>, VoteError<H>>,
+        result: Result<CandidateElection<H>, CandidateOutcome<H>>,
         mut candidates: Vec<H::Hash>,
         units: &Units<H>,
     ) -> ElectionResult<H> {
+        use CandidateOutcome::*;
         use ElectionResult::*;
-        use VoteError::*;
         match result {
             // Wait for more voters.
             Ok(voting) => Pending(RoundElection { candidates, voting }),
             // Pick the next candidate and keep trying.
-            Err(EliminateCandidate) => {
+            Err(Eliminate) => {
                 let candidate = units
                     .get(&candidates.pop().expect("there is a candidate"))
                     .expect("we have all the units we work with");
-                let voting = CandidateElection::new(candidate);
-                RoundElection { candidates, voting }.compute_votes(units)
+                Self::handle_candidate_election_result(
+                    CandidateElection::for_candidate(candidate, units),
+                    candidates,
+                    units,
+                )
             }
             // Yay, we picked a head.
             Err(ElectionDone(head)) => Elected(head),
         }
     }
 
-    fn compute_votes(self, units: &Units<H>) -> ElectionResult<H> {
-        let RoundElection { candidates, voting } = self;
-        Self::handle_candidate_election_result(voting.compute_votes(units), candidates, units)
-    }
-
     /// Add a single voter to the election.
-    pub fn add_voter(self, voter: H::Hash, units: &Units<H>) -> ElectionResult<H> {
+    /// Might panic if not all parents were added previously.
+    pub fn add_voter(self, voter: &ExtenderUnit<H>, units: &Units<H>) -> ElectionResult<H> {
         let RoundElection { candidates, voting } = self;
-        Self::handle_candidate_election_result(voting.add_voter(voter, units), candidates, units)
+        Self::handle_candidate_election_result(voting.add_voter(voter), candidates, units)
     }
 }
 
@@ -261,7 +257,7 @@ mod test {
         };
         let last_voter = construct_unit_all_parents(NodeIndex(0), 4, n_members);
         units.add_unit(last_voter.clone());
-        match election.add_voter(last_voter.hash, &units) {
+        match election.add_voter(&last_voter, &units) {
             Pending(_) => panic!("failed to elect obvious head"),
             Elected(head) => {
                 assert_eq!(units.get(&head).expect("we have the head").round, 0);
@@ -298,7 +294,12 @@ mod test {
         for creator in n_members.into_iterator() {
             units.add_unit(construct_unit_all_parents(creator, 0, n_members));
         }
-        let mut candidate_hashes = units.in_round(0).expect("just added these");
+        let mut candidate_hashes: Vec<_> = units
+            .in_round(0)
+            .expect("just added these")
+            .iter()
+            .map(|candidate| candidate.hash)
+            .collect();
         candidate_hashes.sort();
         let skipped_parent = units
             .get(&candidate_hashes[0])

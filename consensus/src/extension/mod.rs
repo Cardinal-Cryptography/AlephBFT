@@ -69,20 +69,24 @@ impl<H: Hasher> Service<H> {
         let mut round = 0;
         loop {
             futures::select! {
-                v = self.electors.next() => {
-                    if let Some(u) = v {
+                v = self.electors.next() => match v {
+                    Some(u) => {
                         debug!(target: LOG_TARGET, "{:?} New unit in Extender round {:?} creator {:?} hash {:?}.", self.node_id, u.round, u.creator, u.hash);
                         for batch in self.extender.add_unit(u) {
-                                let head = *batch.last().expect("all batches are nonempty");
-                                if self.finalizer_tx.unbounded_send(batch).is_err() {
-                                    warn!(target: LOG_TARGET, "{:?} Channel for batches should be open", self.node_id);
-                                    exiting = true;
-                                }
-                                debug!(target: LOG_TARGET, "{:?} Finalized round {:?} with head {:?}.", self.node_id, round, head);
-                            round += 1;
+                            let head = *batch.last().expect("all batches are nonempty");
+                            if self.finalizer_tx.unbounded_send(batch).is_err() {
+                                warn!(target: LOG_TARGET, "{:?} Channel for batches should be open", self.node_id);
+                                exiting = true;
                             }
+                            debug!(target: LOG_TARGET, "{:?} Finalized round {:?} with head {:?}.", self.node_id, round, head);
+                            round += 1;
                         }
+                    },
+                    None => {
+                        warn!(target: LOG_TARGET, "{:?} Units for extender unexpectedly ended.", self.node_id);
+                        exiting = true;
                     }
+                },
                 _ = terminator.get_exit().fuse() => {
                     debug!(target: LOG_TARGET, "{:?} received exit signal.", self.node_id);
                     exiting = true;

@@ -9,7 +9,7 @@ To explain the inner workings of AlephBFT it is instructive to follow the path o
 5. At a suitable moment the units from the store are further moved to a component called `Terminal` -- implemented in `src/terminal.rs`.
 6. Roughly speaking, terminal is expected to "unpack" the unit, so that their parents become explicit (instead of being control hashes only).
 7. Each unit whose parents are successfully decoded, is added to the "Dag". Each unit in the Dag is legit + has all its parents in the Dag.
-8. Dag units are passed to a component called the `Extender` -- see the files in `src/extender/`. The role of the extender is to efficiently run the `OrderData` algorithm, described in the [section on AlephBFT](how_alephbft_does_it.md).
+8. Dag units are passed to a component called the `Extender` -- see the files in `src/extension/`. The role of the extender is to efficiently run the `OrderData` algorithm, described in the [section on AlephBFT](how_alephbft_does_it.md).
 9. Once a unit's data is placed in one of batches by the `Extender` then its path is over and can be safely discarded.
 
 ### 5.1 Creator
