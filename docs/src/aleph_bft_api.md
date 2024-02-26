@@ -51,7 +51,7 @@ The `send` method has straightforward semantics: sending a message to a single o
 
 **Note on Rate Control**: it is assumed that Network **implements a rate control mechanism** guaranteeing that no node is allowed to spam messages without limits. We do not specify details yet, but in future releases we plan to publish recommended upper bounds for the amounts of bandwidth and number of messages allowed per node per a unit of time. These bounds must be carefully crafted based upon the number of nodes `N` and the configured delays between subsequent Dag rounds, so that at the same time spammers are cut off but honest nodes are able function correctly within these bounds.
 
-**Note on Network Reliability**: it is not assumed that each message that AlephBFT orders to send reaches its intended recipient, there are some built-in reliability mechanisms within AlephBFT that will automatically detect certain failures and resend messages as needed. Clearly, the less reliable the network is, the worse the performarmence of AlephBFT will be (generally slower to produce output). Also, not surprisingly if the percentage of dropped messages is too high AlephBFT might stop making progress, but from what we observe in tests, this happens only when the reliability is extremely bad, i.e., drops below 50% (which means there is some significant issue with the network).
+**Note on Network Reliability**: it is not assumed that each message that AlephBFT orders to send reaches its intended recipient, there are some built-in reliability mechanisms within AlephBFT that will automatically detect certain failures and resend messages as needed. Clearly, the less reliable the network is, the worse the performance of AlephBFT will be (generally slower to produce output). Also, not surprisingly if the percentage of dropped messages is too high AlephBFT might stop making progress, but from what we observe in tests, this happens only when the reliability is extremely bad, i.e., drops below 50% (which means there is some significant issue with the network).
 
 #### 3.1.3 Keychain.
 
@@ -75,7 +75,7 @@ These traits are optional. If you do not want to recover crashes mid session or 
 
 [`std::io::Write`](https://doc.rust-lang.org/std/io/trait.Write.html#) should provide a way of writing data generated during session which should be backed up. **`flush` method should block until the written data is backed up.**
 
-[`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html#) should provide a way of retreiving backups of all data generated during session by this member in case of crash. **`std::io::Read` should have a copy of all data so that writing to `std::io::Write` has no effect on reading.**
+[`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html#) should provide a way of retrieving backups of all data generated during session by this member in case of crash. **`std::io::Read` should have a copy of all data so that writing to `std::io::Write` has no effect on reading.**
 
 ### 3.2 Examples
 
@@ -176,12 +176,12 @@ When it comes to availability, in this case `Data` is not a cryptographic finger
 Let `round_delay` be the average delay between two consecutive rounds in the Dag that can be configured in AlephBFT (default value: 0.5 sec). Under the assumption that there are at most `floor(N/3)` dishonest nodes in the committee and the network behaves reasonably well (we do not specify the details here, but roughly speaking, a weak form of partial synchrony is required) AlephBFT guarantees that:
 
 1. Each honest node will make progress in producing to the `out` stream at a pace of roughly `1` ordered batch per `round_delay` seconds (by default, two batches per second).
-2. For honest nodes that are not "falling behind" significantly (because of network delays or other issues) it is guaranteed that the data items they input in the protocol (from their local `DataProvider` object) will have `FinalizationHandler::data_finalized` called on them with a delay of roughly `~round_delay*4` from the time of inputting it. It is hard to define what "falling behind" exactly means, but think of a situation where a node's round `r` unit is always arriving much later then the expected time for round `r` to start. When a node is falling behind from time to time, then there is no issue and its data will be still included in the output stream, however if this problem is chronic, then this node's data might not find its way into the output stream at all. If something like that happens, it most likely means that the `round_delay` is configured too aggresively and one should consider extending the delay.
+2. For honest nodes that are not "falling behind" significantly (because of network delays or other issues) it is guaranteed that the data items they input in the protocol (from their local `DataProvider` object) will have `FinalizationHandler::data_finalized` called on them with a delay of roughly `~round_delay*4` from the time of inputting it. It is hard to define what "falling behind" exactly means, but think of a situation where a node's round `r` unit is always arriving much later than the expected time for round `r` to start. When a node is falling behind from time to time, then there is no issue and its data will be still included in the output stream, however if this problem is chronic, then this node's data might not find its way into the output stream at all. If something like that happens, it most likely means that the `round_delay` is configured too aggressively and one should consider extending the delay.
 
 We note that the issue of an honest node's data not being included in the stream is not too dangerous for most of the applications. For instance, for the two example scenarios:
 
 1. For the **finality gadget** example, most honest nodes see the same blocks and there is a high level of redundancy, so it does not quite matter that some of the nodes are possibly censored.
-2. For the **state machine replication** example one must assume that there is some redundancy in the way transactions are distributed among nodes. For instance if there is a gurantee (that one can easily achieve by randomly gossiping each transaction to a smal random subset of nodes) that each transaction appears in the pools of at least `5` nodes, then the issue of censorship essentially goes away.
+2. For the **state machine replication** example one must assume that there is some redundancy in the way transactions are distributed among nodes. For instance if there is a guarantee (that one can easily achieve by randomly gossiping each transaction to a small random subset of nodes) that each transaction appears in the pools of at least `5` nodes, then the issue of censorship essentially goes away.
 
 Still, the most important thing to take away from this section is that if censorship happens, then the configuration of AlephBFT is suboptimal and one should increase the `round_delay`.
 
@@ -194,7 +194,7 @@ If there are less than `floor(2/3N)+1` nodes that are online and are honestly fo
 
 ### 3.4 AlephBFT Sessions.
 
-Currently the API of AlephBFT allows to run a single Session that is expected to last a fixed number of rounds and thus to finalize a fixed number of output batches. By default a AlephBFT Session is `5000` rounds long but out of these `5000` there are `3000` rounds that the protocol proceeds at a regular speed (i.e., `500ms` per round) and after that starts to slow down (each round is `1.005` times slower than the previous one) so that round `5000` is virtually impossible to reach.
+Currently the API of AlephBFT allows to run a single Session that is expected to last a fixed number of rounds and thus to finalize a fixed number of output batches. By default an AlephBFT Session is `5000` rounds long but out of these `5000` there are `3000` rounds that the protocol proceeds at a regular speed (i.e., `500ms` per round) and after that starts to slow down (each round is `1.005` times slower than the previous one) so that round `5000` is virtually impossible to reach.
 
 There are essentially two ways to use AlephBFT:
 
@@ -203,5 +203,5 @@ There are essentially two ways to use AlephBFT:
 
 **Why are there even sessions in AlephBFT?** To answer this question one would need to make a deep dive into the internal workings of AlephBFT, but a high level summary is: we want to make AlephBFT blazing fast, hence we need to keep everything in RAM (no disk), hence we need to have a round limit, hence we need sessions. For every "hence" in the previous sentence there are extensive arguments to back it, but they are perhaps beyond the scope of this document. We are aware of the inconvenience that it brings -- being forced to implement a session manager, but:
 
-1. We feel that depending on the application there might be different ways to deal with sessions and its better if we leave the task of session managing to the user.
+1. We feel that depending on the application there might be different ways to deal with sessions and it's better if we leave the task of session managing to the user.
 2. In one of the future releases we plan to add an optional default session manager, but will still encourage the user to implement a custom one for a particular use-case.

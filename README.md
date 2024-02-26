@@ -181,7 +181,7 @@ cargo build --bin gen_fuzz
 ### Code Coverage
 
 You may generate the code coverage summary using the `gen_cov_data.sh` script and then a detailed
-raport for every file with `cov_report.sh`. Make sure to first install all the required
+report for every file with `cov_report.sh`. Make sure to first install all the required
 tools with `install_cov_tools.sh`.
 
 ### Resources
