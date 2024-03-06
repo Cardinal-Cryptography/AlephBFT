@@ -1,5 +1,5 @@
 use crate::{reconstruction::ReconstructedUnit, Hasher};
-use std::collections::{VecDeque, HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 struct OrphanedUnit<H: Hasher> {
     unit: ReconstructedUnit<H>,
