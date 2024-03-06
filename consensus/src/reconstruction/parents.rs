@@ -67,20 +67,10 @@ impl<H: Hasher> ReconstructingUnit<H> {
     }
 
     fn control_hash(&self) -> &ControlHash<H> {
-        use ReconstructingUnit::*;
-        match self {
-            Reconstructing(unit, _) | WaitingForParents(unit) => unit.control_hash(),
-        }
+        self.as_unit().control_hash()
     }
 
     fn as_unit(&self) -> &Unit<H> {
-        use ReconstructingUnit::*;
-        match self {
-            Reconstructing(unit, _) | WaitingForParents(unit) => unit,
-        }
-    }
-
-    fn into_unit(self) -> Unit<H> {
         use ReconstructingUnit::*;
         match self {
             Reconstructing(unit, _) | WaitingForParents(unit) => unit,
@@ -93,7 +83,7 @@ impl<H: Hasher> ReconstructingUnit<H> {
         for (parent_id, parent_hash) in control_hash.parents().zip(parent_hashes.into_iter()) {
             parents.insert(parent_id, parent_hash);
         }
-        ReconstructedUnit::with_parents(self.clone().into_unit(), parents).map_err(|_| self)
+        ReconstructedUnit::with_parents(self.as_unit().clone(), parents).map_err(|_| self)
     }
 }
 

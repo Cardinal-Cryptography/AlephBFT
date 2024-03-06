@@ -76,7 +76,7 @@ pub(crate) async fn run<H: Hasher + 'static>(
     futures::select! {
         _ = terminator.get_exit().fuse() => {},
         _ = reconstruction_handle => {
-            debug!(target: "AlephBFT-consensus", "{:?} reconstruction task terminated early.", index);
+            debug!(target: "AlephBFT-consensus", "{:?} unit reconstruction task terminated early.", index);
         },
         _ = creator_panic_handle.fuse() => {
             error!(target: "AlephBFT-consensus", "{:?} creator task terminated early with its task being dropped.", index);

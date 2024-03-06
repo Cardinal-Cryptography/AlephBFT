@@ -1,5 +1,5 @@
 use crate::{reconstruction::ReconstructedUnit, Hasher};
-use std::collections::{HashMap, HashSet};
+use std::collections::{VecDeque, HashMap, HashSet};
 
 struct OrphanedUnit<H: Hasher> {
     unit: ReconstructedUnit<H>,
@@ -69,20 +69,23 @@ impl<H: Hasher> Dag<H> {
     }
 
     fn move_to_dag(&mut self, unit: ReconstructedUnit<H>) -> Vec<ReconstructedUnit<H>> {
-        let unit_hash = unit.hash();
-        self.dag_units.insert(unit_hash, unit.clone());
-        // Start with this unit, so that the units are in order at the end.
-        let mut result = vec![unit];
-        for child in self.waiting_for.remove(&unit_hash).iter().flatten() {
-            match self
-                .orphaned_units
-                .remove(child)
-                .expect("we were waiting for parents")
-                .resolve_parent(unit_hash)
-            {
-                Ok(unit) => result.append(&mut self.move_to_dag(unit)),
-                Err(orphan) => {
-                    self.orphaned_units.insert(*child, orphan);
+        let mut result = Vec::new();
+        let mut ready_units = VecDeque::from([unit]);
+        while let Some(unit) = ready_units.pop_front() {
+            let unit_hash = unit.hash();
+            self.dag_units.insert(unit_hash, unit.clone());
+            result.push(unit);
+            for child in self.waiting_for.remove(&unit_hash).iter().flatten() {
+                match self
+                    .orphaned_units
+                    .remove(child)
+                    .expect("we were waiting for parents")
+                    .resolve_parent(unit_hash)
+                {
+                    Ok(unit) => ready_units.push_back(unit),
+                    Err(orphan) => {
+                        self.orphaned_units.insert(*child, orphan);
+                    }
                 }
             }
         }
@@ -180,7 +183,7 @@ mod test {
     #[test]
     fn reconstructs_units_in_order() {
         let mut dag = Dag::new();
-        for units in reconstructed(random_full_parent_units_up_to(7, NodeCount(4))) {
+        for units in reconstructed(random_full_parent_units_up_to(7000, NodeCount(4))) {
             for unit in units {
                 let reconstructed = dag.add_unit(unit.clone());
                 assert_eq!(reconstructed, vec![unit]);
@@ -190,7 +193,7 @@ mod test {
 
     #[test]
     fn reconstructs_units_in_reverse_order() {
-        let full_unit_dag = random_full_parent_units_up_to(7, NodeCount(4));
+        let full_unit_dag = random_full_parent_units_up_to(7000, NodeCount(4));
         let mut hash_batches: Vec<_> = full_unit_dag
             .iter()
             .map(unit_hashes)

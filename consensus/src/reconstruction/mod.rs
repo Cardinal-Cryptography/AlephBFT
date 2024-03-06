@@ -150,7 +150,6 @@ impl<H: Hasher> Service<H> {
                 }
             }
             Unit(unit) => {
-                // TODO add other destinations
                 if self.units_for_creator.unbounded_send(unit.unit()).is_err() {
                     warn!(target: LOG_TARGET, "Creator channel should be open.");
                     return false;
