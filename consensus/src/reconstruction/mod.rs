@@ -180,31 +180,26 @@ impl<H: Hasher> Service<H> {
 
     /// Run the reconstruction service until terminated.
     pub async fn run(mut self, mut terminator: Terminator) {
-        let mut exiting = false;
         loop {
             futures::select! {
                 n = self.notifications_from_runway.next() => match n {
                     Some(notification) => for output in self.handle_notification(notification) {
                         if !self.handle_output(output) {
-                            exiting = true;
-                            break;
+                            return;
                         }
                     },
                     None => {
                         warn!(target: LOG_TARGET, "Notifications for reconstruction unexpectedly ended.");
-                        exiting = true;
+                        return;
                     }
                 },
                 _ = terminator.get_exit().fuse() => {
                     debug!(target: LOG_TARGET, "Received exit signal.");
-                    exiting = true;
+                    break;
                 }
             }
-            if exiting {
-                debug!(target: LOG_TARGET, "Reconstruction decided to exit.");
-                terminator.terminate_sync().await;
-                break;
-            }
         }
+        debug!(target: LOG_TARGET, "Reconstruction decided to exit.");
+        terminator.terminate_sync().await;
     }
 }
