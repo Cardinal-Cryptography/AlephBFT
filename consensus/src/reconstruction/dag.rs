@@ -55,7 +55,7 @@ impl<H: Hasher> OrphanedUnit<H> {
 pub struct Dag<H: Hasher> {
     orphaned_units: HashMap<H::Hash, OrphanedUnit<H>>,
     waiting_for: HashMap<H::Hash, Vec<H::Hash>>,
-    dag_units: HashMap<H::Hash, ReconstructedUnit<H>>,
+    dag_units: HashSet<H::Hash>,
 }
 
 impl<H: Hasher> Dag<H> {
@@ -64,7 +64,7 @@ impl<H: Hasher> Dag<H> {
         Dag {
             orphaned_units: HashMap::new(),
             waiting_for: HashMap::new(),
-            dag_units: HashMap::new(),
+            dag_units: HashSet::new(),
         }
     }
 
@@ -73,7 +73,7 @@ impl<H: Hasher> Dag<H> {
         let mut ready_units = VecDeque::from([unit]);
         while let Some(unit) = ready_units.pop_front() {
             let unit_hash = unit.hash();
-            self.dag_units.insert(unit_hash, unit.clone());
+            self.dag_units.insert(unit_hash);
             result.push(unit);
             for child in self.waiting_for.remove(&unit_hash).iter().flatten() {
                 match self
@@ -95,14 +95,14 @@ impl<H: Hasher> Dag<H> {
     /// Add a unit to the Dag. Returns all the units that now have all their parents in the Dag,
     /// in an order agreeing with the Dag structure.
     pub fn add_unit(&mut self, unit: ReconstructedUnit<H>) -> Vec<ReconstructedUnit<H>> {
-        if self.dag_units.contains_key(&unit.hash()) {
+        if self.dag_units.contains(&unit.hash()) {
             // Deduplicate.
             return Vec::new();
         }
         let missing_parents = unit
             .parents()
             .values()
-            .filter(|parent| !self.dag_units.contains_key(parent))
+            .filter(|parent| !self.dag_units.contains(parent))
             .cloned()
             .collect();
         match OrphanedUnit::new(unit, missing_parents) {
