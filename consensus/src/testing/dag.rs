@@ -181,7 +181,7 @@ fn generate_random_dag(n_members: NodeCount, height: Round, seed: u64) -> Vec<Un
     // Maximum number of forks per round per forker.
     let max_variants = rng.gen_range(1..=4);
 
-    let threshold = NodeCount((2 * n_members.0) / 3 + 1);
+    let threshold = n_members.consensus_threshold();
 
     let mut dag: Vec<Vec<Vec<UnitWithParents>>> =
         vec![vec![vec![]; n_members.into()]; height.into()];
