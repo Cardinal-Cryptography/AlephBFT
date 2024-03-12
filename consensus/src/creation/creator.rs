@@ -93,7 +93,7 @@ impl<H: Hasher> Creator<H> {
         &mut self.round_collectors[round_ix]
     }
 
-    /// To create a new unit, we need to have at least floor(2*N/3) + 1 parents available in previous round.
+    /// To create a new unit, we need to have at least the consensus threshold of parents available in previous round.
     /// Additionally, our unit from previous round must be available.
     pub fn create_unit(&self, round: Round) -> Result<(PreUnit<H>, Vec<H::Hash>)> {
         if round == 0 {
@@ -165,7 +165,7 @@ mod tests {
     }
 
     fn create_unit_with_minimal_parents(n_members: NodeCount) {
-        let n_parents = (n_members.0 * 2) / 3 + 1;
+        let n_parents = n_members.consensus_threshold().0;
         let mut creators = creator_set(n_members);
         let new_units = create_preunits(creators.iter().take(n_parents), 0);
         let new_units: Vec<_> = new_units
