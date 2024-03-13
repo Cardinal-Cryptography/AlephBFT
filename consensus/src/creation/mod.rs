@@ -169,7 +169,7 @@ async fn run_creator<H: Hasher, D: Data, MK: MultiKeychain, DP: DataProvider<D>>
 ) -> anyhow::Result<(), CreatorError> {
     let node_id = conf.node_ix();
     let n_members = conf.n_members();
-    let create_lag = conf.delay_config().unit_creation_delay.clone();
+    let create_delay = conf.delay_config().unit_creation_delay.clone();
     let max_round = conf.max_round();
     let session_id = conf.session_id();
     let mut creator = Creator::new(node_id, n_members);
@@ -185,9 +185,9 @@ async fn run_creator<H: Hasher, D: Data, MK: MultiKeychain, DP: DataProvider<D>>
         // delay we should observe.
         let skip_delay = creator.current_round() > round;
         if !skip_delay {
-            let lag = Delay::new(create_lag(round.into()));
+            let delay = Delay::new(create_delay(round.into()));
 
-            keep_processing_units_until(&mut creator, incoming_parents, lag).await?;
+            keep_processing_units_until(&mut creator, incoming_parents, delay).await?;
         }
 
         let (preunit, parent_hashes) = create_unit(round, &mut creator, incoming_parents).await?;
