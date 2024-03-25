@@ -193,7 +193,7 @@ async fn run_creator<H: Hasher, D: Data, MK: MultiKeychain, DP: DataProvider<D>>
         let (preunit, parent_hashes) = create_unit(round, &mut creator, incoming_parents).await?;
         trace!(target: LOG_TARGET, "Created a new preunit {:?} at round {:?}.", preunit, round);
         let data = data_provider.get_data().await;
-        trace!(target: LOG_TARGET, "Received data.");
+        trace!(target: LOG_TARGET, "Received data: {:?}.", data);
         let unit = packer.pack(preunit, data);
 
         outgoing_units.unbounded_send((unit, parent_hashes))?;
