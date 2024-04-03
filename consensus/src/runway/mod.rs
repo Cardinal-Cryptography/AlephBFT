@@ -493,7 +493,7 @@ where
         }
     }
 
-    fn on_created(&mut self, unit: SignedUnit<H, D, MK>) {
+    fn on_unit_created(&mut self, unit: SignedUnit<H, D, MK>) {
         debug!(target: "AlephBFT-runway", "{:?} On create notification.", self.index());
         let signed_unit = self
             .validator
@@ -672,6 +672,7 @@ where
                         break;
                     }
                 },
+
                 request = self.requests_from_reconstruction.next() => match request {
                     Some(request) => self.on_reconstruction_request(request),
                     None => {
@@ -681,7 +682,7 @@ where
                 },
 
                 signed_unit = self.new_units_from_creation.next() => match signed_unit {
-                    Some(signed_unit) => self.on_created(signed_unit),
+                    Some(signed_unit) => self.on_unit_created(signed_unit),
                     None => {
                         error!(target: "AlephBFT-runway", "{:?} Creation stream closed.", index);
                         break;

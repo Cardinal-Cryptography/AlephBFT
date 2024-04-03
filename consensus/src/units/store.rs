@@ -27,33 +27,33 @@ impl Display for UnitStoreStatus {
     }
 }
 
-/// Stores units and remembers the first instance of any unit with a specific coordinate inserted.
+/// Stores units and remembers the first instance of any unit with a specific coordinate inserted as canonical.
 pub struct UnitStore<U: Unit> {
     by_hash: HashMap<HashFor<U>, U>,
-    by_coord: NodeMap<HashMap<Round, HashFor<U>>>,
+    canonical_units: NodeMap<HashMap<Round, HashFor<U>>>,
 }
 
 impl<U: Unit> UnitStore<U> {
     /// Create a new unit store for the given number of nodes.
     pub fn new(node_count: NodeCount) -> Self {
-        let mut by_coord = NodeMap::with_size(node_count);
+        let mut canonical_units = NodeMap::with_size(node_count);
         for node_id in node_count.into_iterator() {
-            by_coord.insert(node_id, HashMap::new());
+            canonical_units.insert(node_id, HashMap::new());
         }
         UnitStore {
             by_hash: HashMap::new(),
-            by_coord,
+            canonical_units,
         }
     }
 
     fn mut_hashes_by(&mut self, creator: NodeIndex) -> &mut HashMap<Round, HashFor<U>> {
-        self.by_coord
+        self.canonical_units
             .get_mut(creator)
             .expect("all hashmaps initialized")
     }
 
     fn hashes_by(&self, creator: NodeIndex) -> &HashMap<Round, HashFor<U>> {
-        self.by_coord
+        self.canonical_units
             .get(creator)
             .expect("all hashmaps initialized")
     }
@@ -107,8 +107,8 @@ impl<U: Unit> UnitStore<U> {
 
     /// The status summary of this store.
     pub fn status(&self) -> UnitStoreStatus {
-        let mut top_row = NodeMap::with_size(self.by_coord.size());
-        for (creator, units) in self.by_coord.iter() {
+        let mut top_row = NodeMap::with_size(self.canonical_units.size());
+        for (creator, units) in self.canonical_units.iter() {
             if let Some(round) = units.keys().max() {
                 top_row.insert(creator, *round);
             }
