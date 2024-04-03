@@ -1,7 +1,7 @@
 use crate::{
-    reconstruction::ReconstructedUnit,
+    dag::reconstruction::{ReconstructedUnit, ReconstructionResult, Request},
     units::{ControlHash, HashFor, Unit, UnitCoord},
-    Hasher, NodeIndex, NodeMap,
+    NodeIndex, NodeMap,
 };
 use std::collections::{hash_map::Entry, HashMap};
 
@@ -96,76 +96,6 @@ impl<U: Unit> ReconstructingUnit<U> {
     }
 }
 
-/// What we need to request to reconstruct units.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Request<H: Hasher> {
-    /// We need a unit at this coordinate.
-    Coord(UnitCoord),
-    /// We need the explicit list of parents for the unit identified by the hash.
-    /// This should only happen in the presence of forks, when optimistic reconstruction failed.
-    ParentsOf(H::Hash),
-}
-
-/// The result of a reconstruction attempt. Might contain multiple reconstructed units,
-/// as well as requests for some data that is needed for further reconstruction.
-#[derive(Debug, PartialEq, Eq)]
-pub struct ReconstructionResult<U: Unit> {
-    reconstructed_units: Vec<ReconstructedUnit<U>>,
-    requests: Vec<Request<U::Hasher>>,
-}
-
-impl<U: Unit> ReconstructionResult<U> {
-    fn new() -> Self {
-        ReconstructionResult {
-            reconstructed_units: Vec::new(),
-            requests: Vec::new(),
-        }
-    }
-
-    fn reconstructed(unit: ReconstructedUnit<U>) -> Self {
-        ReconstructionResult {
-            reconstructed_units: vec![unit],
-            requests: Vec::new(),
-        }
-    }
-
-    fn request(request: Request<U::Hasher>) -> Self {
-        ReconstructionResult {
-            reconstructed_units: Vec::new(),
-            requests: vec![request],
-        }
-    }
-
-    fn add_unit(&mut self, unit: ReconstructedUnit<U>) {
-        self.reconstructed_units.push(unit);
-    }
-
-    fn add_request(&mut self, request: Request<U::Hasher>) {
-        self.requests.push(request);
-    }
-
-    fn accumulate(&mut self, other: ReconstructionResult<U>) {
-        let ReconstructionResult {
-            mut reconstructed_units,
-            mut requests,
-        } = other;
-        self.reconstructed_units.append(&mut reconstructed_units);
-        self.requests.append(&mut requests);
-    }
-}
-
-impl<U: Unit> From<ReconstructionResult<U>>
-    for (Vec<ReconstructedUnit<U>>, Vec<Request<U::Hasher>>)
-{
-    fn from(result: ReconstructionResult<U>) -> Self {
-        let ReconstructionResult {
-            reconstructed_units,
-            requests,
-        } = result;
-        (reconstructed_units, requests)
-    }
-}
-
 /// Receives units with control hashes and reconstructs their parents.
 pub struct Reconstruction<U: Unit> {
     reconstructing_units: HashMap<HashFor<U>, ReconstructingUnit<U>>,
@@ -195,7 +125,7 @@ impl<U: Unit> Reconstruction<U> {
                 Reconstructed(unit) => ReconstructionResult::reconstructed(unit),
                 InProgress(unit) => {
                     self.reconstructing_units.insert(child_hash, unit);
-                    ReconstructionResult::new()
+                    ReconstructionResult::empty()
                 }
                 RequestParents(unit) => {
                     let hash = unit.as_unit().hash();
@@ -205,13 +135,13 @@ impl<U: Unit> Reconstruction<U> {
             },
             // We might have reconstructed the unit through explicit parents if someone sent them to us for no reason,
             // in which case we don't have it any more.
-            None => ReconstructionResult::new(),
+            None => ReconstructionResult::empty(),
         }
     }
 
     /// Add a unit and start reconstructing its parents.
     pub fn add_unit(&mut self, unit: U) -> ReconstructionResult<U> {
-        let mut result = ReconstructionResult::new();
+        let mut result = ReconstructionResult::empty();
         let unit_hash = unit.hash();
         if self.reconstructing_units.contains_key(&unit_hash) {
             // We already received this unit once, no need to do anything.
@@ -275,10 +205,10 @@ impl<U: Unit> Reconstruction<U> {
                 Ok(unit) => ReconstructionResult::reconstructed(unit),
                 Err(unit) => {
                     self.reconstructing_units.insert(unit_hash, unit);
-                    ReconstructionResult::new()
+                    ReconstructionResult::empty()
                 }
             },
-            None => ReconstructionResult::new(),
+            None => ReconstructionResult::empty(),
         }
     }
 }
@@ -288,10 +218,7 @@ mod test {
     use std::collections::HashMap;
 
     use crate::{
-        reconstruction::{
-            parents::{Reconstruction, Request},
-            ReconstructedUnit,
-        },
+        dag::reconstruction::{parents::Reconstruction, ReconstructedUnit, Request},
         units::{random_full_parent_units_up_to, Unit, UnitCoord},
         NodeCount, NodeIndex,
     };
