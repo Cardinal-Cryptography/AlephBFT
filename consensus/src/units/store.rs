@@ -27,7 +27,8 @@ impl Display for UnitStoreStatus {
     }
 }
 
-/// Stores units and remembers the first instance of any unit with a specific coordinate inserted as canonical.
+/// Stores units, and keeps track of which are canonical, i.e. the first ones inserted with a given coordinate.
+/// See `remove` for limitation on trusting canonical units, although they don't impact our usecases.
 pub struct UnitStore<U: Unit> {
     by_hash: HashMap<HashFor<U>, U>,
     canonical_units: NodeMap<HashMap<Round, HashFor<U>>>,
