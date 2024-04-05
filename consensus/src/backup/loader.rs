@@ -11,7 +11,7 @@ use log::{error, info, warn};
 
 use crate::{
     units::{UncheckedSignedUnit, Unit, UnitCoord},
-    Data, Hasher, NodeIndex, Round, SessionId, Signature,
+    Data, Hasher, NodeIndex, NodeMap, Round, SessionId, Signature,
 };
 
 const LOG_TARGET: &str = "AlephBFT-backup-loader";
@@ -91,7 +91,8 @@ impl<H: Hasher, D: Data, S: Signature, R: AsyncRead> BackupLoader<H, D, S, R> {
         let input = &mut &buf[..];
         let mut result = Vec::new();
         while !input.is_empty() {
-            result.push(<UncheckedSignedUnit<H, D, S>>::decode(input)?);
+            // TODO(A0-4234): We should use the parents information to respond to reconstruction failures.
+            result.push(<(UncheckedSignedUnit<H, D, S>, NodeMap<H::Hash>)>::decode(input)?.0);
         }
         Ok(result)
     }
@@ -241,15 +242,15 @@ mod tests {
     use codec::Encode;
     use futures::channel::oneshot;
 
-    use aleph_bft_mock::{Data, Hasher64, Keychain, Loader, Signature};
+    use aleph_bft_mock::{Data, Hash64, Hasher64, Keychain, Loader, Signature};
 
     use crate::{
         backup::BackupLoader,
         units::{
             create_preunits, creator_set, preunit_to_full_unit, preunit_to_unchecked_signed_unit,
-            UncheckedSignedUnit as GenericUncheckedSignedUnit,
+            UncheckedSignedUnit as GenericUncheckedSignedUnit, Unit,
         },
-        NodeCount, NodeIndex, Round, SessionId,
+        NodeCount, NodeIndex, NodeMap, Round, SessionId,
     };
 
     type UncheckedSignedUnit = GenericUncheckedSignedUnit<Hasher64, Data, Signature>;
@@ -308,7 +309,17 @@ mod tests {
     }
 
     fn encode_all(items: Vec<UncheckedSignedUnit>) -> Vec<Vec<u8>> {
-        items.iter().map(|u| u.encode()).collect()
+        items
+            .iter()
+            .map(|u| {
+                (
+                    u,
+                    // for now encode empty parents as we ignore them anyway
+                    NodeMap::<Hash64>::with_size(u.as_signable().control_hash().n_members()),
+                )
+                    .encode()
+            })
+            .collect()
     }
 
     fn prepare_test(encoded_items: Vec<u8>) -> PrepareTestResponse<impl futures::Future> {

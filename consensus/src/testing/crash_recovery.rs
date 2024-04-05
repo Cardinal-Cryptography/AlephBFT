@@ -1,9 +1,9 @@
 use crate::{
     testing::{init_log, spawn_honest_member, HonestMember, Network, ReconnectSender},
     units::{UncheckedSignedUnit, Unit, UnitCoord},
-    NodeCount, NodeIndex, SpawnHandle, TaskHandle,
+    NodeCount, NodeIndex, NodeMap, SpawnHandle, TaskHandle,
 };
-use aleph_bft_mock::{Data, Hasher64, Router, Signature, Spawner};
+use aleph_bft_mock::{Data, Hash64, Hasher64, Router, Signature, Spawner};
 use codec::Decode;
 use futures::{
     channel::{mpsc, oneshot},
@@ -129,7 +129,12 @@ fn verify_backup(buf: &mut &[u8]) -> HashSet<UnitCoord> {
     let mut already_saved = HashSet::new();
 
     while !buf.is_empty() {
-        let unit = UncheckedSignedUnit::<Hasher64, Data, Signature>::decode(buf).unwrap();
+        let unit = <(
+            UncheckedSignedUnit<Hasher64, Data, Signature>,
+            NodeMap<Hash64>,
+        )>::decode(buf)
+        .unwrap()
+        .0;
         let full_unit = unit.as_signable();
         let coord = full_unit.coord();
         let parent_ids = &full_unit.as_pre_unit().control_hash().parents_mask;
