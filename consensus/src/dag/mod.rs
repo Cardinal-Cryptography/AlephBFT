@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 //! Converts units from the network into ones that are in the Dag, in the correct order.
 use std::collections::HashMap;
 
