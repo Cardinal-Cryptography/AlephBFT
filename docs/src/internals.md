@@ -11,7 +11,7 @@ To explain the inner workings of AlephBFT it is instructive to follow the path o
   3. Each unit whose parents are successfully decoded, is passed on to `dag/reconstruction/dag.rs`, which ensures that units are passed on only when their parents already were. They are then returned back to `runway/`.
 5. In `runway/` such units are put in a store. Each unit in the store is legit + has all its parents in the store.
 6. Such units are passed to a component called the `Extender` -- see the files in `extension/`. The role of the extender is to efficiently run the `OrderData` algorithm, described in the [section on AlephBFT](how_alephbft_does_it.md).
-8. Once a unit's data is placed in one of batches by the `Extender` then its path is over, although we keep it in the runway store to be able to send it to other nodes on request.
+7. Once a unit's data is placed in one of batches by the `Extender` then its path is over, although we keep it in the runway store to be able to send it to other nodes on request.
 
 ### 5.1 Creator
 
@@ -42,6 +42,6 @@ In any case the reconstruction triggers a request to `Member` to download the fu
 
 The units parents might, for many reasons, not be reconstructed in an order agreeing with the Dag order, i.e. some of their ancestors might not yet be reconstructed. The Dag component ensures that units are only added to the store after their parents were already added, and thus any units emitted by the Dag component are in an order agreeing with the Dag order.
 
-### 5.4 Extender
+### 5.3 Extender
 
 The `Extender`'s role is to receive Dag units (in an order agreeing with the Dag order) and extend the output stream. Towards this end it elects the `Head` for each `round`. Such an election works by going through candidate units from this round either eliminating them or eventually electing one. Votes are computed and cached for each candidate until a decision on it is made, after which the election moves on to the next round (if elected as `Head`) or to the next unit (otherwise). After electing every `Head` the `Extender` deterministically orders all its unordered ancestors and the `Head` itself and returns the resulting batch.
