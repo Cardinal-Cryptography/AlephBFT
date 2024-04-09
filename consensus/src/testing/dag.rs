@@ -1,7 +1,8 @@
 use crate::{
     alerts::ForkingNotification,
     dag::{
-        Dag as GenericDag, ReconstructedUnit as GenericReconstructedUnit, Request as GenericRequest,
+        Dag as GenericDag, DagResult, ReconstructedUnit as GenericReconstructedUnit,
+        Request as GenericRequest,
     },
     extension::Service as Extender,
     units::{
@@ -118,8 +119,11 @@ impl DagFeeder {
                             .into()
                     })
                     .collect();
-                let (units, requests, alerts) =
-                    self.dag.add_parents(h, parents, &self.store).into();
+                let DagResult {
+                    units,
+                    requests,
+                    alerts,
+                } = self.dag.add_parents(h, parents, &self.store);
                 for unit in units {
                     self.on_reconstructed_unit(unit);
                 }
@@ -164,10 +168,13 @@ impl DagFeeder {
             .iter()
             .map(|unit| unit.unit.clone().into())
             .collect();
-        let (units, requests, alerts) = self
+        let DagResult {
+            units,
+            requests,
+            alerts,
+        } = self
             .dag
-            .process_forking_notification(ForkingNotification::Units(committed_units), &self.store)
-            .into();
+            .process_forking_notification(ForkingNotification::Units(committed_units), &self.store);
         assert!(alerts.is_empty());
         for unit in units {
             self.on_reconstructed_unit(unit);
@@ -180,7 +187,11 @@ impl DagFeeder {
     fn feed(mut self) -> Vec<ReconstructedUnit> {
         let units = self.units.clone();
         for unit in units {
-            let (units, requests, alerts) = self.dag.add_unit(unit.unit.into(), &self.store).into();
+            let DagResult {
+                units,
+                requests,
+                alerts,
+            } = self.dag.add_unit(unit.unit.into(), &self.store);
             for unit in units {
                 self.on_reconstructed_unit(unit);
             }

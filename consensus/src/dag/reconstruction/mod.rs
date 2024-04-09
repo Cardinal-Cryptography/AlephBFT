@@ -96,19 +96,15 @@ pub enum Request<H: Hasher> {
 /// as well as requests for some data that is needed for further reconstruction.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReconstructionResult<U: Unit> {
-    reconstructed_units: Vec<ReconstructedUnit<U>>,
-    requests: Vec<Request<U::Hasher>>,
+    /// All the units that got reconstructed.
+    pub units: Vec<ReconstructedUnit<U>>,
+    /// Any requests that now should be made.
+    pub requests: Vec<Request<U::Hasher>>,
 }
 
 impl<U: Unit> ReconstructionResult<U> {
-    fn new(
-        reconstructed_units: Vec<ReconstructedUnit<U>>,
-        requests: Vec<Request<U::Hasher>>,
-    ) -> Self {
-        ReconstructionResult {
-            reconstructed_units,
-            requests,
-        }
+    fn new(units: Vec<ReconstructedUnit<U>>, requests: Vec<Request<U::Hasher>>) -> Self {
+        ReconstructionResult { units, requests }
     }
 
     fn empty() -> Self {
@@ -117,20 +113,20 @@ impl<U: Unit> ReconstructionResult<U> {
 
     fn reconstructed(unit: ReconstructedUnit<U>) -> Self {
         ReconstructionResult {
-            reconstructed_units: vec![unit],
+            units: vec![unit],
             requests: Vec::new(),
         }
     }
 
     fn request(request: Request<U::Hasher>) -> Self {
         ReconstructionResult {
-            reconstructed_units: Vec::new(),
+            units: Vec::new(),
             requests: vec![request],
         }
     }
 
     fn add_unit(&mut self, unit: ReconstructedUnit<U>) {
-        self.reconstructed_units.push(unit);
+        self.units.push(unit);
     }
 
     fn add_request(&mut self, request: Request<U::Hasher>) {
@@ -139,23 +135,11 @@ impl<U: Unit> ReconstructionResult<U> {
 
     fn accumulate(&mut self, other: ReconstructionResult<U>) {
         let ReconstructionResult {
-            mut reconstructed_units,
+            mut units,
             mut requests,
         } = other;
-        self.reconstructed_units.append(&mut reconstructed_units);
+        self.units.append(&mut units);
         self.requests.append(&mut requests);
-    }
-}
-
-impl<U: Unit> From<ReconstructionResult<U>>
-    for (Vec<ReconstructedUnit<U>>, Vec<Request<U::Hasher>>)
-{
-    fn from(result: ReconstructionResult<U>) -> Self {
-        let ReconstructionResult {
-            reconstructed_units,
-            requests,
-        } = result;
-        (reconstructed_units, requests)
     }
 }
 
@@ -179,7 +163,7 @@ impl<U: Unit> Reconstruction<U> {
         &mut self,
         reconstruction_result: ReconstructionResult<U>,
     ) -> ReconstructionResult<U> {
-        let (units, requests) = reconstruction_result.into();
+        let ReconstructionResult { units, requests } = reconstruction_result;
         let units = units
             .into_iter()
             .flat_map(|unit| self.dag.add_unit(unit))
@@ -209,7 +193,7 @@ mod test {
     use std::collections::HashMap;
 
     use crate::{
-        dag::reconstruction::{ReconstructedUnit, Reconstruction, Request},
+        dag::reconstruction::{ReconstructedUnit, Reconstruction, ReconstructionResult, Request},
         units::{random_full_parent_units_up_to, Unit, UnitCoord},
         NodeCount, NodeIndex,
     };
@@ -218,10 +202,13 @@ mod test {
     fn reconstructs_initial_units() {
         let mut reconstruction = Reconstruction::new();
         for unit in &random_full_parent_units_up_to(0, NodeCount(4), 43)[0] {
-            let (mut reconstructed_units, requests) = reconstruction.add_unit(unit.clone()).into();
+            let ReconstructionResult {
+                mut units,
+                requests,
+            } = reconstruction.add_unit(unit.clone());
             assert!(requests.is_empty());
-            assert_eq!(reconstructed_units.len(), 1);
-            let reconstructed_unit = reconstructed_units.pop().expect("just checked its there");
+            assert_eq!(units.len(), 1);
+            let reconstructed_unit = units.pop().expect("just checked its there");
             assert_eq!(reconstructed_unit, ReconstructedUnit::initial(unit.clone()));
             assert_eq!(reconstructed_unit.parents().item_count(), 0);
         }
@@ -234,11 +221,13 @@ mod test {
         for units in &dag {
             for unit in units {
                 let round = unit.round();
-                let (mut reconstructed_units, requests) =
-                    reconstruction.add_unit(unit.clone()).into();
+                let ReconstructionResult {
+                    mut units,
+                    requests,
+                } = reconstruction.add_unit(unit.clone());
                 assert!(requests.is_empty());
-                assert_eq!(reconstructed_units.len(), 1);
-                let reconstructed_unit = reconstructed_units.pop().expect("just checked its there");
+                assert_eq!(units.len(), 1);
+                let reconstructed_unit = units.pop().expect("just checked its there");
                 match round {
                     0 => {
                         assert_eq!(reconstructed_unit, ReconstructedUnit::initial(unit.clone()));
@@ -269,8 +258,8 @@ mod test {
             .expect("just created")
             .last()
             .expect("we have a unit");
-        let (reconstructed_units, requests) = reconstruction.add_unit(unit.clone()).into();
-        assert!(reconstructed_units.is_empty());
+        let ReconstructionResult { units, requests } = reconstruction.add_unit(unit.clone());
+        assert!(units.is_empty());
         assert_eq!(requests.len(), 4);
     }
 
@@ -286,8 +275,8 @@ mod test {
             .expect("just created")
             .last()
             .expect("we have a unit");
-        let (reconstructed_units, requests) = reconstruction.add_unit(unit.clone()).into();
-        assert!(reconstructed_units.is_empty());
+        let ReconstructionResult { units, requests } = reconstruction.add_unit(unit.clone());
+        assert!(units.is_empty());
         assert_eq!(requests.len(), 1);
         assert_eq!(
             requests.last().expect("just checked"),
@@ -302,19 +291,20 @@ mod test {
         dag.reverse();
         for units in dag.iter().take(7) {
             for unit in units {
-                let (reconstructed_units, requests) = reconstruction.add_unit(unit.clone()).into();
-                assert!(reconstructed_units.is_empty());
+                let ReconstructionResult { units, requests } =
+                    reconstruction.add_unit(unit.clone());
+                assert!(units.is_empty());
                 assert_eq!(requests.len(), 4);
             }
         }
         for unit in dag[7].iter().take(3) {
-            let (reconstructed_units, requests) = reconstruction.add_unit(unit.clone()).into();
+            let ReconstructionResult { units, requests } = reconstruction.add_unit(unit.clone());
             assert!(requests.is_empty());
-            assert_eq!(reconstructed_units.len(), 1);
+            assert_eq!(units.len(), 1);
         }
-        let (reconstructed_units, requests) = reconstruction.add_unit(dag[7][3].clone()).into();
+        let ReconstructionResult { units, requests } = reconstruction.add_unit(dag[7][3].clone());
         assert!(requests.is_empty());
-        assert_eq!(reconstructed_units.len(), 4 * 8 - 3);
+        assert_eq!(units.len(), 4 * 8 - 3);
     }
 
     #[test]
@@ -332,8 +322,8 @@ mod test {
             .last()
             .expect("we have a unit");
         let unit_hash = unit.hash();
-        let (reconstructed_units, requests) = reconstruction.add_unit(unit.clone()).into();
-        assert!(reconstructed_units.is_empty());
+        let ReconstructionResult { units, requests } = reconstruction.add_unit(unit.clone());
+        assert!(units.is_empty());
         assert_eq!(requests.len(), 1);
         assert_eq!(
             requests.last().expect("just checked"),
@@ -345,17 +335,18 @@ mod test {
             .iter()
             .map(|unit| (unit.coord(), unit.hash()))
             .collect();
-        let (reconstructed_units, requests) = reconstruction
-            .add_parents(unit_hash, parent_hashes.clone())
-            .into();
+        let ReconstructionResult { units, requests } =
+            reconstruction.add_parents(unit_hash, parent_hashes.clone());
         assert!(requests.is_empty());
-        assert!(reconstructed_units.is_empty());
+        assert!(units.is_empty());
         let mut all_reconstructed = Vec::new();
         for other_initial in &other_dag[0] {
-            let (mut reconstructed_units, requests) =
-                reconstruction.add_unit(other_initial.clone()).into();
+            let ReconstructionResult {
+                mut units,
+                requests,
+            } = reconstruction.add_unit(other_initial.clone());
             assert!(requests.is_empty());
-            all_reconstructed.append(&mut reconstructed_units);
+            all_reconstructed.append(&mut units);
         }
         // some of the initial units may randomly be identical,
         // so all we can say that the last reconstructed unit should be the one we want

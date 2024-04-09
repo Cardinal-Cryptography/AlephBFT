@@ -22,9 +22,12 @@ const LOG_TARGET: &str = "AlephBFT-dag";
 
 /// The result of sending some information to the Dag.
 pub struct DagResult<H: Hasher, D: Data, MK: MultiKeychain> {
-    units: Vec<ReconstructedUnit<SignedUnit<H, D, MK>>>,
-    requests: Vec<Request<H>>,
-    alerts: Vec<Alert<H, D, MK::Signature>>,
+    /// Units added to the dag.
+    pub units: Vec<ReconstructedUnit<SignedUnit<H, D, MK>>>,
+    /// Requests for more information.
+    pub requests: Vec<Request<H>>,
+    /// Alerts raised due to encountered forks.
+    pub alerts: Vec<Alert<H, D, MK::Signature>>,
 }
 
 impl<H: Hasher, D: Data, MK: MultiKeychain> DagResult<H, D, MK> {
@@ -64,29 +67,12 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> From<ReconstructionResult<SignedUnit
     for DagResult<H, D, MK>
 {
     fn from(other: ReconstructionResult<SignedUnit<H, D, MK>>) -> Self {
-        let (units, requests) = other.into();
+        let ReconstructionResult { units, requests } = other;
         DagResult {
             units,
             requests,
             alerts: Vec::new(),
         }
-    }
-}
-
-impl<H: Hasher, D: Data, MK: MultiKeychain> From<DagResult<H, D, MK>>
-    for (
-        Vec<ReconstructedUnit<SignedUnit<H, D, MK>>>,
-        Vec<Request<H>>,
-        Vec<Alert<H, D, MK::Signature>>,
-    )
-{
-    fn from(result: DagResult<H, D, MK>) -> Self {
-        let DagResult {
-            units,
-            requests,
-            alerts,
-        } = result;
-        (units, requests, alerts)
     }
 }
 
@@ -99,11 +85,9 @@ pub struct Dag<H: Hasher, D: Data, MK: MultiKeychain> {
 impl<H: Hasher, D: Data, MK: MultiKeychain> Dag<H, D, MK> {
     /// A new dag using the provided unit validator under the hood.
     pub fn new(unit_validator: UnitValidator<MK>) -> Self {
-        let validator = Validator::new(unit_validator);
-        let reconstruction = Reconstruction::new();
         Dag {
-            validator,
-            reconstruction,
+            validator: Validator::new(unit_validator),
+            reconstruction: Reconstruction::new(),
         }
     }
 
@@ -237,7 +221,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain> Dag<H, D, MK> {
 mod test {
     use crate::{
         alerts::ForkingNotification,
-        dag::{Dag, Request},
+        dag::{Dag, DagResult, Request},
         units::{
             random_full_parent_units_up_to, random_unit_with_parents, Unit, UnitStore,
             Validator as UnitValidator, WrappedSignedUnit,
@@ -269,7 +253,11 @@ mod test {
                 Signed::sign(unit, keychain)
             })
         {
-            let (units, requests, alerts) = dag.add_unit(unit.into(), &store).into();
+            let DagResult {
+                units,
+                requests,
+                alerts,
+            } = dag.add_unit(unit.into(), &store);
             assert_eq!(units.len(), 1);
             assert!(requests.is_empty());
             assert!(alerts.is_empty());
@@ -299,7 +287,11 @@ mod test {
                 Signed::sign(unit, keychain)
             })
         {
-            let (units, requests, alerts) = dag.add_unit(unit.into(), &store).into();
+            let DagResult {
+                units,
+                requests,
+                alerts,
+            } = dag.add_unit(unit.into(), &store);
             assert_eq!(units.len(), 1);
             assert!(requests.is_empty());
             assert!(alerts.is_empty());
@@ -333,7 +325,11 @@ mod test {
         {
             let unit_round = unit.round();
             let unit_creator = unit.creator();
-            let (units, requests, alerts) = dag.add_unit(unit.into(), &store).into();
+            let DagResult {
+                units,
+                requests,
+                alerts,
+            } = dag.add_unit(unit.into(), &store);
             assert!(alerts.is_empty());
             match unit_round {
                 0 => match unit_creator {
@@ -392,12 +388,20 @@ mod test {
                 .clone();
         }
         let fork = Signed::sign(fork, keychain);
-        let (mut units, requests, alerts) = dag.add_unit(unit.into(), &store).into();
+        let DagResult {
+            mut units,
+            requests,
+            alerts,
+        } = dag.add_unit(unit.into(), &store);
         assert_eq!(units.len(), 1);
         assert!(requests.is_empty());
         assert!(alerts.is_empty());
         store.insert(units.pop().expect("just checked"));
-        let (units, requests, alerts) = dag.add_unit(fork.into(), &store).into();
+        let DagResult {
+            units,
+            requests,
+            alerts,
+        } = dag.add_unit(fork.into(), &store);
         assert!(units.is_empty());
         assert!(requests.is_empty());
         assert_eq!(alerts.len(), 1);
@@ -431,12 +435,14 @@ mod test {
             .expect("we have the unit for the forker")
             .clone();
         let fork = Signed::sign(fork, &keychains[forker_id.0]);
-        let (units, requests, alerts) = dag
-            .process_forking_notification(
-                ForkingNotification::Forker((unit.clone().into(), fork.into())),
-                &store,
-            )
-            .into();
+        let DagResult {
+            units,
+            requests,
+            alerts,
+        } = dag.process_forking_notification(
+            ForkingNotification::Forker((unit.clone().into(), fork.into())),
+            &store,
+        );
         // parents were not passed, so the correct unit does not yet get returned
         assert!(units.is_empty());
         assert_eq!(requests.len(), node_count.0);
@@ -475,12 +481,14 @@ mod test {
             .expect("we have the forker's unit")
             .clone();
         let unit = Signed::sign(unit, &keychains[forker_id.0]);
-        let (reconstructed_units, requests, alerts) = dag
-            .process_forking_notification(
-                ForkingNotification::Forker((unit.clone().into(), fork.clone().into())),
-                &store,
-            )
-            .into();
+        let DagResult {
+            units: reconstructed_units,
+            requests,
+            alerts,
+        } = dag.process_forking_notification(
+            ForkingNotification::Forker((unit.clone().into(), fork.clone().into())),
+            &store,
+        );
         assert!(reconstructed_units.is_empty());
         assert_eq!(requests.len(), node_count.0);
         assert_eq!(alerts.len(), 1);
@@ -492,7 +500,11 @@ mod test {
                 .expect("we have the keychains");
             Signed::sign(unit.clone(), keychain)
         }) {
-            let (units, _, alerts) = dag.add_unit(unit.into(), &store).into();
+            let DagResult {
+                units,
+                requests: _,
+                alerts,
+            } = dag.add_unit(unit.into(), &store);
             units_added += units.len();
             assert!(alerts.is_empty());
         }
@@ -510,9 +522,11 @@ mod test {
             .chain(Some(fork))
             .map(|unit| unit.into())
             .collect();
-        let (reconstructed_units, requests, alerts) = dag
-            .process_forking_notification(ForkingNotification::Units(committed_units), &store)
-            .into();
+        let DagResult {
+            units: reconstructed_units,
+            requests,
+            alerts,
+        } = dag.process_forking_notification(ForkingNotification::Units(committed_units), &store);
         assert!(alerts.is_empty());
         // the non-fork unit was added first in the forking notif, so all units reconstruct successfully
         assert!(requests.is_empty());
@@ -551,13 +565,15 @@ mod test {
             .expect("we have the forker's unit")
             .clone();
         let unit = Signed::sign(unit, &keychains[forker_id.0]);
-        let (reconstructed_units, requests, alerts) = dag
-            .process_forking_notification(
-                // note the reverse order, to create parent requests later
-                ForkingNotification::Forker((fork.clone().into(), unit.clone().into())),
-                &store,
-            )
-            .into();
+        let DagResult {
+            units: reconstructed_units,
+            requests,
+            alerts,
+        } = dag.process_forking_notification(
+            // note the reverse order, to create parent requests later
+            ForkingNotification::Forker((fork.clone().into(), unit.clone().into())),
+            &store,
+        );
         assert!(reconstructed_units.is_empty());
         // the fork only has 5 parents
         assert_eq!(requests.len(), 5);
@@ -570,7 +586,11 @@ mod test {
                 .expect("we have the keychains");
             Signed::sign(unit.clone(), keychain)
         }) {
-            let (units, mut requests, alerts) = dag.add_unit(unit.into(), &store).into();
+            let DagResult {
+                units,
+                mut requests,
+                alerts,
+            } = dag.add_unit(unit.into(), &store);
             units_added += units.len();
             all_requests.append(&mut requests);
             assert!(alerts.is_empty());
@@ -598,9 +618,11 @@ mod test {
             .chain(Some(fork))
             .map(|unit| unit.into())
             .collect();
-        let (reconstructed_units, requests, alerts) = dag
-            .process_forking_notification(ForkingNotification::Units(committed_units), &store)
-            .into();
+        let DagResult {
+            units: reconstructed_units,
+            requests,
+            alerts,
+        } = dag.process_forking_notification(ForkingNotification::Units(committed_units), &store);
         assert!(alerts.is_empty());
         // we already got the requests earlier, in parent_requests
         assert!(requests.is_empty());
@@ -617,9 +639,11 @@ mod test {
             })
             .map(|unit| Signed::sign(unit, &keychains[forker_id.0]).into())
             .collect();
-        let (reconstructed_units, requests, alerts) = dag
-            .process_forking_notification(ForkingNotification::Units(committed_units), &store)
-            .into();
+        let DagResult {
+            units: reconstructed_units,
+            requests,
+            alerts,
+        } = dag.process_forking_notification(ForkingNotification::Units(committed_units), &store);
         assert!(alerts.is_empty());
         assert!(requests.is_empty());
         assert_eq!(reconstructed_units.len(), 1);
@@ -631,8 +655,11 @@ mod test {
             .map(|unit| Signed::sign(unit.clone(), &keychains[unit.creator().0]))
             .map(|unit| unit.into())
             .collect();
-        let (reconstructed_units, requests, alerts) =
-            dag.add_parents(confused_unit, parents, &store).into();
+        let DagResult {
+            units: reconstructed_units,
+            requests,
+            alerts,
+        } = dag.add_parents(confused_unit, parents, &store);
         assert!(alerts.is_empty());
         assert!(requests.is_empty());
         assert_eq!(reconstructed_units.len(), 1);

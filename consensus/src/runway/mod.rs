@@ -279,7 +279,11 @@ where
     }
 
     fn handle_dag_result(&mut self, result: DagResult<H, D, MK>) {
-        let (units, requests, alerts) = result.into();
+        let DagResult {
+            units,
+            requests,
+            alerts,
+        } = result;
         for unit in units {
             self.on_unit_reconstructed(unit);
         }
