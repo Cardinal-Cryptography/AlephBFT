@@ -34,9 +34,8 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> BackupSaver<H, D, MK,
     }
 
     pub async fn save_unit(&mut self, unit: &DagUnit<H, D, MK>) -> Result<(), std::io::Error> {
-        let parents = unit.parents().clone();
         let unit: UncheckedSignedUnit<_, _, _> = unit.clone().unpack().into();
-        self.backup.write_all(&(unit, parents).encode()).await?;
+        self.backup.write_all(&unit.encode()).await?;
         self.backup.flush().await
     }
 
