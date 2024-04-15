@@ -462,7 +462,6 @@ where
         self.dag.finished_processing(&unit_hash);
         self.resolve_missing_parents(&unit_hash);
         self.resolve_missing_coord(&unit.coord());
-        self.ordering.add_unit(unit.clone());
         if self
             .parents_for_creator
             .unbounded_send(unit.clone())
@@ -471,13 +470,16 @@ where
             warn!(target: "AlephBFT-runway", "Creator channel should be open.");
             self.exiting = true;
         }
-        let unit = unit.unpack();
-        self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(unit.clone().into()));
+        let unpacked_unit = unit.clone().unpack();
+        self.send_message_for_network(RunwayNotificationOut::NewAnyUnit(
+            unpacked_unit.clone().into(),
+        ));
 
-        if unit.as_signable().creator() == self.index() {
-            trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), unit.as_signable().hash());
-            self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(unit.into()));
+        if unit.creator() == self.index() {
+            trace!(target: "AlephBFT-runway", "{:?} Sending a unit {:?}.", self.index(), unit.hash());
+            self.send_message_for_network(RunwayNotificationOut::NewSelfUnit(unpacked_unit.into()));
         }
+        self.ordering.add_unit(unit.clone());
     }
 
     fn on_missing_coord(&mut self, coord: UnitCoord) {
