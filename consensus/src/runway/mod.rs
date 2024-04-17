@@ -9,11 +9,10 @@ use crate::{
         SignedUnit, UncheckedSignedUnit, Unit, UnitCoord, UnitStore, UnitStoreStatus,
         UnitWithParents, Validator, WrappedUnit,
     },
-    Config, Data, DataProvider, FinalizationHandler, Hasher, Index, Keychain, MultiKeychain,
-    NodeIndex, Receiver, Round, Sender, Signature, Signed, SpawnHandle, Terminator,
-    UncheckedSigned,
+    Config, Data, DataProvider, Hasher, Index, Keychain, MultiKeychain, NodeIndex, Receiver, Round,
+    Sender, Signature, Signed, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::Recipient;
+use aleph_bft_types::{Recipient, UnitFinalizationHandler};
 use futures::{
     channel::{mpsc, oneshot},
     future::pending,
@@ -104,7 +103,7 @@ struct Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<D>,
+    FH: UnitFinalizationHandler<D, H>,
     MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -206,7 +205,7 @@ impl<'a, H: Hasher> Display for RunwayStatus<'a, H> {
     }
 }
 
-struct RunwayConfig<H: Hasher, D: Data, FH: FinalizationHandler<D>, MK: MultiKeychain> {
+struct RunwayConfig<H: Hasher, D: Data, FH: UnitFinalizationHandler<D, H>, MK: MultiKeychain> {
     finalization_handler: FH,
     backup_units_for_saver: Sender<DagUnit<H, D, MK>>,
     backup_units_from_saver: Receiver<DagUnit<H, D, MK>>,
@@ -224,7 +223,7 @@ impl<H, D, FH, MK> Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<D>,
+    FH: UnitFinalizationHandler<D, H>,
     MK: MultiKeychain,
 {
     fn new(config: RunwayConfig<H, D, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
@@ -665,29 +664,27 @@ fn trivial_start(
 
 pub struct RunwayIO<
     H: Hasher,
-    D: Data,
     MK: MultiKeychain,
     W: AsyncWrite + Send + Sync + 'static,
     R: AsyncRead + Send + Sync + 'static,
-    DP: DataProvider<D>,
-    FH: FinalizationHandler<D>,
+    DP: DataProvider,
+    FH: UnitFinalizationHandler<DP::Output, H>,
 > {
     pub data_provider: DP,
     pub finalization_handler: FH,
     pub backup_write: W,
     pub backup_read: R,
-    _phantom: PhantomData<(H, D, MK::Signature)>,
+    _phantom: PhantomData<(H, MK::Signature)>,
 }
 
 impl<
         H: Hasher,
-        D: Data,
         MK: MultiKeychain,
         W: AsyncWrite + Send + Sync + 'static,
         R: AsyncRead + Send + Sync + 'static,
-        DP: DataProvider<D>,
-        FH: FinalizationHandler<D>,
-    > RunwayIO<H, D, MK, W, R, DP, FH>
+        DP: DataProvider,
+        FH: UnitFinalizationHandler<DP::Output, H>,
+    > RunwayIO<H, MK, W, R, DP, FH>
 {
     pub fn new(
         data_provider: DP,
@@ -705,20 +702,19 @@ impl<
     }
 }
 
-pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
+pub(crate) async fn run<H, US, UL, MK, DP, FH, SH>(
     config: Config,
-    runway_io: RunwayIO<H, D, MK, US, UL, DP, FH>,
+    runway_io: RunwayIO<H, MK, US, UL, DP, FH>,
     keychain: MK,
     spawn_handle: SH,
-    network_io: NetworkIO<H, D, MK>,
+    network_io: NetworkIO<H, DP::Output, MK>,
     mut terminator: Terminator,
 ) where
     H: Hasher,
-    D: Data,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
-    DP: DataProvider<D>,
-    FH: FinalizationHandler<D>,
+    DP: DataProvider,
+    FH: UnitFinalizationHandler<DP::Output, H>,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {

@@ -8,10 +8,10 @@ use crate::{
     },
     task_queue::TaskQueue,
     units::{UncheckedSignedUnit, Unit, UnitCoord},
-    Config, Data, DataProvider, FinalizationHandler, Hasher, MultiKeychain, Network, NodeIndex,
-    Receiver, Recipient, Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
+    Config, Data, DataProvider, Hasher, MultiKeychain, Network, NodeIndex, Receiver, Recipient,
+    Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::NodeMap;
+use aleph_bft_types::{FinalizationHandler, NodeMap, UnitFinalizationHandler};
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, pin_mut, AsyncRead, AsyncWrite, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -108,9 +108,9 @@ enum TaskDetails<H: Hasher, D: Data, S: Signature> {
 
 #[derive(Clone)]
 pub struct LocalIO<
-    D: Data,
-    DP: DataProvider<D>,
-    FH: FinalizationHandler<D>,
+    H: Hasher,
+    DP: DataProvider,
+    FH: UnitFinalizationHandler<DP::Output, H>,
     US: AsyncWrite,
     UL: AsyncRead,
 > {
@@ -118,18 +118,23 @@ pub struct LocalIO<
     finalization_handler: FH,
     unit_saver: US,
     unit_loader: UL,
-    _phantom: PhantomData<D>,
+    _phantom: PhantomData<H>,
 }
 
-impl<D: Data, DP: DataProvider<D>, FH: FinalizationHandler<D>, US: AsyncWrite, UL: AsyncRead>
-    LocalIO<D, DP, FH, US, UL>
+impl<
+        H: Hasher,
+        DP: DataProvider,
+        FH: UnitFinalizationHandler<DP::Output, H>,
+        US: AsyncWrite,
+        UL: AsyncRead,
+    > LocalIO<H, DP, FH, US, UL>
 {
     pub fn new(
         data_provider: DP,
         finalization_handler: FH,
         unit_saver: US,
         unit_loader: UL,
-    ) -> LocalIO<D, DP, FH, US, UL> {
+    ) -> LocalIO<H, DP, FH, US, UL> {
         LocalIO {
             data_provider,
             finalization_handler,
@@ -575,17 +580,44 @@ where
 /// or the [original paper](https://arxiv.org/abs/1908.05156).
 pub async fn run_session<
     H: Hasher,
-    D: Data,
-    DP: DataProvider<D>,
-    FH: FinalizationHandler<D>,
+    DP: DataProvider,
+    FH: FinalizationHandler<DP::Output>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
-    N: Network<NetworkData<H, D, MK::Signature, MK::PartialMultisignature>> + 'static,
+    N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
     SH: SpawnHandle,
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<D, DP, FH, US, UL>,
+    local_io: LocalIO<H, DP, FH, US, UL>,
+    network: N,
+    keychain: MK,
+    spawn_handle: SH,
+    terminator: Terminator,
+) {
+    run_session_for_units(
+        config,
+        local_io,
+        network,
+        keychain,
+        spawn_handle,
+        terminator,
+    )
+    .await
+}
+
+pub async fn run_session_for_units<
+    H: Hasher,
+    DP: DataProvider,
+    FH: UnitFinalizationHandler<DP::Output, H>,
+    US: AsyncWrite + Send + Sync + 'static,
+    UL: AsyncRead + Send + Sync + 'static,
+    N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
+    SH: SpawnHandle,
+    MK: MultiKeychain,
+>(
+    config: Config,
+    local_io: LocalIO<H, DP, FH, US, UL>,
     network: N,
     keychain: MK,
     spawn_handle: SH,

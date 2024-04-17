@@ -1,13 +1,10 @@
-use crate::{
-    dag::DagUnit,
-    units::{Unit, WrappedUnit},
-    Data, FinalizationHandler, Hasher, MultiKeychain,
-};
+use crate::{dag::DagUnit, units::Unit, Data, Hasher, MultiKeychain};
 
 mod election;
 mod extender;
 mod units;
 
+use aleph_bft_types::{OrderedUnit, UnitFinalizationHandler};
 use extender::Extender;
 
 /// A struct responsible for executing the Consensus protocol on a local copy of the Dag.
@@ -19,12 +16,14 @@ use extender::Extender;
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component.
-pub struct Ordering<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<D>> {
+pub struct Ordering<H: Hasher, D: Data, MK: MultiKeychain, FH: UnitFinalizationHandler<D, H>> {
     extender: Extender<DagUnit<H, D, MK>>,
     finalization_handler: FH,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<D>> Ordering<H, D, MK, FH> {
+impl<H: Hasher, D: Data, MK: MultiKeychain, FH: UnitFinalizationHandler<D, H>>
+    Ordering<H, D, MK, FH>
+{
     pub fn new(finalization_handler: FH) -> Self {
         let extender = Extender::new();
         Ordering {
@@ -34,14 +33,21 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<D>> Ordering
     }
 
     fn handle_batch(&mut self, batch: Vec<DagUnit<H, D, MK>>) {
-        for unit in batch {
-            let unit = unit.unpack();
-            self.finalization_handler.unit_finalized(
-                unit.creator(),
-                unit.round(),
-                unit.as_signable().data().clone(),
-            )
-        }
+        let batch = batch
+            .into_iter()
+            .map(|unit| {
+                let (unit, parents) = unit.into();
+                let unit = unit.into_signable();
+                OrderedUnit {
+                    data: unit.data().clone(),
+                    parents,
+                    hash: Unit::hash(&unit),
+                    creator: unit.creator(),
+                    round: unit.round(),
+                }
+            })
+            .collect();
+        self.finalization_handler.batch_finalized(batch);
     }
 
     pub fn add_unit(&mut self, unit: DagUnit<H, D, MK>) {

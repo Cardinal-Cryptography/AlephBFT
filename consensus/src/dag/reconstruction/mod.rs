@@ -76,6 +76,12 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
     }
 }
 
+impl<U: Unit> From<ReconstructedUnit<U>> for (U, NodeMap<HashFor<U>>) {
+    fn from(value: ReconstructedUnit<U>) -> Self {
+        (value.unit, value.parents)
+    }
+}
+
 /// What we need to request to reconstruct units.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Request<H: Hasher> {
