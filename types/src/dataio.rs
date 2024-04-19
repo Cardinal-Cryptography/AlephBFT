@@ -42,3 +42,13 @@ pub struct OrderedUnit<Data, Hash> {
     pub creator: NodeIndex,
     pub round: Round,
 }
+
+impl<D, H, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>> for FH {
+    fn data_finalized(&mut self, batch: Vec<OrderedUnit<D, H>>) {
+        for unit in batch {
+            if let Some(data) = unit.data {
+                self.data_finalized(data)
+            }
+        }
+    }
+}
