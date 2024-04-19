@@ -606,6 +606,11 @@ pub async fn run_session<
     .await
 }
 
+/// Starts the consensus algorithm as an async task. It stops establishing consensus for new data items after
+/// reaching the threshold specified in [`Config::max_round`] or upon receiving a stop signal from `exit`.
+/// Please note that this interface is less stable than [`run_session`] as it exposes intrinsics (i.e. units)
+/// which migh be subject to change.
+#[doc(hidden)]
 pub async fn run_session_for_units<
     H: Hasher,
     DP: DataProvider,
