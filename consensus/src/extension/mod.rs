@@ -26,12 +26,8 @@ pub struct Ordering<
     finalization_handler: FH,
 }
 
-impl<
-        H: Hasher,
-        D: Data,
-        MK: MultiKeychain,
-        FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
-    > Ordering<H, D, MK, FH>
+impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>>
+    Ordering<H, D, MK, FH>
 {
     pub fn new(finalization_handler: FH) -> Self {
         let extender = Extender::new();
@@ -46,13 +42,14 @@ impl<
             .into_iter()
             .map(|unit| {
                 let (unit, parents) = unit.into();
-                let unit = unit.into_signable();
+                let hash = unit.hash();
+                let (pre_unit, data) = unit.into_signable().into();
                 OrderedUnit {
-                    data: unit.data().clone(),
+                    data,
                     parents,
-                    hash: Unit::hash(&unit),
-                    creator: unit.creator(),
-                    round: unit.round(),
+                    hash,
+                    creator: pre_unit.creator(),
+                    round: pre_unit.round(),
                 }
             })
             .collect();

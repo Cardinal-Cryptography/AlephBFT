@@ -143,6 +143,12 @@ impl<H: Hasher, D: Data> Clone for FullUnit<H, D> {
     }
 }
 
+impl<H: Hasher, D: Data> From<FullUnit<H, D>> for (PreUnit<H>, Option<D>) {
+    fn from(value: FullUnit<H, D>) -> Self {
+        (value.pre_unit, value.data)
+    }
+}
+
 impl<H: Hasher, D: Data> FullUnit<H, D> {
     pub(crate) fn new(pre_unit: PreUnit<H>, data: Option<D>, session_id: SessionId) -> Self {
         FullUnit {

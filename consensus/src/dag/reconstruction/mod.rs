@@ -76,7 +76,9 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
     }
 }
 
-impl<U: Unit> From<ReconstructedUnit<U>> for (U, NodeMap<HashFor<U>>) {
+pub type Parents<U> = NodeMap<HashFor<U>>;
+
+impl<U: Unit> From<ReconstructedUnit<U>> for (U, Parents<U>) {
     fn from(value: ReconstructedUnit<U>) -> Self {
         (value.unit, value.parents)
     }
