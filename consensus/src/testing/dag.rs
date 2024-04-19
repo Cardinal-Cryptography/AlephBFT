@@ -5,6 +5,7 @@ use crate::{
         Request as GenericRequest,
     },
     extension::Ordering,
+    member::UnitFinalizationHandler,
     units::{
         ControlHash, FullUnit, PreUnit, SignedUnit as GenericSignedUnit, Unit, UnitStore,
         UnitWithParents as _, Validator,
@@ -231,7 +232,7 @@ fn run_consensus_on_dag(
     let node_id = NodeIndex(0);
     let feeder = DagFeeder::new(node_id, units, forker_units);
     let (recording_handler, finalized) = RecordingHandler::new();
-    let mut ordering = Ordering::new(recording_handler);
+    let mut ordering = Ordering::new(UnitFinalizationHandler::new(recording_handler));
     for unit in feeder.feed() {
         ordering.add_unit(unit);
     }

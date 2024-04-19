@@ -11,7 +11,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, MultiKeychain, Network, NodeIndex, Receiver, Recipient,
     Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{FinalizationHandler, NodeMap, UnitFinalizationHandler};
+use aleph_bft_types::{FinalizationHandler, NodeMap, OrderedUnit};
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, pin_mut, AsyncRead, AsyncWrite, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -107,34 +107,23 @@ enum TaskDetails<H: Hasher, D: Data, S: Signature> {
 }
 
 #[derive(Clone)]
-pub struct LocalIO<
-    H: Hasher,
-    DP: DataProvider,
-    FH: UnitFinalizationHandler<DP::Output, H>,
-    US: AsyncWrite,
-    UL: AsyncRead,
-> {
+pub struct LocalIO<D, DP: DataProvider, FH: FinalizationHandler<D>, US: AsyncWrite, UL: AsyncRead> {
     data_provider: DP,
     finalization_handler: FH,
     unit_saver: US,
     unit_loader: UL,
-    _phantom: PhantomData<H>,
+    _phantom: PhantomData<D>,
 }
 
-impl<
-        H: Hasher,
-        DP: DataProvider,
-        FH: UnitFinalizationHandler<DP::Output, H>,
-        US: AsyncWrite,
-        UL: AsyncRead,
-    > LocalIO<H, DP, FH, US, UL>
+impl<D, DP: DataProvider, FH: FinalizationHandler<D>, US: AsyncWrite, UL: AsyncRead>
+    LocalIO<D, DP, FH, US, UL>
 {
     pub fn new(
         data_provider: DP,
         finalization_handler: FH,
         unit_saver: US,
         unit_loader: UL,
-    ) -> LocalIO<H, DP, FH, US, UL> {
+    ) -> LocalIO<D, DP, FH, US, UL> {
         LocalIO {
             data_provider,
             finalization_handler,
@@ -573,6 +562,28 @@ where
     }
 }
 
+pub(crate) struct UnitFinalizationHandler<FH> {
+    handler: FH,
+}
+
+impl<FH> UnitFinalizationHandler<FH> {
+    pub(crate) fn new(handler: FH) -> Self {
+        UnitFinalizationHandler { handler }
+    }
+}
+
+impl<D, H, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>>
+    for UnitFinalizationHandler<FH>
+{
+    fn data_finalized(&mut self, batch: Vec<OrderedUnit<D, H>>) {
+        for unit in batch {
+            if let Some(data) = unit.data {
+                self.handler.data_finalized(data)
+            }
+        }
+    }
+}
+
 /// Starts the consensus algorithm as an async task. It stops establishing consensus for new data items after
 /// reaching the threshold specified in [`Config::max_round`] or upon receiving a stop signal from `exit`.
 /// For a detailed description of the consensus implemented by `run_session` see
@@ -589,12 +600,21 @@ pub async fn run_session<
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<H, DP, FH, US, UL>,
+    local_io: LocalIO<DP::Output, DP, FH, US, UL>,
     network: N,
     keychain: MK,
     spawn_handle: SH,
     terminator: Terminator,
 ) {
+    let local_io = LocalIO {
+        finalization_handler: UnitFinalizationHandler {
+            handler: local_io.finalization_handler,
+        },
+        data_provider: local_io.data_provider,
+        unit_saver: local_io.unit_saver,
+        unit_loader: local_io.unit_loader,
+        _phantom: PhantomData,
+    };
     run_session_for_units(
         config,
         local_io,
@@ -606,6 +626,8 @@ pub async fn run_session<
     .await
 }
 
+pub type BatchOfUnits<D, H> = Vec<OrderedUnit<D, H>>;
+
 /// Starts the consensus algorithm as an async task. It stops establishing consensus for new data items after
 /// reaching the threshold specified in [`Config::max_round`] or upon receiving a stop signal from `exit`.
 /// Please note that this interface is less stable than [`run_session`] as it exposes intrinsics (i.e. units)
@@ -614,7 +636,7 @@ pub async fn run_session<
 pub async fn run_session_for_units<
     H: Hasher,
     DP: DataProvider,
-    FH: UnitFinalizationHandler<DP::Output, H>,
+    FH: FinalizationHandler<BatchOfUnits<DP::Output, H::Hash>>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
@@ -622,7 +644,7 @@ pub async fn run_session_for_units<
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<H, DP, FH, US, UL>,
+    local_io: LocalIO<BatchOfUnits<DP::Output, H::Hash>, DP, FH, US, UL>,
     network: N,
     keychain: MK,
     spawn_handle: SH,

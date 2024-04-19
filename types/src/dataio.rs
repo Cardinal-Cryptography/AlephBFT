@@ -1,7 +1,7 @@
 use aleph_bft_crypto::NodeMap;
 use async_trait::async_trait;
 
-use crate::{Data, Hasher, NodeIndex, Round};
+use crate::{Data, NodeIndex, Round};
 
 /// The source of data items that consensus should order.
 ///
@@ -23,30 +23,10 @@ pub trait DataProvider: Sync + Send + 'static {
 ///
 /// The [`FinalizationHandler::data_finalized`] method is called whenever a piece of data input
 /// to the algorithm using [`DataProvider::get_data`] has been finalized, in order of finalization.
-pub trait FinalizationHandler<D: Data>: Sync + Send + 'static {
+pub trait FinalizationHandler<D>: Sync + Send + 'static {
     /// Data, provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
     fn data_finalized(&mut self, data: D);
-}
-
-/// The source of finalization of the units that consensus produces.
-///
-/// The [`UnitFinalizationHandler::batch_finalized`] method is called whenever a batch of units
-/// has been finalized, in order of finalization.
-pub trait UnitFinalizationHandler<Data, H: Hasher>: Sync + Send + 'static {
-    /// A batch of units, that contains data provided by [DataProvider::get_data], has been finalized.
-    /// The calls to this function follow the order of finalization.
-    fn batch_finalized(&mut self, batch: Vec<OrderedUnit<Data, H::Hash>>);
-}
-
-impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler<D, H> for FH {
-    fn batch_finalized(&mut self, batch: Vec<OrderedUnit<D, H::Hash>>) {
-        for unit in batch {
-            if let Some(data) = unit.data {
-                self.data_finalized(data)
-            }
-        }
-    }
 }
 
 /// Represents state of the main internal data structure of AlephBFT (i.e. direct acyclic graph) used for

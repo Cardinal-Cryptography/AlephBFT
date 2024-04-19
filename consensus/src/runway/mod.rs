@@ -12,7 +12,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, Index, Keychain, MultiKeychain, NodeIndex, Receiver, Round,
     Sender, Signature, Signed, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{Recipient, UnitFinalizationHandler};
+use aleph_bft_types::{FinalizationHandler, OrderedUnit, Recipient};
 use futures::{
     channel::{mpsc, oneshot},
     future::pending,
@@ -103,7 +103,7 @@ struct Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: UnitFinalizationHandler<D, H>,
+    FH: FinalizationHandler<Vec<OrderedUnit<D, H::Hash>>>,
     MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -205,7 +205,12 @@ impl<'a, H: Hasher> Display for RunwayStatus<'a, H> {
     }
 }
 
-struct RunwayConfig<H: Hasher, D: Data, FH: UnitFinalizationHandler<D, H>, MK: MultiKeychain> {
+struct RunwayConfig<
+    H: Hasher,
+    D: Data,
+    FH: FinalizationHandler<Vec<OrderedUnit<D, H::Hash>>>,
+    MK: MultiKeychain,
+> {
     finalization_handler: FH,
     backup_units_for_saver: Sender<DagUnit<H, D, MK>>,
     backup_units_from_saver: Receiver<DagUnit<H, D, MK>>,
@@ -223,7 +228,7 @@ impl<H, D, FH, MK> Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: UnitFinalizationHandler<D, H>,
+    FH: FinalizationHandler<Vec<OrderedUnit<D, H::Hash>>>,
     MK: MultiKeychain,
 {
     fn new(config: RunwayConfig<H, D, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
@@ -668,7 +673,7 @@ pub struct RunwayIO<
     W: AsyncWrite + Send + Sync + 'static,
     R: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    FH: UnitFinalizationHandler<DP::Output, H>,
+    FH: FinalizationHandler<Vec<OrderedUnit<DP::Output, H::Hash>>>,
 > {
     pub data_provider: DP,
     pub finalization_handler: FH,
@@ -683,7 +688,7 @@ impl<
         W: AsyncWrite + Send + Sync + 'static,
         R: AsyncRead + Send + Sync + 'static,
         DP: DataProvider,
-        FH: UnitFinalizationHandler<DP::Output, H>,
+        FH: FinalizationHandler<Vec<OrderedUnit<DP::Output, H::Hash>>>,
     > RunwayIO<H, MK, W, R, DP, FH>
 {
     pub fn new(
@@ -714,7 +719,7 @@ pub(crate) async fn run<H, US, UL, MK, DP, FH, SH>(
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    FH: UnitFinalizationHandler<DP::Output, H>,
+    FH: FinalizationHandler<Vec<OrderedUnit<DP::Output, H::Hash>>>,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {
