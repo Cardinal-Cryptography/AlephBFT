@@ -1,7 +1,7 @@
 use aleph_bft_crypto::NodeMap;
 use async_trait::async_trait;
 
-use crate::{Data, NodeIndex, Round, Hasher};
+use crate::{Data, Hasher, NodeIndex, Round};
 
 /// The source of data items that consensus should order.
 ///
@@ -43,7 +43,9 @@ pub struct OrderedUnit<D: Data, H: Hasher> {
     pub round: Round,
 }
 
-impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>> for FH {
+impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>>
+    for FH
+{
     fn data_finalized(&mut self, batch: Vec<OrderedUnit<D, H>>) {
         for unit in batch {
             if let Some(data) = unit.data {
