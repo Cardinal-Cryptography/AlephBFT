@@ -1,4 +1,4 @@
-use crate::{dag::DagUnit, units::Unit, Data, Hasher, MultiKeychain};
+use crate::{dag::DagUnit, Data, Hasher, MultiKeychain};
 
 mod election;
 mod extender;
@@ -38,21 +38,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<Vec<OrderedU
     }
 
     fn handle_batch(&mut self, batch: Vec<DagUnit<H, D, MK>>) {
-        let batch = batch
-            .into_iter()
-            .map(|unit| {
-                let (unit, parents) = unit.into();
-                let hash = unit.hash();
-                let (pre_unit, data) = unit.into_signable().into();
-                OrderedUnit {
-                    data,
-                    parents,
-                    hash,
-                    creator: pre_unit.creator(),
-                    round: pre_unit.round(),
-                }
-            })
-            .collect();
+        let batch = batch.into_iter().map(|unit| unit.into()).collect();
         self.finalization_handler.data_finalized(batch);
     }
 

@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use crate::{
-    units::{ControlHash, HashFor, Unit, UnitCoord, UnitWithParents, WrappedUnit},
+    units::{ControlHash, FullUnit, HashFor, Unit, UnitCoord, UnitWithParents, WrappedUnit},
     Hasher, NodeMap, SessionId,
 };
 
 mod dag;
 mod parents;
 
+use aleph_bft_types::{Data, MultiKeychain, OrderedUnit, Signed};
 use dag::Dag;
 use parents::Reconstruction as ParentReconstruction;
 
@@ -76,11 +77,20 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
     }
 }
 
-pub type Parents<U> = NodeMap<HashFor<U>>;
-
-impl<U: Unit> From<ReconstructedUnit<U>> for (U, Parents<U>) {
-    fn from(value: ReconstructedUnit<U>) -> Self {
-        (value.unit, value.parents)
+impl<D: Data, H: Hasher, K: MultiKeychain> From<ReconstructedUnit<Signed<FullUnit<H, D>, K>>>
+    for OrderedUnit<D, H>
+{
+    fn from(unit: ReconstructedUnit<Signed<FullUnit<H, D>, K>>) -> Self {
+        let parents = unit.parents;
+        let hash = unit.unit.hash();
+        let (unit, data) = unit.unit.into_signable().into();
+        OrderedUnit {
+            data,
+            parents,
+            hash,
+            creator: unit.creator(),
+            round: unit.round(),
+        }
     }
 }
 
