@@ -1,7 +1,7 @@
 use aleph_bft_crypto::NodeMap;
 use async_trait::async_trait;
 
-use crate::{Data, NodeIndex, Round};
+use crate::{Data, NodeIndex, Round, Hasher};
 
 /// The source of data items that consensus should order.
 ///
@@ -35,15 +35,15 @@ pub trait FinalizationHandler<D>: Sync + Send + 'static {
 /// Instances of this type are returned indirectly by [`member::run_session_for_units`] method using the
 /// [`UnitFinalizationHandler`]. This way it allows to reconstruct the DAG's structure used by AlephBFT,
 /// which can be then used for example for the purpose of node's performance evaluation.
-pub struct OrderedUnit<Data, Hash> {
-    pub data: Option<Data>,
-    pub parents: NodeMap<Hash>,
-    pub hash: Hash,
+pub struct OrderedUnit<D: Data, H: Hasher> {
+    pub data: Option<D>,
+    pub parents: NodeMap<H::Hash>,
+    pub hash: H::Hash,
     pub creator: NodeIndex,
     pub round: Round,
 }
 
-impl<D, H, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>> for FH {
+impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>> for FH {
     fn data_finalized(&mut self, batch: Vec<OrderedUnit<D, H>>) {
         for unit in batch {
             if let Some(data) = unit.data {

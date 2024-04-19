@@ -584,7 +584,7 @@ pub async fn run_session<
     spawn_handle: SH,
     terminator: Terminator,
 ) {
-    let local_io: LocalIO<BatchOfUnits<DP::Output, H::Hash>, DP, FH, US, UL> = LocalIO {
+    let local_io: LocalIO<BatchOfUnits<DP::Output, H>, DP, FH, US, UL> = LocalIO {
         data_provider: local_io.data_provider,
         finalization_handler: local_io.finalization_handler,
         unit_saver: local_io.unit_saver,
@@ -612,7 +612,7 @@ pub type BatchOfUnits<D, H> = Vec<OrderedUnit<D, H>>;
 pub async fn run_session_for_units<
     H: Hasher,
     DP: DataProvider,
-    FH: FinalizationHandler<BatchOfUnits<DP::Output, H::Hash>>,
+    FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
@@ -620,7 +620,7 @@ pub async fn run_session_for_units<
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<BatchOfUnits<DP::Output, H::Hash>, DP, FH, US, UL>,
+    local_io: LocalIO<BatchOfUnits<DP::Output, H>, DP, FH, US, UL>,
     network: N,
     keychain: MK,
     spawn_handle: SH,

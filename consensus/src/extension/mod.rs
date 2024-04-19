@@ -20,7 +20,7 @@ pub struct Ordering<
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    FH: FinalizationHandler<Vec<OrderedUnit<D, H::Hash>>>,
+    FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
 > {
     extender: Extender<DagUnit<H, D, MK>>,
     finalization_handler: FH,
@@ -30,7 +30,7 @@ impl<
         H: Hasher,
         D: Data,
         MK: MultiKeychain,
-        FH: FinalizationHandler<Vec<OrderedUnit<D, H::Hash>>>,
+        FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
     > Ordering<H, D, MK, FH>
 {
     pub fn new(finalization_handler: FH) -> Self {
