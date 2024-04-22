@@ -43,7 +43,9 @@ pub struct OrderedUnit<D: Data, H: Hasher> {
     pub round: Round,
 }
 
-impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<Vec<OrderedUnit<D, H>>>
+pub type BatchOfUnits<D, H> = Vec<OrderedUnit<D, H>>;
+
+impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<BatchOfUnits<D, H>>
     for FH
 {
     fn data_finalized(&mut self, batch: Vec<OrderedUnit<D, H>>) {
