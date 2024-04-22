@@ -4,7 +4,7 @@ mod election;
 mod extender;
 mod units;
 
-use aleph_bft_types::{FinalizationHandler, OrderedUnit};
+use aleph_bft_types::{BatchOfUnits, FinalizationHandler};
 use extender::Extender;
 
 /// A struct responsible for executing the Consensus protocol on a local copy of the Dag.
@@ -20,13 +20,13 @@ pub struct Ordering<
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
+    FH: FinalizationHandler<BatchOfUnits<D, H>>,
 > {
     extender: Extender<DagUnit<H, D, MK>>,
     finalization_handler: FH,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>>
+impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<BatchOfUnits<D, H>>>
     Ordering<H, D, MK, FH>
 {
     pub fn new(finalization_handler: FH) -> Self {

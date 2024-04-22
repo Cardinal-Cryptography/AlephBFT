@@ -12,7 +12,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, Index, Keychain, MultiKeychain, NodeIndex, Receiver, Round,
     Sender, Signature, Signed, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{FinalizationHandler, OrderedUnit, Recipient};
+use aleph_bft_types::{BatchOfUnits, FinalizationHandler, Recipient};
 use futures::{
     channel::{mpsc, oneshot},
     future::pending,
@@ -103,7 +103,7 @@ struct Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
+    FH: FinalizationHandler<BatchOfUnits<D, H>>,
     MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -208,7 +208,7 @@ impl<'a, H: Hasher> Display for RunwayStatus<'a, H> {
 struct RunwayConfig<
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
+    FH: FinalizationHandler<BatchOfUnits<D, H>>,
     MK: MultiKeychain,
 > {
     finalization_handler: FH,
@@ -228,7 +228,7 @@ impl<H, D, FH, MK> Runway<H, D, FH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<Vec<OrderedUnit<D, H>>>,
+    FH: FinalizationHandler<BatchOfUnits<D, H>>,
     MK: MultiKeychain,
 {
     fn new(config: RunwayConfig<H, D, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
@@ -673,7 +673,7 @@ pub struct RunwayIO<
     W: AsyncWrite + Send + Sync + 'static,
     R: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    FH: FinalizationHandler<Vec<OrderedUnit<DP::Output, H>>>,
+    FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
 > {
     pub data_provider: DP,
     pub finalization_handler: FH,
@@ -688,7 +688,7 @@ impl<
         W: AsyncWrite + Send + Sync + 'static,
         R: AsyncRead + Send + Sync + 'static,
         DP: DataProvider,
-        FH: FinalizationHandler<Vec<OrderedUnit<DP::Output, H>>>,
+        FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
     > RunwayIO<H, MK, W, R, DP, FH>
 {
     pub fn new(
@@ -719,7 +719,7 @@ pub(crate) async fn run<H, US, UL, MK, DP, FH, SH>(
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    FH: FinalizationHandler<Vec<OrderedUnit<DP::Output, H>>>,
+    FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {

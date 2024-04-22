@@ -11,7 +11,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, MultiKeychain, Network, NodeIndex, Receiver, Recipient,
     Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{FinalizationHandler, NodeMap, OrderedUnit};
+use aleph_bft_types::{BatchOfUnits, FinalizationHandler, NodeMap};
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, pin_mut, AsyncRead, AsyncWrite, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -23,7 +23,6 @@ use std::{
     collections::HashSet,
     convert::TryInto,
     fmt::{self, Debug},
-    marker::PhantomData,
     time::Duration,
 };
 
@@ -107,29 +106,44 @@ enum TaskDetails<H: Hasher, D: Data, S: Signature> {
 }
 
 #[derive(Clone)]
-pub struct LocalIO<D, DP: DataProvider, FH: FinalizationHandler<D>, US: AsyncWrite, UL: AsyncRead> {
+pub struct LocalIO<DP: DataProvider, FH, US: AsyncWrite, UL: AsyncRead> {
     data_provider: DP,
     finalization_handler: FH,
     unit_saver: US,
     unit_loader: UL,
-    _phantom: PhantomData<D>,
 }
 
-impl<D, DP: DataProvider, FH: FinalizationHandler<D>, US: AsyncWrite, UL: AsyncRead>
-    LocalIO<D, DP, FH, US, UL>
+impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: AsyncRead>
+    LocalIO<DP, FH, US, UL>
 {
     pub fn new(
         data_provider: DP,
         finalization_handler: FH,
         unit_saver: US,
         unit_loader: UL,
-    ) -> LocalIO<D, DP, FH, US, UL> {
+    ) -> Self {
         LocalIO {
             data_provider,
             finalization_handler,
             unit_saver,
             unit_loader,
-            _phantom: PhantomData,
+        }
+    }
+
+    pub fn new_with_unit_finalization_handler<
+        H: Hasher,
+        UFH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
+    >(
+        data_provider: DP,
+        finalization_handler: UFH,
+        unit_saver: US,
+        unit_loader: UL,
+    ) -> LocalIO<DP, UFH, US, UL> {
+        LocalIO {
+            data_provider,
+            finalization_handler,
+            unit_saver,
+            unit_loader,
         }
     }
 }
@@ -570,48 +584,6 @@ where
 pub async fn run_session<
     H: Hasher,
     DP: DataProvider,
-    FH: FinalizationHandler<DP::Output>,
-    US: AsyncWrite + Send + Sync + 'static,
-    UL: AsyncRead + Send + Sync + 'static,
-    N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
-    SH: SpawnHandle,
-    MK: MultiKeychain,
->(
-    config: Config,
-    local_io: LocalIO<DP::Output, DP, FH, US, UL>,
-    network: N,
-    keychain: MK,
-    spawn_handle: SH,
-    terminator: Terminator,
-) {
-    let local_io: LocalIO<BatchOfUnits<DP::Output, H>, DP, FH, US, UL> = LocalIO {
-        data_provider: local_io.data_provider,
-        finalization_handler: local_io.finalization_handler,
-        unit_saver: local_io.unit_saver,
-        unit_loader: local_io.unit_loader,
-        _phantom: PhantomData,
-    };
-    run_session_for_units(
-        config,
-        local_io,
-        network,
-        keychain,
-        spawn_handle,
-        terminator,
-    )
-    .await
-}
-
-pub type BatchOfUnits<D, H> = Vec<OrderedUnit<D, H>>;
-
-/// Starts the consensus algorithm as an async task. It stops establishing consensus for new data items after
-/// reaching the threshold specified in [`Config::max_round`] or upon receiving a stop signal from `exit`.
-/// Please note that this interface is less stable than [`run_session`] as it exposes intrinsics (i.e. units)
-/// which migh be subject to change.
-#[doc(hidden)]
-pub async fn run_session_for_units<
-    H: Hasher,
-    DP: DataProvider,
     FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
@@ -620,7 +592,7 @@ pub async fn run_session_for_units<
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<BatchOfUnits<DP::Output, H>, DP, FH, US, UL>,
+    local_io: LocalIO<DP, FH, US, UL>,
     network: N,
     keychain: MK,
     spawn_handle: SH,

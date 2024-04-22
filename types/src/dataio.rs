@@ -48,7 +48,7 @@ pub type BatchOfUnits<D, H> = Vec<OrderedUnit<D, H>>;
 impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<BatchOfUnits<D, H>>
     for FH
 {
-    fn data_finalized(&mut self, batch: Vec<OrderedUnit<D, H>>) {
+    fn data_finalized(&mut self, batch: BatchOfUnits<D, H>) {
         for unit in batch {
             if let Some(data) = unit.data {
                 self.data_finalized(data)
