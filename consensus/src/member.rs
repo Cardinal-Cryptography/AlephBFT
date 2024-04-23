@@ -130,7 +130,7 @@ impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: 
         }
     }
 
-    pub fn new_with_unit_finalization_handler<
+    pub fn new_using_unit_finalization_handler<
         H: Hasher,
         UFH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
     >(
@@ -581,6 +581,13 @@ where
 /// For a detailed description of the consensus implemented by `run_session` see
 /// [docs for devs](https://cardinal-cryptography.github.io/AlephBFT/index.html)
 /// or the [original paper](https://arxiv.org/abs/1908.05156).
+///
+/// Please note that in order to fulfill the constraint [`FinalizationHandler<BatchOfUnits<DP::Output, H>>`]
+/// it is enough to provide implementation of [`FinalizationHandler<DP::Output>`]. We provide
+/// implementation of [`FinalizationHandler<BatchOfUnits<DP::Output, H>>`] for anything that satisfies
+/// [`FinalizationHandler<DP::Output>`]. Implementing [`FinalizationHandler<BatchOfUnits<DP::Output, H>>`]
+/// directly is considered less stable since it exposes intrisics which might be subject to change.
+/// Implement [`FinalizationHandler<DP::Output>`] instead, unless you absolutely know what you are doing.
 pub async fn run_session<
     H: Hasher,
     DP: DataProvider,
