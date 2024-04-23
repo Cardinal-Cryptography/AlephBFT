@@ -81,18 +81,22 @@ impl<D: Data, H: Hasher, K: MultiKeychain> From<ReconstructedUnit<Signed<FullUni
     for OrderedUnit<D, H>
 {
     fn from(unit: ReconstructedUnit<Signed<FullUnit<H, D>, K>>) -> Self {
-        let parents = unit.parents().into_iter().map(|(ix, hash)| (ix, *hash)).collect();
+        let parents = unit
+            .parents()
+            .into_iter()
+            .map(|(ix, hash)| (ix, *hash))
+            .collect();
         let unit = unit.unpack();
         let creator = unit.creator();
         let round = unit.round();
         let hash = unit.hash();
-        let (_, data) = unit.into_signable().into();
+        let data = unit.into_signable().data().clone();
         OrderedUnit {
-            data,
             parents,
-            hash,
             creator,
             round,
+            hash,
+            data,
         }
     }
 }
