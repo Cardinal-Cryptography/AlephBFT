@@ -36,7 +36,7 @@ pub trait FinalizationHandler<D>: Sync + Send + 'static {
 /// which can be then used for example for the purpose of node's performance evaluation.
 pub struct OrderedUnit<D: Data, H: Hasher> {
     pub data: Option<D>,
-    pub parents: Vec<(NodeIndex, H::Hash)>,
+    pub parents: Vec<H::Hash>,
     pub hash: H::Hash,
     pub creator: NodeIndex,
     pub round: Round,

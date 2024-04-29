@@ -130,7 +130,7 @@ impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: 
         }
     }
 
-    pub fn new_using_unit_finalization_handler<
+    pub fn new_with_unit_finalization_handler<
         H: Hasher,
         UFH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
     >(
