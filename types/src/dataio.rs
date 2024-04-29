@@ -42,14 +42,24 @@ pub struct OrderedUnit<D: Data, H: Hasher> {
     pub round: Round,
 }
 
-pub type BatchOfUnits<D, H> = Vec<OrderedUnit<D, H>>;
+pub trait IntoOrderedUnit<D: Data, H: Hasher>: Into<OrderedUnit<D, H>> + Into<Option<D>> {}
 
-impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> FinalizationHandler<BatchOfUnits<D, H>>
-    for FH
-{
-    fn data_finalized(&mut self, batch: BatchOfUnits<D, H>) {
+impl<D: Data, H: Hasher, I: Into<OrderedUnit<D, H>> + Into<Option<D>>> IntoOrderedUnit<D, H> for I {}
+
+/// The source of finalization of the units that consensus produces.
+///
+/// The [`UnitFinalizationHandler::batch_finalized`] method is called whenever a batch of units
+/// has been finalized, in order of finalization.
+pub trait UnitFinalizationHandler<D: Data, H: Hasher>: Sync + Send + 'static {
+    /// A batch of units, that contains data provided by [DataProvider::get_data], has been finalized.
+    /// The calls to this function follow the order of finalization.
+    fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<D, H>>);
+}
+
+impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler<D, H> for FH {
+    fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<D, H>>) {
         for unit in batch {
-            if let Some(data) = unit.data {
+            if let Some(data) = unit.into() {
                 self.data_finalized(data)
             }
         }

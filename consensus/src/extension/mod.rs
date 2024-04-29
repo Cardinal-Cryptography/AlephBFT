@@ -4,7 +4,7 @@ mod election;
 mod extender;
 mod units;
 
-use aleph_bft_types::{BatchOfUnits, FinalizationHandler};
+use aleph_bft_types::UnitFinalizationHandler;
 use extender::Extender;
 
 /// A struct responsible for executing the Consensus protocol on a local copy of the Dag.
@@ -16,20 +16,15 @@ use extender::Extender;
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component.
-pub struct Ordering<
-    H: Hasher,
-    D: Data,
-    MK: MultiKeychain,
-    FH: FinalizationHandler<BatchOfUnits<D, H>>,
-> {
+pub struct Ordering<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<D, H>> {
     extender: Extender<DagUnit<H, D, MK>>,
-    finalization_handler: FH,
+    finalization_handler: UFH,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<BatchOfUnits<D, H>>>
-    Ordering<H, D, MK, FH>
+impl<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<D, H>>
+    Ordering<H, D, MK, UFH>
 {
-    pub fn new(finalization_handler: FH) -> Self {
+    pub fn new(finalization_handler: UFH) -> Self {
         let extender = Extender::new();
         Ordering {
             extender,
@@ -38,8 +33,7 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, FH: FinalizationHandler<BatchOfUnits
     }
 
     fn handle_batch(&mut self, batch: Vec<DagUnit<H, D, MK>>) {
-        let batch = batch.into_iter().map(|unit| unit.into()).collect();
-        self.finalization_handler.data_finalized(batch);
+        self.finalization_handler.batch_finalized(batch);
     }
 
     pub fn add_unit(&mut self, unit: DagUnit<H, D, MK>) {

@@ -11,7 +11,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, MultiKeychain, Network, NodeIndex, Receiver, Recipient,
     Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{BatchOfUnits, FinalizationHandler, NodeMap};
+use aleph_bft_types::{FinalizationHandler, NodeMap, UnitFinalizationHandler};
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, pin_mut, AsyncRead, AsyncWrite, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -122,7 +122,7 @@ impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: 
         unit_saver: US,
         unit_loader: UL,
     ) -> Self {
-        LocalIO {
+        Self {
             data_provider,
             finalization_handler,
             unit_saver,
@@ -132,7 +132,7 @@ impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: 
 
     pub fn new_with_unit_finalization_handler<
         H: Hasher,
-        UFH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
+        UFH: UnitFinalizationHandler<DP::Output, H>,
     >(
         data_provider: DP,
         finalization_handler: UFH,
@@ -147,6 +147,23 @@ impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: 
         }
     }
 }
+
+// pub struct WrappedUnitFinalizationHandler<D, H, UFH> {
+//     finalization_handler: UFH,
+//     _phantom: PhantomData<(D, H)>
+// }
+
+// impl<D: Data, H: Hasher, UFH: UnitFinalizationHandler<D, H>> UnitFinalizationHandler<D, H> for WrappedUnitFinalizationHandler<D, H, UFH> {
+//     fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<D, H>>) {
+//         self.finalization_handler.batch_finalized(batch)
+//     }
+// }
+
+// impl<H: Hasher, DP: DataProvider, UFH: UnitFinalizationHandler<DP::Output, H>, US: AsyncWrite, UL: AsyncRead>
+//     LocalIO<DP, WrappedUnitFinalizationHandler<DP::Output, H, UFH>, US, UL>
+//     {
+
+//     }
 
 struct MemberStatus<'a, H: Hasher, D: Data, S: Signature> {
     task_queue: &'a TaskQueue<RepeatableTask<H, D, S>>,
@@ -582,16 +599,16 @@ where
 /// [docs for devs](https://cardinal-cryptography.github.io/AlephBFT/index.html)
 /// or the [original paper](https://arxiv.org/abs/1908.05156).
 ///
-/// Please note that in order to fulfill the constraint [`FinalizationHandler<BatchOfUnits<DP::Output, H>>`]
+/// Please note that in order to fulfill the constraint [`UnitFinalizationHandler<DP::Output, H>`]
 /// it is enough to provide implementation of [`FinalizationHandler<DP::Output>`]. We provide
-/// implementation of [`FinalizationHandler<BatchOfUnits<DP::Output, H>>`] for anything that satisfies
-/// [`FinalizationHandler<DP::Output>`]. Implementing [`FinalizationHandler<BatchOfUnits<DP::Output, H>>`]
+/// implementation of [`UnitFinalizationHandler<DP::Output, H>`] for anything that satisfies
+/// [`FinalizationHandler<DP::Output>`]. Implementing [`UnitFinalizationHandler<DP::Output, H>`]
 /// directly is considered less stable since it exposes intrisics which might be subject to change.
 /// Implement [`FinalizationHandler<DP::Output>`] instead, unless you absolutely know what you are doing.
 pub async fn run_session<
     H: Hasher,
     DP: DataProvider,
-    FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
+    UFH: UnitFinalizationHandler<DP::Output, H>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
@@ -599,7 +616,7 @@ pub async fn run_session<
     MK: MultiKeychain,
 >(
     config: Config,
-    local_io: LocalIO<DP, FH, US, UL>,
+    local_io: LocalIO<DP, UFH, US, UL>,
     network: N,
     keychain: MK,
     spawn_handle: SH,

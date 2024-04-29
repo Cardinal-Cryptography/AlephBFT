@@ -9,7 +9,9 @@ pub use aleph_bft_crypto::{
     NodeIndex, NodeMap, NodeSubset, PartialMultisignature, PartiallyMultisigned, Signable,
     Signature, SignatureError, SignatureSet, Signed, UncheckedSigned,
 };
-pub use dataio::{BatchOfUnits, DataProvider, FinalizationHandler, OrderedUnit};
+pub use dataio::{
+    DataProvider, FinalizationHandler, IntoOrderedUnit, OrderedUnit, UnitFinalizationHandler,
+};
 pub use network::{Network, Recipient};
 pub use tasks::{SpawnHandle, TaskHandle};
 

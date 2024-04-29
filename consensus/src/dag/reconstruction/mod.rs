@@ -78,10 +78,18 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
 }
 
 impl<D: Data, H: Hasher, K: MultiKeychain> From<ReconstructedUnit<Signed<FullUnit<H, D>, K>>>
+    for Option<D>
+{
+    fn from(value: ReconstructedUnit<Signed<FullUnit<H, D>, K>>) -> Self {
+        value.unpack().into_signable().into()
+    }
+}
+
+impl<D: Data, H: Hasher, K: MultiKeychain> From<ReconstructedUnit<Signed<FullUnit<H, D>, K>>>
     for OrderedUnit<D, H>
 {
     fn from(unit: ReconstructedUnit<Signed<FullUnit<H, D>, K>>) -> Self {
-        let parents = unit.parents().into_values().collect();
+        let parents = unit.parents().values().cloned().collect();
         let unit = unit.unpack();
         let creator = unit.creator();
         let round = unit.round();

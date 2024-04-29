@@ -12,7 +12,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, Index, Keychain, MultiKeychain, NodeIndex, Receiver, Round,
     Sender, Signature, Signed, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{BatchOfUnits, FinalizationHandler, Recipient};
+use aleph_bft_types::{Recipient, UnitFinalizationHandler};
 use futures::{
     channel::{mpsc, oneshot},
     future::pending,
@@ -99,11 +99,11 @@ type CollectionResponse<H, D, MK> = UncheckedSigned<
     <MK as Keychain>::Signature,
 >;
 
-struct Runway<H, D, FH, MK>
+struct Runway<H, D, UFH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<BatchOfUnits<D, H>>,
+    UFH: UnitFinalizationHandler<D, H>,
     MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -111,7 +111,7 @@ where
     store: UnitStore<DagUnit<H, D, MK>>,
     keychain: MK,
     dag: Dag<H, D, MK>,
-    ordering: Ordering<H, D, MK, FH>,
+    ordering: Ordering<H, D, MK, UFH>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,
@@ -205,13 +205,8 @@ impl<'a, H: Hasher> Display for RunwayStatus<'a, H> {
     }
 }
 
-struct RunwayConfig<
-    H: Hasher,
-    D: Data,
-    FH: FinalizationHandler<BatchOfUnits<D, H>>,
-    MK: MultiKeychain,
-> {
-    finalization_handler: FH,
+struct RunwayConfig<H: Hasher, D: Data, UFH: UnitFinalizationHandler<D, H>, MK: MultiKeychain> {
+    finalization_handler: UFH,
     backup_units_for_saver: Sender<DagUnit<H, D, MK>>,
     backup_units_from_saver: Receiver<DagUnit<H, D, MK>>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
@@ -224,14 +219,14 @@ struct RunwayConfig<
     new_units_from_creation: Receiver<SignedUnit<H, D, MK>>,
 }
 
-impl<H, D, FH, MK> Runway<H, D, FH, MK>
+impl<H, D, UFH, MK> Runway<H, D, UFH, MK>
 where
     H: Hasher,
     D: Data,
-    FH: FinalizationHandler<BatchOfUnits<D, H>>,
+    UFH: UnitFinalizationHandler<D, H>,
     MK: MultiKeychain,
 {
-    fn new(config: RunwayConfig<H, D, FH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
+    fn new(config: RunwayConfig<H, D, UFH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
         let n_members = keychain.node_count();
         let RunwayConfig {
             finalization_handler,
@@ -673,10 +668,10 @@ pub struct RunwayIO<
     W: AsyncWrite + Send + Sync + 'static,
     R: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
+    UFH: UnitFinalizationHandler<DP::Output, H>,
 > {
     pub data_provider: DP,
-    pub finalization_handler: FH,
+    pub finalization_handler: UFH,
     pub backup_write: W,
     pub backup_read: R,
     _phantom: PhantomData<(H, MK::Signature)>,
@@ -688,12 +683,12 @@ impl<
         W: AsyncWrite + Send + Sync + 'static,
         R: AsyncRead + Send + Sync + 'static,
         DP: DataProvider,
-        FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
-    > RunwayIO<H, MK, W, R, DP, FH>
+        UFH: UnitFinalizationHandler<DP::Output, H>,
+    > RunwayIO<H, MK, W, R, DP, UFH>
 {
     pub fn new(
         data_provider: DP,
-        finalization_handler: FH,
+        finalization_handler: UFH,
         backup_write: W,
         backup_read: R,
     ) -> Self {
@@ -707,9 +702,9 @@ impl<
     }
 }
 
-pub(crate) async fn run<H, US, UL, MK, DP, FH, SH>(
+pub(crate) async fn run<H, US, UL, MK, DP, UFH, SH>(
     config: Config,
-    runway_io: RunwayIO<H, MK, US, UL, DP, FH>,
+    runway_io: RunwayIO<H, MK, US, UL, DP, UFH>,
     keychain: MK,
     spawn_handle: SH,
     network_io: NetworkIO<H, DP::Output, MK>,
@@ -719,7 +714,7 @@ pub(crate) async fn run<H, US, UL, MK, DP, FH, SH>(
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    FH: FinalizationHandler<BatchOfUnits<DP::Output, H>>,
+    UFH: UnitFinalizationHandler<DP::Output, H>,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {
