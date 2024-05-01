@@ -1,26 +1,25 @@
-use std::pin::Pin;
-
 use crate::{
     dag::DagUnit,
     units::{UncheckedSignedUnit, WrappedUnit},
     Data, Hasher, MultiKeychain, Receiver, Sender, Terminator,
 };
 use codec::Encode;
-use futures::{AsyncWrite, AsyncWriteExt, FutureExt, StreamExt};
+use futures::{ FutureExt, StreamExt};
 use log::{debug, error};
+use aleph_bft_types::BackupWriter;
 
 const LOG_TARGET: &str = "AlephBFT-backup-saver";
 
 /// Component responsible for saving units into backup.
 /// It waits for items to appear on its receivers, and writes them to backup.
 /// It announces a successful write through an appropriate response sender.
-pub struct BackupSaver<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> {
+pub struct BackupSaver<H: Hasher, D: Data, MK: MultiKeychain, W: BackupWriter> {
     units_from_runway: Receiver<DagUnit<H, D, MK>>,
     responses_for_runway: Sender<DagUnit<H, D, MK>>,
-    backup: Pin<Box<W>>,
+    backup: W,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> BackupSaver<H, D, MK, W> {
+impl<H: Hasher, D: Data, MK: MultiKeychain, W: BackupWriter> BackupSaver<H, D, MK, W> {
     pub fn new(
         units_from_runway: Receiver<DagUnit<H, D, MK>>,
         responses_for_runway: Sender<DagUnit<H, D, MK>>,
@@ -29,14 +28,13 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> BackupSaver<H, D, MK,
         BackupSaver {
             units_from_runway,
             responses_for_runway,
-            backup: Box::pin(backup),
+            backup,
         }
     }
 
     pub async fn save_unit(&mut self, unit: &DagUnit<H, D, MK>) -> Result<(), std::io::Error> {
         let unit: UncheckedSignedUnit<_, _, _> = unit.clone().unpack().into();
-        self.backup.write_all(&unit.encode()).await?;
-        self.backup.flush().await
+        self.backup.append(&unit.encode()).await
     }
 
     pub async fn run(&mut self, mut terminator: Terminator) {

@@ -3,6 +3,7 @@
 mod dataio;
 mod network;
 mod tasks;
+mod backup;
 
 pub use aleph_bft_crypto::{
     IncompleteMultisignatureError, Index, Indexed, Keychain, MultiKeychain, Multisigned, NodeCount,
@@ -12,6 +13,7 @@ pub use aleph_bft_crypto::{
 pub use dataio::{DataProvider, FinalizationHandler};
 pub use network::{Network, Recipient};
 pub use tasks::{SpawnHandle, TaskHandle};
+pub use backup::{BackupReader, BackupWriter};
 
 use codec::Codec;
 use std::{fmt::Debug, hash::Hash as StdHash};

@@ -14,11 +14,13 @@ use crate::{
     UncheckedSigned,
 };
 use aleph_bft_types::Recipient;
+use aleph_bft_types::BackupReader;
 use futures::{
     channel::{mpsc, oneshot},
     future::pending,
-    pin_mut, AsyncRead, AsyncWrite, Future, FutureExt, StreamExt,
+    pin_mut, Future, FutureExt, StreamExt,
 };
+use aleph_bft_types::BackupWriter;
 use futures_timer::Delay;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
@@ -667,8 +669,8 @@ pub struct RunwayIO<
     H: Hasher,
     D: Data,
     MK: MultiKeychain,
-    W: AsyncWrite + Send + Sync + 'static,
-    R: AsyncRead + Send + Sync + 'static,
+    W: BackupWriter + Send + Sync + 'static,
+    R: BackupReader + Send + Sync + 'static,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
 > {
@@ -683,8 +685,8 @@ impl<
         H: Hasher,
         D: Data,
         MK: MultiKeychain,
-        W: AsyncWrite + Send + Sync + 'static,
-        R: AsyncRead + Send + Sync + 'static,
+        W: BackupWriter + Send + Sync + 'static,
+        R: BackupReader + Send + Sync + 'static,
         DP: DataProvider<D>,
         FH: FinalizationHandler<D>,
     > RunwayIO<H, D, MK, W, R, DP, FH>
@@ -715,8 +717,8 @@ pub(crate) async fn run<H, D, US, UL, MK, DP, FH, SH>(
 ) where
     H: Hasher,
     D: Data,
-    US: AsyncWrite + Send + Sync + 'static,
-    UL: AsyncRead + Send + Sync + 'static,
+    US: BackupWriter + Send + Sync + 'static,
+    UL: BackupReader + Send + Sync + 'static,
     DP: DataProvider<D>,
     FH: FinalizationHandler<D>,
     MK: MultiKeychain,
