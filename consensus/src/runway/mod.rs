@@ -111,7 +111,7 @@ where
     store: UnitStore<DagUnit<H, D, MK>>,
     keychain: MK,
     dag: Dag<H, D, MK>,
-    ordering: Ordering<H, D, MK, UFH>,
+    ordering: Ordering<MK, UFH>,
     alerts_for_alerter: Sender<Alert<H, D, MK::Signature>>,
     notifications_from_alerter: Receiver<ForkingNotification<H, D, MK::Signature>>,
     unit_messages_from_network: Receiver<RunwayNotificationIn<H, D, MK::Signature>>,

@@ -140,9 +140,9 @@ impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler
 }
 
 #[derive(Clone)]
-pub struct LocalIO<DP: DataProvider, FH, US: AsyncWrite, UL: AsyncRead> {
+pub struct LocalIO<DP: DataProvider, UFH: UnitFinalizationHandler, US: AsyncWrite, UL: AsyncRead> {
     data_provider: DP,
-    finalization_handler: FH,
+    finalization_handler: UFH,
     unit_saver: US,
     unit_loader: UL,
 }

@@ -1,4 +1,4 @@
-use crate::{dag::DagUnit, Data, Hasher, MultiKeychain};
+use crate::{dag::DagUnit, MultiKeychain};
 
 mod election;
 mod extender;
@@ -17,17 +17,15 @@ use extender::Extender;
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component.
 pub struct Ordering<
-    H: Hasher,
-    D: Data,
     MK: MultiKeychain,
-    UFH: UnitFinalizationHandler<Data = D, Hasher = H>,
+    UFH: UnitFinalizationHandler,
 > {
-    extender: Extender<DagUnit<H, D, MK>>,
+    extender: Extender<DagUnit<UFH::Hasher, UFH::Data, MK>>,
     finalization_handler: UFH,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<Data = D, Hasher = H>>
-    Ordering<H, D, MK, UFH>
+impl<MK: MultiKeychain, UFH: UnitFinalizationHandler>
+    Ordering<MK, UFH>
 {
     pub fn new(finalization_handler: UFH) -> Self {
         let extender = Extender::new();
@@ -37,11 +35,11 @@ impl<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<Data = 
         }
     }
 
-    fn handle_batch(&mut self, batch: Vec<DagUnit<H, D, MK>>) {
+    fn handle_batch(&mut self, batch: Vec<DagUnit<UFH::Hasher, UFH::Data, MK>>) {
         self.finalization_handler.batch_finalized(batch);
     }
 
-    pub fn add_unit(&mut self, unit: DagUnit<H, D, MK>) {
+    pub fn add_unit(&mut self, unit: DagUnit<UFH::Hasher, UFH::Data, MK>) {
         for batch in self.extender.add_unit(unit) {
             self.handle_batch(batch);
         }
