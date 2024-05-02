@@ -106,12 +106,13 @@ enum TaskDetails<H: Hasher, D: Data, S: Signature> {
     },
 }
 
-pub struct FinalizationHandlerAdapter<FH, P> {
+/// This adapter allows to map an implementation of [`FinalizationHandler`] onto implementation of [`UnitFinalizationHandler`].
+pub struct FinalizationHandlerAdapter<FH, D, H> {
     finalization_handler: FH,
-    _phantom: PhantomData<P>,
+    _phantom: PhantomData<(D, H)>,
 }
 
-impl<FH, P> From<FH> for FinalizationHandlerAdapter<FH, P> {
+impl<FH, D, H> From<FH> for FinalizationHandlerAdapter<FH, D, H> {
     fn from(value: FH) -> Self {
         Self {
             finalization_handler: value,
@@ -121,7 +122,7 @@ impl<FH, P> From<FH> for FinalizationHandlerAdapter<FH, P> {
 }
 
 impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler
-    for FinalizationHandlerAdapter<FH, (D, H)>
+    for FinalizationHandlerAdapter<FH, D, H>
 {
     type Data = D;
     type Hasher = H;
@@ -152,7 +153,7 @@ impl<
         FH: FinalizationHandler<DP::Output>,
         US: AsyncWrite,
         UL: AsyncRead,
-    > LocalIO<DP, FinalizationHandlerAdapter<FH, (DP::Output, H)>, US, UL>
+    > LocalIO<DP, FinalizationHandlerAdapter<FH, DP::Output, H>, US, UL>
 {
     pub fn new(
         data_provider: DP,
@@ -621,19 +622,21 @@ where
 /// [docs for devs](https://cardinal-cryptography.github.io/AlephBFT/index.html)
 /// or the [original paper](https://arxiv.org/abs/1908.05156).
 ///
-/// Please note that in order to fulfill the constraint [`UnitFinalizationHandler<DP::Output, H>`]
-/// it is enough to provide implementation of [`FinalizationHandler<DP::Output>`]. We provide
-/// implementation of [`UnitFinalizationHandler<DP::Output, H>`] for anything that satisfies
-/// [`FinalizationHandler<DP::Output>`]. Implementing [`UnitFinalizationHandler<DP::Output, H>`]
-/// directly is considered less stable since it exposes intrisics which might be subject to change.
-/// Implement [`FinalizationHandler<DP::Output>`] instead, unless you absolutely know what you are doing.
+/// Please note that in order to fulfill the constraint [`UnitFinalizationHandler<Data = DP::Output, Hasher
+/// = H>`] it is enough to provide implementation of [`FinalizationHandler<DP::Output>`]. We provide
+/// implementation of [`UnitFinalizationHandler<Data = DP::Output, Hasher = H>`] for anything that satisfies
+/// the trait [`FinalizationHandler<DP::Output>`] (by means of [`FinalizationHandlerAdapter`]). Implementing
+/// [`UnitFinalizationHandler`] directly is considered less stable since it exposes intrisics which might be
+/// subject to change. Implement [`FinalizationHandler<DP::Output>`] instead, unless you absolutely know
+/// what you are doing.
 pub async fn run_session<
     H: Hasher,
     DP: DataProvider,
     UFH: UnitFinalizationHandler<Data = DP::Output, Hasher = H>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
-    N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
+    N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>>
+        + 'static,
     SH: SpawnHandle,
     MK: MultiKeychain,
 >(
