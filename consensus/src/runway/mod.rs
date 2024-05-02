@@ -103,7 +103,7 @@ struct Runway<H, D, UFH, MK>
 where
     H: Hasher,
     D: Data,
-    UFH: UnitFinalizationHandler<D, H>,
+    UFH: UnitFinalizationHandler<Data = D, Hasher = H>,
     MK: MultiKeychain,
 {
     missing_coords: HashSet<UnitCoord>,
@@ -205,7 +205,12 @@ impl<'a, H: Hasher> Display for RunwayStatus<'a, H> {
     }
 }
 
-struct RunwayConfig<H: Hasher, D: Data, UFH: UnitFinalizationHandler<D, H>, MK: MultiKeychain> {
+struct RunwayConfig<
+    H: Hasher,
+    D: Data,
+    UFH: UnitFinalizationHandler<Data = D, Hasher = H>,
+    MK: MultiKeychain,
+> {
     finalization_handler: UFH,
     backup_units_for_saver: Sender<DagUnit<H, D, MK>>,
     backup_units_from_saver: Receiver<DagUnit<H, D, MK>>,
@@ -223,7 +228,7 @@ impl<H, D, UFH, MK> Runway<H, D, UFH, MK>
 where
     H: Hasher,
     D: Data,
-    UFH: UnitFinalizationHandler<D, H>,
+    UFH: UnitFinalizationHandler<Data = D, Hasher = H>,
     MK: MultiKeychain,
 {
     fn new(config: RunwayConfig<H, D, UFH, MK>, keychain: MK, validator: Validator<MK>) -> Self {
@@ -668,7 +673,7 @@ pub struct RunwayIO<
     W: AsyncWrite + Send + Sync + 'static,
     R: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    UFH: UnitFinalizationHandler<DP::Output, H>,
+    UFH: UnitFinalizationHandler<Data = DP::Output, Hasher = H>,
 > {
     pub data_provider: DP,
     pub finalization_handler: UFH,
@@ -683,7 +688,7 @@ impl<
         W: AsyncWrite + Send + Sync + 'static,
         R: AsyncRead + Send + Sync + 'static,
         DP: DataProvider,
-        UFH: UnitFinalizationHandler<DP::Output, H>,
+        UFH: UnitFinalizationHandler<Data = DP::Output, Hasher = H>,
     > RunwayIO<H, MK, W, R, DP, UFH>
 {
     pub fn new(
@@ -714,7 +719,7 @@ pub(crate) async fn run<H, US, UL, MK, DP, UFH, SH>(
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     DP: DataProvider,
-    UFH: UnitFinalizationHandler<DP::Output, H>,
+    UFH: UnitFinalizationHandler<Data = DP::Output, Hasher = H>,
     MK: MultiKeychain,
     SH: SpawnHandle,
 {

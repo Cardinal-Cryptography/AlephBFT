@@ -22,7 +22,7 @@ pub trait DataProvider: Sync + Send + 'static {
 ///
 /// The [`FinalizationHandler::data_finalized`] method is called whenever a piece of data input
 /// to the algorithm using [`DataProvider::get_data`] has been finalized, in order of finalization.
-pub trait FinalizationHandler<D>: Sync + Send + 'static {
+pub trait FinalizationHandler<D: Data>: Sync + Send + 'static {
     /// Data, provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
     fn data_finalized(&mut self, data: D);
@@ -50,18 +50,11 @@ impl<D: Data, H: Hasher, I: Into<OrderedUnit<D, H>> + Into<Option<D>>> IntoOrder
 ///
 /// The [`UnitFinalizationHandler::batch_finalized`] method is called whenever a batch of units
 /// has been finalized, in order of finalization.
-pub trait UnitFinalizationHandler<D: Data, H: Hasher>: Sync + Send + 'static {
+pub trait UnitFinalizationHandler: Sync + Send + 'static {
+    type Data: Data;
+    type Hasher: Hasher;
+
     /// A batch of units, that contains data provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
-    fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<D, H>>);
-}
-
-impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler<D, H> for FH {
-    fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<D, H>>) {
-        for unit in batch {
-            if let Some(data) = unit.into() {
-                self.data_finalized(data)
-            }
-        }
-    }
+    fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<Self::Data, Self::Hasher>>);
 }

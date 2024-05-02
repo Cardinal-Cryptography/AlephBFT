@@ -16,12 +16,17 @@ use extender::Extender;
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component.
-pub struct Ordering<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<D, H>> {
+pub struct Ordering<
+    H: Hasher,
+    D: Data,
+    MK: MultiKeychain,
+    UFH: UnitFinalizationHandler<Data = D, Hasher = H>,
+> {
     extender: Extender<DagUnit<H, D, MK>>,
     finalization_handler: UFH,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<D, H>>
+impl<H: Hasher, D: Data, MK: MultiKeychain, UFH: UnitFinalizationHandler<Data = D, Hasher = H>>
     Ordering<H, D, MK, UFH>
 {
     pub fn new(finalization_handler: UFH) -> Self {

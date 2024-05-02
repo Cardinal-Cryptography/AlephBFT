@@ -23,6 +23,7 @@ use std::{
     collections::HashSet,
     convert::TryInto,
     fmt::{self, Debug},
+    marker::PhantomData,
     time::Duration,
 };
 
@@ -105,6 +106,38 @@ enum TaskDetails<H: Hasher, D: Data, S: Signature> {
     },
 }
 
+pub struct FinalizationHandlerAdapter<FH, P> {
+    finalization_handler: FH,
+    _phantom: PhantomData<P>,
+}
+
+impl<FH, P> From<FH> for FinalizationHandlerAdapter<FH, P> {
+    fn from(value: FH) -> Self {
+        Self {
+            finalization_handler: value,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler
+    for FinalizationHandlerAdapter<FH, (D, H)>
+{
+    type Data = D;
+    type Hasher = H;
+
+    fn batch_finalized(
+        &mut self,
+        batch: Vec<impl aleph_bft_types::IntoOrderedUnit<Self::Data, Self::Hasher>>,
+    ) {
+        for unit in batch {
+            if let Some(data) = unit.into() {
+                self.finalization_handler.data_finalized(data)
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LocalIO<DP: DataProvider, FH, US: AsyncWrite, UL: AsyncRead> {
     data_provider: DP,
@@ -113,12 +146,35 @@ pub struct LocalIO<DP: DataProvider, FH, US: AsyncWrite, UL: AsyncRead> {
     unit_loader: UL,
 }
 
-impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: AsyncRead>
-    LocalIO<DP, FH, US, UL>
+impl<
+        H: Hasher,
+        DP: DataProvider,
+        FH: FinalizationHandler<DP::Output>,
+        US: AsyncWrite,
+        UL: AsyncRead,
+    > LocalIO<DP, FinalizationHandlerAdapter<FH, (DP::Output, H)>, US, UL>
 {
     pub fn new(
         data_provider: DP,
         finalization_handler: FH,
+        unit_saver: US,
+        unit_loader: UL,
+    ) -> Self {
+        Self {
+            data_provider,
+            finalization_handler: finalization_handler.into(),
+            unit_saver,
+            unit_loader,
+        }
+    }
+}
+
+impl<DP: DataProvider, UFH: UnitFinalizationHandler, US: AsyncWrite, UL: AsyncRead>
+    LocalIO<DP, UFH, US, UL>
+{
+    pub fn new_with_unit_finalization_handler(
+        data_provider: DP,
+        finalization_handler: UFH,
         unit_saver: US,
         unit_loader: UL,
     ) -> Self {
@@ -129,41 +185,7 @@ impl<DP: DataProvider, FH: FinalizationHandler<DP::Output>, US: AsyncWrite, UL: 
             unit_loader,
         }
     }
-
-    pub fn new_with_unit_finalization_handler<
-        H: Hasher,
-        UFH: UnitFinalizationHandler<DP::Output, H>,
-    >(
-        data_provider: DP,
-        finalization_handler: UFH,
-        unit_saver: US,
-        unit_loader: UL,
-    ) -> LocalIO<DP, UFH, US, UL> {
-        LocalIO {
-            data_provider,
-            finalization_handler,
-            unit_saver,
-            unit_loader,
-        }
-    }
 }
-
-// pub struct WrappedUnitFinalizationHandler<D, H, UFH> {
-//     finalization_handler: UFH,
-//     _phantom: PhantomData<(D, H)>
-// }
-
-// impl<D: Data, H: Hasher, UFH: UnitFinalizationHandler<D, H>> UnitFinalizationHandler<D, H> for WrappedUnitFinalizationHandler<D, H, UFH> {
-//     fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<D, H>>) {
-//         self.finalization_handler.batch_finalized(batch)
-//     }
-// }
-
-// impl<H: Hasher, DP: DataProvider, UFH: UnitFinalizationHandler<DP::Output, H>, US: AsyncWrite, UL: AsyncRead>
-//     LocalIO<DP, WrappedUnitFinalizationHandler<DP::Output, H, UFH>, US, UL>
-//     {
-
-//     }
 
 struct MemberStatus<'a, H: Hasher, D: Data, S: Signature> {
     task_queue: &'a TaskQueue<RepeatableTask<H, D, S>>,
@@ -608,7 +630,7 @@ where
 pub async fn run_session<
     H: Hasher,
     DP: DataProvider,
-    UFH: UnitFinalizationHandler<DP::Output, H>,
+    UFH: UnitFinalizationHandler<Data = DP::Output, Hasher = H>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
     N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>> + 'static,
