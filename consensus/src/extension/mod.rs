@@ -16,17 +16,12 @@ use extender::Extender;
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.4 for a discussion of this component.
-pub struct Ordering<
-    MK: MultiKeychain,
-    UFH: UnitFinalizationHandler,
-> {
+pub struct Ordering<MK: MultiKeychain, UFH: UnitFinalizationHandler> {
     extender: Extender<DagUnit<UFH::Hasher, UFH::Data, MK>>,
     finalization_handler: UFH,
 }
 
-impl<MK: MultiKeychain, UFH: UnitFinalizationHandler>
-    Ordering<MK, UFH>
-{
+impl<MK: MultiKeychain, UFH: UnitFinalizationHandler> Ordering<MK, UFH> {
     pub fn new(finalization_handler: UFH) -> Self {
         let extender = Extender::new();
         Ordering {
@@ -35,13 +30,9 @@ impl<MK: MultiKeychain, UFH: UnitFinalizationHandler>
         }
     }
 
-    fn handle_batch(&mut self, batch: Vec<DagUnit<UFH::Hasher, UFH::Data, MK>>) {
-        self.finalization_handler.batch_finalized(batch);
-    }
-
     pub fn add_unit(&mut self, unit: DagUnit<UFH::Hasher, UFH::Data, MK>) {
         for batch in self.extender.add_unit(unit) {
-            self.handle_batch(batch);
+            self.finalization_handler.batch_finalized(batch);
         }
     }
 }
