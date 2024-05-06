@@ -32,7 +32,8 @@ impl<MK: MultiKeychain, UFH: UnitFinalizationHandler> Ordering<MK, UFH> {
 
     pub fn add_unit(&mut self, unit: DagUnit<UFH::Hasher, UFH::Data, MK>) {
         for batch in self.extender.add_unit(unit) {
-            self.finalization_handler.batch_finalized(batch);
+            self.finalization_handler
+                .batch_finalized(batch.into_iter().map(|unit| unit.into()).collect());
         }
     }
 }

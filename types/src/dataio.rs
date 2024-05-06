@@ -31,8 +31,8 @@ pub trait FinalizationHandler<D: Data>: Sync + Send + 'static {
 /// Represents state of the main internal data structure of AlephBFT (i.e. direct acyclic graph) used for
 /// achieving consensus.
 ///
-/// Instances of this type are returned indirectly by [`member::run_session_for_units`] method using the
-/// [`UnitFinalizationHandler`]. This way it allows to reconstruct the DAG's structure used by AlephBFT,
+/// Instances of this type are returned indirectly by [`member::run_session`] method using the
+/// [`UnitFinalizationHandler`] trait. This way it allows to reconstruct the DAG's structure used by AlephBFT,
 /// which can be then used for example for the purpose of node's performance evaluation.
 pub struct OrderedUnit<D: Data, H: Hasher> {
     pub data: Option<D>,
@@ -41,10 +41,6 @@ pub struct OrderedUnit<D: Data, H: Hasher> {
     pub creator: NodeIndex,
     pub round: Round,
 }
-
-pub trait IntoOrderedUnit<D: Data, H: Hasher>: Into<OrderedUnit<D, H>> + Into<Option<D>> {}
-
-impl<D: Data, H: Hasher, I: Into<OrderedUnit<D, H>> + Into<Option<D>>> IntoOrderedUnit<D, H> for I {}
 
 /// The source of finalization of the units that consensus produces.
 ///
@@ -56,5 +52,5 @@ pub trait UnitFinalizationHandler: Sync + Send + 'static {
 
     /// A batch of units, that contains data provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
-    fn batch_finalized(&mut self, batch: Vec<impl IntoOrderedUnit<Self::Data, Self::Hasher>>);
+    fn batch_finalized(&mut self, batch: Vec<OrderedUnit<Self::Data, Self::Hasher>>);
 }

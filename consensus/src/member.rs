@@ -11,7 +11,7 @@ use crate::{
     Config, Data, DataProvider, Hasher, MultiKeychain, Network, NodeIndex, Receiver, Recipient,
     Round, Sender, Signature, SpawnHandle, Terminator, UncheckedSigned,
 };
-use aleph_bft_types::{FinalizationHandler, NodeMap, UnitFinalizationHandler};
+use aleph_bft_types::{FinalizationHandler, NodeMap, OrderedUnit, UnitFinalizationHandler};
 use codec::{Decode, Encode};
 use futures::{channel::mpsc, pin_mut, AsyncRead, AsyncWrite, FutureExt, StreamExt};
 use futures_timer::Delay;
@@ -127,12 +127,9 @@ impl<D: Data, H: Hasher, FH: FinalizationHandler<D>> UnitFinalizationHandler
     type Data = D;
     type Hasher = H;
 
-    fn batch_finalized(
-        &mut self,
-        batch: Vec<impl aleph_bft_types::IntoOrderedUnit<Self::Data, Self::Hasher>>,
-    ) {
+    fn batch_finalized(&mut self, batch: Vec<OrderedUnit<Self::Data, Self::Hasher>>) {
         for unit in batch {
-            if let Some(data) = unit.into() {
+            if let Some(data) = unit.data {
                 self.finalization_handler.data_finalized(data)
             }
         }

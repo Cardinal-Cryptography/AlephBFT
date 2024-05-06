@@ -12,7 +12,7 @@ use crate::{
     NodeCount, NodeIndex, NodeMap, NodeSubset, Round, Signed,
 };
 use aleph_bft_mock::{Data, Hash64, Hasher64, Keychain};
-use aleph_bft_types::UnitFinalizationHandler;
+use aleph_bft_types::{OrderedUnit, UnitFinalizationHandler};
 use log::debug;
 use parking_lot::Mutex;
 use rand::{distributions::Open01, prelude::*};
@@ -222,11 +222,8 @@ impl UnitFinalizationHandler for RecordingHandler {
     type Data = Data;
     type Hasher = Hasher64;
 
-    fn batch_finalized(
-        &mut self,
-        batch: Vec<impl aleph_bft_types::IntoOrderedUnit<Self::Data, Self::Hasher>>,
-    ) {
-        let mut batch_of_data = batch.into_iter().filter_map(|unit| unit.into()).collect();
+    fn batch_finalized(&mut self, batch: Vec<OrderedUnit<Self::Data, Self::Hasher>>) {
+        let mut batch_of_data = batch.into_iter().filter_map(|unit| unit.data).collect();
         self.finalized.lock().append(&mut batch_of_data)
     }
 }
