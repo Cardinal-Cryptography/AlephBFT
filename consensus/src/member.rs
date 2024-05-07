@@ -627,12 +627,11 @@ where
 /// subject to change. Implement [`FinalizationHandler<DP::Output>`] instead, unless you absolutely know
 /// what you are doing.
 pub async fn run_session<
-    H: Hasher,
     DP: DataProvider,
-    UFH: UnitFinalizationHandler<Data = DP::Output, Hasher = H>,
+    UFH: UnitFinalizationHandler<Data = DP::Output>,
     US: AsyncWrite + Send + Sync + 'static,
     UL: AsyncRead + Send + Sync + 'static,
-    N: Network<NetworkData<H, DP::Output, MK::Signature, MK::PartialMultisignature>>,
+    N: Network<NetworkData<UFH::Hasher, DP::Output, MK::Signature, MK::PartialMultisignature>>,
     SH: SpawnHandle,
     MK: MultiKeychain,
 >(
