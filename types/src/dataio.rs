@@ -26,6 +26,11 @@ pub trait FinalizationHandler<D: Data>: Sync + Send + 'static {
     /// Data, provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
     fn data_finalized(&mut self, data: D);
+
+    /// Called periodically when a new performance vector was calculated.
+    /// The scores are deterministic across all the committee members,
+    /// and the performance is reported at the same time, ordering-wise.
+    fn performance_reported(&mut self, penalties: PerformancePenalties);
 }
 
 /// Represents state of the main internal data structure of AlephBFT (i.e. direct acyclic graph) used for
@@ -42,6 +47,13 @@ pub struct OrderedUnit<D: Data, H: Hasher> {
     pub round: Round,
 }
 
+/// A vector of performance penalties reported whenever a batch of units has been finalized.
+/// For each committee member we calculate a penalty based on their performance while processing
+/// the latest batch. In normal conditions, we expect to get a vector of zeros.
+/// Penalties are ordered according to the ordering of the committee.
+/// Less is better.
+pub type PerformancePenalties = Vec<u32>;
+
 /// The source of finalization of the units that consensus produces.
 ///
 /// The [`UnitFinalizationHandler::batch_finalized`] method is called whenever a batch of units
@@ -52,5 +64,9 @@ pub trait UnitFinalizationHandler: Sync + Send + 'static {
 
     /// A batch of units, that contains data provided by [DataProvider::get_data], has been finalized.
     /// The calls to this function follow the order of finalization.
-    fn batch_finalized(&mut self, batch: Vec<OrderedUnit<Self::Data, Self::Hasher>>);
+    fn batch_finalized(
+        &mut self,
+        batch: Vec<OrderedUnit<Self::Data, Self::Hasher>>,
+        penalties: PerformancePenalties,
+    );
 }

@@ -1,4 +1,7 @@
-use aleph_bft_types::{DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT};
+use aleph_bft_types::{
+    DataProvider as DataProviderT, FinalizationHandler as FinalizationHandlerT,
+    PerformancePenalties,
+};
 use async_trait::async_trait;
 use codec::{Decode, Encode};
 use futures::{channel::mpsc::unbounded, future::pending, AsyncWrite};
@@ -82,6 +85,8 @@ impl FinalizationHandlerT<Data> for FinalizationHandler {
             error!(target: "finalization-handler", "Error when sending data from FinalizationHandler {:?}.", e);
         }
     }
+
+    fn performance_reported(&mut self, _penalties: PerformancePenalties) {}
 }
 
 impl FinalizationHandler {
