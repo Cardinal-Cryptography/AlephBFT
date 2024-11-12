@@ -11,7 +11,7 @@ mod scheduler;
 mod service;
 
 pub use handler::Handler;
-pub use scheduler::DoublingDelayScheduler;
+pub use scheduler::{DoublingDelayScheduler, TaskScheduler};
 pub use service::Service;
 
 /// An RMC message consisting of either a signed (indexed) hash, or a multisigned hash.
