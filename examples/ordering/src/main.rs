@@ -9,7 +9,7 @@ use dataio::{Data, DataProvider, FinalizationHandler};
 use futures::{channel::oneshot, io, StreamExt};
 use log::{debug, error, info};
 use network::Network;
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 use time::{macros::format_description, OffsetDateTime};
 use tokio::fs::{self, File};
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -28,19 +28,20 @@ struct Args {
 
     /// Number of items to be ordered
     #[clap(long, value_parser)]
-    n_data: u32,
+    data_items: u32,
 
     /// Number of the first created item
     #[clap(default_value = "0", long, value_parser)]
-    n_starting: u32,
+    starting_data_item: u32,
 
-    /// Indices of nodes having stalling DataProviders
-    #[clap(default_value = "", long, value_parser, value_delimiter = ',')]
-    stalled: Vec<usize>,
-
-    /// Should the node crash after finalizing its items
+    /// Should the node stall after providing all its items
     #[clap(long, value_parser)]
-    crash: bool,
+    should_stall: bool,
+
+    /// Value which denotes range of integers that must be seen as finalized from all nodes
+    /// ie all nodes must finalize integer sequence [0; required_finalization_value)
+    #[clap(long, value_parser)]
+    required_finalization_value: u32,
 }
 
 async fn create_backup(
@@ -60,15 +61,6 @@ async fn create_backup(
         .open(file_path)
         .await?;
     Ok((saver.compat_write(), loader))
-}
-
-fn finalized_counts(cf: &HashMap<NodeIndex, u32>) -> Vec<u32> {
-    let mut v = cf
-        .iter()
-        .map(|(id, n)| (id.0, n))
-        .collect::<Vec<(usize, &u32)>>();
-    v.sort();
-    v.iter().map(|(_, n)| **n).collect()
 }
 
 #[tokio::main]
@@ -95,12 +87,11 @@ async fn main() {
     let Args {
         id,
         ports,
-        n_data,
-        n_starting,
-        stalled,
-        crash,
+        data_items,
+        starting_data_item,
+        should_stall,
+        required_finalization_value,
     } = Args::parse();
-    let stalled = stalled.contains(&id);
     let id: NodeIndex = id.into();
 
     info!("Getting network up.");
@@ -108,7 +99,7 @@ async fn main() {
         .await
         .expect("Could not create a Network instance.");
     let n_members = ports.len().into();
-    let data_provider = DataProvider::new(id, n_starting, n_data - n_starting, stalled);
+    let data_provider = DataProvider::new(id, starting_data_item, data_items, should_stall);
     let (finalization_handler, mut finalized_rx) = FinalizationHandler::new();
     let (backup_saver, backup_loader) = create_backup(id)
         .await
@@ -137,36 +128,34 @@ async fn main() {
         .await
     });
 
-    let mut count_finalized: HashMap<NodeIndex, u32> =
-        (0..ports.len()).map(|c| (c.into(), 0)).collect();
+    let node_count = ports.len();
+    let mut count_finalized = vec![0; node_count];
+
+    let mut finalized_items = vec![0; required_finalization_value as usize];
 
     loop {
         match finalized_rx.next().await {
             Some((id, number)) => {
-                *count_finalized.get_mut(&id).unwrap() += 1;
+                count_finalized[id.0] += 1;
+                finalized_items[number as usize] += 1;
                 debug!(
                     "Finalized new item: node {:?}, number {:?}; total: {:?}",
                     id.0,
                     number,
-                    finalized_counts(&count_finalized)
+                    &count_finalized,
                 );
             }
             None => {
                 error!(
                     "Finalization stream finished too soon. Got {:?} items, wanted {:?} items",
-                    finalized_counts(&count_finalized),
-                    n_data
+                    &count_finalized,
+                    data_items
                 );
                 panic!("Finalization stream finished too soon.");
             }
         }
-        if crash && count_finalized.get(&id).unwrap() >= &(n_data) {
-            panic!(
-                "Forced crash - items finalized so far: {:?}.",
-                finalized_counts(&count_finalized)
-            );
-        } else if count_finalized.values().all(|c| c >= &(n_data)) {
-            info!("Finalized required number of items.");
+        if finalized_items.iter().all(|item| *item >= 1 ) {
+            info!("Finalized all items from 0 to {}, at least once.", required_finalization_value - 1);
             info!("Waiting 10 seconds for other nodes...");
             tokio::time::sleep(Duration::from_secs(10)).await;
             info!("Shutdown.");
