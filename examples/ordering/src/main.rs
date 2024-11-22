@@ -2,7 +2,7 @@ use std::io::Write;
 mod dataio;
 mod network;
 
-use aleph_bft::{run_session, NodeIndex, Terminator};
+use aleph_bft::{run_session, NodeIndex, Terminator, default_delay_config};
 use aleph_bft_mock::{Keychain, Spawner};
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};
@@ -10,6 +10,7 @@ use futures::{channel::oneshot, io, StreamExt};
 use log::{debug, error, info};
 use network::Network;
 use std::{path::Path, time::Duration};
+use std::sync::Arc;
 use time::{macros::format_description, OffsetDateTime};
 use tokio::fs::{self, File};
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -31,7 +32,7 @@ struct Args {
     data_items: u32,
 
     /// Number of the first created item
-    #[clap(default_value = "0", long, value_parser)]
+    #[clap(long, value_parser)]
     starting_data_item: u32,
 
     /// Should the node stall after providing all its items
@@ -42,6 +43,10 @@ struct Args {
     /// ie all nodes must finalize integer sequence [0; required_finalization_value)
     #[clap(long, value_parser)]
     required_finalization_value: u32,
+
+    /// Unit creation delay (milliseconds)
+    #[clap(long, default_value = "200", value_parser)]
+    unit_creation_delay: u64,
 }
 
 async fn create_backup(
@@ -91,7 +96,9 @@ async fn main() {
         starting_data_item,
         should_stall,
         required_finalization_value,
+        unit_creation_delay,
     } = Args::parse();
+
     let id: NodeIndex = id.into();
 
     info!("Getting network up.");
@@ -113,9 +120,11 @@ async fn main() {
 
     let (exit_tx, exit_rx) = oneshot::channel();
     let member_terminator = Terminator::create_root(exit_rx, "AlephBFT-member");
+    let mut delay_config = default_delay_config();
+    delay_config.unit_creation_delay = Arc::new(move |_| Duration::from_millis(unit_creation_delay));
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
-        let config = aleph_bft::default_config(n_members, id, 0, 5000, Duration::ZERO)
+        let config = aleph_bft::create_config(n_members, id, 0, 5000, delay_config, Duration::ZERO)
             .expect("Should always succeed with Duration::ZERO");
         run_session(
             config,

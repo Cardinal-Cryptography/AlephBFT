@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eoxu pipefail
+set -eou pipefail
 
 function usage() {
   cat << EOF
@@ -30,6 +30,8 @@ Usage:
         how many data items each node should order
      [--crash-restart-delay-seconds CRASH_RESTART_DELAY_SECONDS]
         delay (seconds) between subsequent node crashes
+     [--unit-creation-delay UNIT_CREATION_DELAY]
+        unit creation delay (milliseconds), default 200
 EOF
   exit 0
 }
@@ -68,6 +70,7 @@ function run_ordering_binary() {
     --starting-data-item "${starting_data_item}"
     --data-items "${data_items}"
     --required-finalization-value "${EXPECTED_FINALIZED_DATA_ITEMS}"
+    --unit-creation-delay "${UNIT_CREATION_DELAY}"
   )
   if [[ "${should_stall}" == "yes-stall" ]]; then
     binary_args+=(--should-stall)
@@ -94,9 +97,10 @@ NODES=2
 CRASHING_NODES=2
 STALLING_DATA_PROVIDERS=1
 CRASHES_COUNT=3
-DATA_ITEMS=250
+DATA_ITEMS=25
 CRASH_RESTART_DELAY_SECONDS=5
 DATA_ITEMS_COUNTER=0
+UNIT_CREATION_DELAY=200
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -124,6 +128,10 @@ while [[ $# -gt 0 ]]; do
       CRASH_RESTART_DELAY_SECONDS="$2"
       shift;shift
       ;;
+    --unit-creation-delay)
+      UNIT_CREATION_DELAY="$2"
+      shift;shift
+      ;;
     --help)
       usage
       shift
@@ -147,7 +155,7 @@ ALL_NODES=$(( NODES + CRASHING_NODES ))
 PORTS=($(seq -s , 10000 $(( 10000 + ALL_NODES - 1 ))))
 EXPECTED_FINALIZED_DATA_ITEMS=$(( ALL_NODES * DATA_ITEMS ))
 
-for id in $(seq 0 $(( NODES - 1 ))); do
+for id in $(seq 0 $(( ALL_NODES - 1 ))); do
     rm -f "aleph-bft-examples-ordering-backup/${id}.units"
     rm -f "node${id}.log"
 done
