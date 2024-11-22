@@ -2,15 +2,15 @@ use std::io::Write;
 mod dataio;
 mod network;
 
-use aleph_bft::{run_session, NodeIndex, Terminator, default_delay_config};
+use aleph_bft::{default_delay_config, run_session, NodeIndex, Terminator};
 use aleph_bft_mock::{Keychain, Spawner};
 use clap::Parser;
 use dataio::{Data, DataProvider, FinalizationHandler};
 use futures::{channel::oneshot, io, StreamExt};
 use log::{debug, error, info};
 use network::Network;
-use std::{path::Path, time::Duration};
 use std::sync::Arc;
+use std::{path::Path, time::Duration};
 use time::{macros::format_description, OffsetDateTime};
 use tokio::fs::{self, File};
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -121,7 +121,8 @@ async fn main() {
     let (exit_tx, exit_rx) = oneshot::channel();
     let member_terminator = Terminator::create_root(exit_rx, "AlephBFT-member");
     let mut delay_config = default_delay_config();
-    delay_config.unit_creation_delay = Arc::new(move |_| Duration::from_millis(unit_creation_delay));
+    delay_config.unit_creation_delay =
+        Arc::new(move |_| Duration::from_millis(unit_creation_delay));
     let member_handle = tokio::spawn(async move {
         let keychain = Keychain::new(n_members, id);
         let config = aleph_bft::create_config(n_members, id, 0, 5000, delay_config, Duration::ZERO)
@@ -149,22 +150,22 @@ async fn main() {
                 finalized_items[number as usize] += 1;
                 debug!(
                     "Finalized new item: node {:?}, number {:?}; total: {:?}",
-                    id.0,
-                    number,
-                    &count_finalized,
+                    id.0, number, &count_finalized,
                 );
             }
             None => {
                 error!(
                     "Finalization stream finished too soon. Got {:?} items, wanted {:?} items",
-                    &count_finalized,
-                    data_items
+                    &count_finalized, data_items
                 );
                 panic!("Finalization stream finished too soon.");
             }
         }
-        if finalized_items.iter().all(|item| *item >= 1 ) {
-            info!("Finalized all items from 0 to {}, at least once.", required_finalization_value - 1);
+        if finalized_items.iter().all(|item| *item >= 1) {
+            info!(
+                "Finalized all items from 0 to {}, at least once.",
+                required_finalization_value - 1
+            );
             info!("Waiting 10 seconds for other nodes...");
             tokio::time::sleep(Duration::from_secs(10)).await;
             info!("Shutdown.");
