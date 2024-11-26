@@ -15,7 +15,7 @@ use extender::Extender;
 /// units that should be finalized, and uses the finalization handler to report that to the user.
 ///
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
-/// Section 5.3 for a discussion of this component.
+/// Section 5.4 for a discussion of this component.
 pub struct Ordering<MK: MultiKeychain, UFH: UnitFinalizationHandler> {
     extender: Extender<DagUnit<UFH::Hasher, UFH::Data, MK>>,
     finalization_handler: UFH,

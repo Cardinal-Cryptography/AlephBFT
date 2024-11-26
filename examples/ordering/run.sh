@@ -7,9 +7,9 @@ function usage() {
 Usage:
   This script is a demonstration usage of AlephBFT protocol, in which there are N nodes and they want to achieve
   a consensus with regards to provided data. The data sent to AlephBFT from each node is a stream of integers from range
-  [0, N * DATA_SIZE_BATCH), where DATA_SIZE_BATCH is configurable. Each node of index 'i'  sends to the consensus
-  integers from range [i * DATA_SIZE_BATCH; (i + 1) * DATA_SIZE_BATCH). where 0 <= i < N. At the end, each node makes
-  sure that it receives all integers from range [0, N * DATA_SIZE_BATCH), each integer exactly once.
+  [0, N * DATA_ITEMS), where DATA_ITEMS is configurable. Each node of index 'i'  sends to the consensus
+  integers from range [i * DATA_ITEMS; (i + 1) * DATA_ITEMS). where 0 <= i < N. At the end, each node makes
+  sure that it receives all integers from range [0, N * DATA_ITEMS), each integer exactly once.
 
   N nodes are started on your machine, and they communicate via UDP. Not all nodes behave correctly - some of them crash
   or are stuck while providing data.
