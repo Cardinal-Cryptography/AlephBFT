@@ -1,3 +1,4 @@
+use rand::prelude::{IteratorRandom, SliceRandom};
 use crate::{
     creation::Creator as GenericCreator,
     dag::ReconstructedUnit,
@@ -9,6 +10,7 @@ use crate::{
     NodeCount, NodeIndex, NodeMap, Round, SessionId, Signed,
 };
 use aleph_bft_mock::{Data, Hash64, Hasher64, Keychain, Signature};
+use crate::units::{HashFor, TestingDagUnit};
 
 type ControlHash = GenericControlHash<Hasher64>;
 type Creator = GenericCreator<Hasher64>;
@@ -188,6 +190,8 @@ pub fn random_full_parent_units_up_to(
     result
 }
 
+/// Constructs a DAG so that in each round (except round 0) it has all N parents, where N is number
+/// of nodes in the DAG
 pub fn random_full_parent_reconstrusted_units_up_to(
     round: Round,
     n_members: NodeCount,
@@ -211,4 +215,49 @@ pub fn random_full_parent_reconstrusted_units_up_to(
         result.push(units);
     }
     result
+}
+
+/// Constructs a DAG so that in each round (except round 0) it has at least 2N/3 + 1 parents, where
+/// N is number of nodes in the DAG. At least node from N/3 group is "orphaned" ie, it has only
+/// units from round 0. This mimics behaviour in which that we did not receive any units from that
+/// node in a session.
+/// This is not total random DAG, as each round unit has the same parent mask, to make sure test 
+/// results are deterministic and a head is elected from the round given as an argument 
+pub fn minimal_reconstructed_dag_units_up_to(
+    round: Round,
+    n_members: NodeCount,
+    session_id: SessionId,
+    keychains: &[Keychain],
+) -> (Vec<Vec<DagUnit>>, DagUnit) {
+    let mut rng = rand::thread_rng();
+    let threshold = n_members.consensus_threshold().0;
+
+    let mut dag = vec![random_initial_reconstructed_units(
+        n_members, session_id, keychains,
+    )];
+    let inactive_node_first_and_last_seen_unit = dag.last().expect("previous round present")
+        .last().expect("there is at least one node").clone();
+    let inactive_node = inactive_node_first_and_last_seen_unit.creator();  
+    for _ in 1..=round {
+        let parents: Vec<TestingDagUnit> = dag.last().expect("previous round present")
+            .clone()
+            .into_iter()
+            .filter(|unit| unit.creator() != inactive_node)
+            .choose_multiple(&mut rng, threshold)
+            .into_iter()
+            .collect();
+        let units = n_members
+            .into_iterator()
+            .filter(|node_id| node_id != &inactive_node)
+            .map(|node_id| {
+                random_reconstructed_unit_with_parents(
+                    node_id,
+                    &parents,
+                    &keychains[node_id.0],
+                )
+            })
+            .collect();
+        dag.push(units);
+    }
+    (dag, inactive_node_first_and_last_seen_unit)
 }

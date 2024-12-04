@@ -75,6 +75,7 @@ mod test {
         NodeCount, Round,
     };
     use aleph_bft_mock::Keychain;
+    use crate::units::{minimal_reconstructed_dag_units_up_to, Unit};
 
     #[test]
     fn easy_elections() {
@@ -95,6 +96,31 @@ mod test {
         assert_eq!(batches[0].len(), 1);
         for batch in batches.iter().skip(1) {
             assert_eq!(batch.len(), n_members.0);
+        }
+    }
+
+    #[test]
+    fn given_minimal_dag_with_orphaned_node_when_producing_batches_have_correct_length() {
+        let mut extender = Extender::new();
+        let n_members = NodeCount(14);
+        let threshold = n_members.consensus_threshold();
+        let max_round: Round = 79;
+        let session_id = 2137;
+        let keychains = Keychain::new_vec(n_members);
+        let mut batches = Vec::new();
+        let (dag, _) = minimal_reconstructed_dag_units_up_to( max_round, n_members, session_id, &keychains);
+        for round in dag {
+            for unit in round {
+                batches.append(&mut extender.add_unit(unit));
+            }
+        }
+        assert_eq!(batches.len(), (max_round - 3).into());
+        assert_eq!(batches[0].len(), 1);
+        assert_eq!(batches[0][0].round(), 0);
+        for (round, batch) in batches.iter().skip(1).enumerate() {
+            assert_eq!(batch.len(), threshold.0);
+            assert_eq!(batch.last().unwrap().round(), round as Round + 1);
+            assert!(batch.iter().rev().skip(1).all(|unit| unit.round() == round as Round));
         }
     }
 }
