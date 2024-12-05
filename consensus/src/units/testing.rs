@@ -252,8 +252,8 @@ pub fn minimal_reconstructed_dag_units_up_to(
             .collect();
         if r == round {
             let ancestor_unit = dag
-                .get(r as usize - 4)
-                .expect("ancestor round present")
+                .get(0)
+                .expect("first round present")
                 .get(inactive_node.0)
                 .expect("inactive node unit present");
             parents.push(ancestor_unit.clone());
