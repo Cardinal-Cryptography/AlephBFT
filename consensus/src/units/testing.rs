@@ -252,7 +252,7 @@ pub fn minimal_reconstructed_dag_units_up_to(
             .collect();
         if r == round {
             let ancestor_unit = dag
-                .get(0)
+                .first()
                 .expect("first round present")
                 .get(inactive_node.0)
                 .expect("inactive node unit present");
