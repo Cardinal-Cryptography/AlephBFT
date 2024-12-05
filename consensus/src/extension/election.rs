@@ -217,9 +217,8 @@ mod test {
             units::Units,
         },
         units::{
-            random_full_parent_reconstrusted_units_up_to, random_reconstructed_unit_with_parents,
-            minimal_reconstructed_dag_units_up_to,
-            TestingDagUnit, Unit,
+            minimal_reconstructed_dag_units_up_to, random_full_parent_reconstrusted_units_up_to,
+            random_reconstructed_unit_with_parents, TestingDagUnit, Unit,
         },
         NodeCount,
     };
@@ -345,7 +344,7 @@ mod test {
                     creator,
                     &parents,
                     &keychains[creator.0],
-                    round
+                    round,
                 ));
             }
         }
@@ -369,7 +368,8 @@ mod test {
         let session_id = 2137;
         let keychains = Keychain::new_vec(n_members);
 
-        let (dag, inactive_node_first_unit) = minimal_reconstructed_dag_units_up_to( max_round, n_members, session_id, &keychains);
+        let (dag, inactive_node_first_unit) =
+            minimal_reconstructed_dag_units_up_to(max_round, n_members, session_id, &keychains);
         for round in dag {
             for unit in round {
                 units.add_unit(unit);

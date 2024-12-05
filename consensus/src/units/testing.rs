@@ -1,4 +1,4 @@
-use rand::prelude::{IteratorRandom};
+use crate::units::TestingDagUnit;
 use crate::{
     creation::Creator as GenericCreator,
     dag::ReconstructedUnit,
@@ -10,7 +10,7 @@ use crate::{
     NodeCount, NodeIndex, NodeMap, Round, SessionId, Signed,
 };
 use aleph_bft_mock::{Data, Hash64, Hasher64, Keychain, Signature};
-use crate::units::{TestingDagUnit};
+use rand::prelude::IteratorRandom;
 
 type ControlHash = GenericControlHash<Hasher64>;
 type Creator = GenericCreator<Hasher64>;
@@ -210,7 +210,7 @@ pub fn random_full_parent_reconstrusted_units_up_to(
                     node_id,
                     result.last().expect("previous round present"),
                     &keychains[node_id.0],
-                    r
+                    r,
                 )
             })
             .collect();
@@ -233,11 +233,17 @@ pub fn minimal_reconstructed_dag_units_up_to(
     let mut dag = vec![random_initial_reconstructed_units(
         n_members, session_id, keychains,
     )];
-    let inactive_node_first_and_last_seen_unit = dag.last().expect("previous round present")
-        .last().expect("there is at least one node").clone();
-    let inactive_node = inactive_node_first_and_last_seen_unit.creator();  
+    let inactive_node_first_and_last_seen_unit = dag
+        .last()
+        .expect("previous round present")
+        .last()
+        .expect("there is at least one node")
+        .clone();
+    let inactive_node = inactive_node_first_and_last_seen_unit.creator();
     for r in 1..=round {
-        let mut parents: Vec<TestingDagUnit> = dag.last().expect("previous round present")
+        let mut parents: Vec<TestingDagUnit> = dag
+            .last()
+            .expect("previous round present")
             .clone()
             .into_iter()
             .filter(|unit| unit.creator() != inactive_node)
@@ -245,7 +251,8 @@ pub fn minimal_reconstructed_dag_units_up_to(
             .into_iter()
             .collect();
         if r == round {
-            let ancestor_unit = dag.get(r as usize - 4)
+            let ancestor_unit = dag
+                .get(r as usize - 4)
                 .expect("ancestor round present")
                 .get(inactive_node.0)
                 .expect("inactive node unit present");
@@ -255,12 +262,7 @@ pub fn minimal_reconstructed_dag_units_up_to(
             .into_iterator()
             .filter(|node_id| node_id != &inactive_node)
             .map(|node_id| {
-                random_reconstructed_unit_with_parents(
-                    node_id,
-                    &parents,
-                    &keychains[node_id.0],
-                    r
-                )
+                random_reconstructed_unit_with_parents(node_id, &parents, &keychains[node_id.0], r)
             })
             .collect();
         dag.push(units);

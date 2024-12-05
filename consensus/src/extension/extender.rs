@@ -70,12 +70,12 @@ impl<U: UnitWithParents> Extender<U> {
 
 #[cfg(test)]
 mod test {
+    use crate::units::{minimal_reconstructed_dag_units_up_to, Unit};
     use crate::{
         extension::extender::Extender, units::random_full_parent_reconstrusted_units_up_to,
         NodeCount, Round,
     };
     use aleph_bft_mock::Keychain;
-    use crate::units::{minimal_reconstructed_dag_units_up_to, Unit};
 
     #[test]
     fn easy_elections() {
@@ -109,7 +109,8 @@ mod test {
         let session_id = 2137;
         let keychains = Keychain::new_vec(n_members);
         let mut batches = Vec::new();
-        let (dag, _) = minimal_reconstructed_dag_units_up_to( max_round, n_members, session_id, &keychains);
+        let (dag, _) =
+            minimal_reconstructed_dag_units_up_to(max_round, n_members, session_id, &keychains);
         for round in dag {
             for unit in round {
                 batches.append(&mut extender.add_unit(unit));
