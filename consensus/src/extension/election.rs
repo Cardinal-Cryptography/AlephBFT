@@ -360,6 +360,7 @@ mod test {
 
     #[test]
     #[ignore]
+    // TODO(A0-4563) Uncomment after changes to parent voting code
     fn given_minimal_dag_with_orphaned_node_when_electing_then_orphaned_node_is_not_head() {
         use ElectionResult::*;
         let mut units = Units::new();
