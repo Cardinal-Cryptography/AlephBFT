@@ -215,8 +215,13 @@ pub trait WrappedUnit<H: Hasher>: Unit<Hasher = H> {
 }
 
 pub trait UnitWithParents: Unit {
-    fn parents(&self) -> &NodeMap<HashFor<Self>>;
+    fn parents(&self) -> impl Iterator<Item = &HashFor<Self>>;
+    fn direct_parents(&self) -> impl Iterator<Item = &HashFor<Self>>;
+    fn parent_for(&self, index: NodeIndex) -> Option<&HashFor<Self>>;
+    fn parents_size(&self) -> NodeCount;
 }
+
+
 
 impl<H: Hasher, D: Data> Unit for FullUnit<H, D> {
     type Hasher = H;

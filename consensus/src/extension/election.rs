@@ -49,11 +49,11 @@ impl<U: UnitWithParents> CandidateElection<U> {
 
     fn parent_votes(
         &mut self,
-        parents: &NodeMap<HashFor<U>>,
+        parents: Vec<HashFor<U>>,
     ) -> Result<(NodeCount, NodeCount), CandidateOutcome<U::Hasher>> {
         let (mut votes_for, mut votes_against) = (NodeCount(0), NodeCount(0));
-        for parent in parents.values() {
-            match self.votes.get(parent).expect("units are added in order") {
+        for parent in parents {
+            match self.votes.get(&parent).expect("units are added in order") {
                 true => votes_for += NodeCount(1),
                 false => votes_against += NodeCount(1),
             }
@@ -63,11 +63,12 @@ impl<U: UnitWithParents> CandidateElection<U> {
 
     fn vote_from_parents(
         &mut self,
-        parents: &NodeMap<HashFor<U>>,
+        parents: Vec<HashFor<U>>,
+        parents_size: NodeCount,
         relative_round: Round,
     ) -> Result<bool, CandidateOutcome<U::Hasher>> {
         use CandidateOutcome::*;
-        let threshold = parents.size().consensus_threshold();
+        let threshold = parents_size.consensus_threshold();
         // Gather parents' votes.
         let (votes_for, votes_against) = self.parent_votes(parents)?;
         assert!(votes_for + votes_against >= threshold);
@@ -102,12 +103,13 @@ impl<U: UnitWithParents> CandidateElection<U> {
             return Ok(());
         }
         let relative_round = voter.round() - self.round;
+        let direct_parents = voter.direct_parents().cloned().collect::<Vec<_>>();
         let vote = match relative_round {
             0 => unreachable!("just checked that voter and election rounds are not equal"),
             // Direct descendands vote for, all other units of that round against.
-            1 => voter.parents().get(self.candidate_creator) == Some(&self.candidate_hash),
+            1 => voter.parent_for(self.candidate_creator) == Some(&self.candidate_hash),
             // Otherwise we compute the vote based on the parents' votes.
-            _ => self.vote_from_parents(voter.parents(), relative_round)?,
+            _ => self.vote_from_parents(direct_parents, voter.parents_size(), relative_round)?,
         };
         self.votes.insert(voter.hash(), vote);
         Ok(())
@@ -360,7 +362,7 @@ mod test {
 
     #[test]
     #[ignore]
-    // TODO(A0-4563) Uncomment after changes to parent voting code
+    // TODO(A0-4559) Uncomment
     fn given_minimal_dag_with_orphaned_node_when_electing_then_orphaned_node_is_not_head() {
         use ElectionResult::*;
         let mut units = Units::new();

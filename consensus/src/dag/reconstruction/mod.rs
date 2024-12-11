@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-
+use aleph_bft_rmc::NodeCount;
 use crate::{
     units::{ControlHash, FullUnit, HashFor, Unit, UnitCoord, UnitWithParents, WrappedUnit},
     Hasher, NodeMap, SessionId,
@@ -8,7 +8,7 @@ use crate::{
 mod dag;
 mod parents;
 
-use aleph_bft_types::{Data, MultiKeychain, OrderedUnit, Signed};
+use aleph_bft_types::{Data, MultiKeychain, NodeIndex, OrderedUnit, Round, Signed};
 use dag::Dag;
 use parents::Reconstruction as ParentReconstruction;
 
@@ -16,7 +16,7 @@ use parents::Reconstruction as ParentReconstruction;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ReconstructedUnit<U: Unit> {
     unit: U,
-    parents: NodeMap<HashFor<U>>,
+    parents: NodeMap<(HashFor<U>, Round)>,
 }
 
 impl<U: Unit> ReconstructedUnit<U> {
@@ -25,7 +25,17 @@ impl<U: Unit> ReconstructedUnit<U> {
         match unit.control_hash().combined_hash
             == ControlHash::<U::Hasher>::combine_hashes(&parents)
         {
-            true => Ok(ReconstructedUnit { unit, parents }),
+            true => {
+                let unit_round = unit.round();
+                let mut parents_with_rounds =  NodeMap::with_size(parents.size());
+                for (parent_index, hash) in parents.into_iter() {
+                    parents_with_rounds.insert(parent_index, (hash, unit_round - 1));
+                }
+                Ok(ReconstructedUnit {
+                unit,
+                parents: parents_with_rounds,
+                })
+            },
             false => Err(unit),
         }
     }
@@ -72,8 +82,25 @@ impl<U: Unit> WrappedUnit<U::Hasher> for ReconstructedUnit<U> {
 }
 
 impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
-    fn parents(&self) -> &NodeMap<HashFor<Self>> {
-        &self.parents
+    fn parents(&self) -> impl Iterator<Item = &HashFor<U>> {
+        self.parents.values().map(|(hash, _)| hash)
+    }
+
+    fn direct_parents(&self) -> impl Iterator<Item = &HashFor<Self>> {
+        self.parents.values().filter_map(|(hash, parent_round)| {
+            match self.unit.coord().round() {
+                0 => None,
+                unit_round => if unit_round - 1 == *parent_round { Some(hash) } else { None },
+            }
+        })
+    }
+
+    fn parent_for(&self, index: NodeIndex) -> Option<&HashFor<Self>> {
+        self.parents.get(index).map(|(hash, _)| hash)
+    }
+
+    fn parents_size(&self) -> NodeCount {
+        self.parents.size()
     }
 }
 
@@ -89,7 +116,7 @@ impl<D: Data, H: Hasher, K: MultiKeychain> From<ReconstructedUnit<Signed<FullUni
     for OrderedUnit<D, H>
 {
     fn from(unit: ReconstructedUnit<Signed<FullUnit<H, D>, K>>) -> Self {
-        let parents = unit.parents().values().cloned().collect();
+        let parents = unit.parents().cloned().collect();
         let unit = unit.unpack();
         let creator = unit.creator();
         let round = unit.round();
@@ -233,7 +260,7 @@ mod test {
             assert_eq!(units.len(), 1);
             let reconstructed_unit = units.pop().expect("just checked its there");
             assert_eq!(reconstructed_unit, ReconstructedUnit::initial(unit.clone()));
-            assert_eq!(reconstructed_unit.parents().item_count(), 0);
+            assert_eq!(reconstructed_unit.parents().count(), 0);
         }
     }
 
@@ -254,15 +281,15 @@ mod test {
                 match round {
                     0 => {
                         assert_eq!(reconstructed_unit, ReconstructedUnit::initial(unit.clone()));
-                        assert_eq!(reconstructed_unit.parents().item_count(), 0);
+                        assert_eq!(reconstructed_unit.parents().count(), 0);
                     }
                     round => {
-                        assert_eq!(reconstructed_unit.parents().item_count(), 4);
+                        assert_eq!(reconstructed_unit.parents().count(), 4);
                         let parents = dag
                             .get((round - 1) as usize)
                             .expect("the parents are there");
                         for (parent, reconstructed_parent) in
-                            parents.iter().zip(reconstructed_unit.parents().values())
+                            parents.iter().zip(reconstructed_unit.parents())
                         {
                             assert_eq!(&parent.hash(), reconstructed_parent);
                         }
