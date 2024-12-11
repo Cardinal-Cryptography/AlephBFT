@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     extension::units::Units,
     units::{HashFor, UnitWithParents},
-    Hasher, NodeCount, NodeIndex, NodeMap, Round,
+    Hasher, NodeCount, NodeIndex, Round,
 };
 
 fn common_vote(relative_round: Round) -> bool {

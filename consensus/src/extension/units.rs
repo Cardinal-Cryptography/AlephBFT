@@ -65,7 +65,7 @@ impl<U: UnitWithParents> Units<U> {
         );
         while let Some(u) = queue.pop_front() {
             for u_hash in u.parents() {
-                if let Some(v) = self.units.remove(&u_hash) {
+                if let Some(v) = self.units.remove(u_hash) {
                     queue.push_back(v);
                 }
             }
