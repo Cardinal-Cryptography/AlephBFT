@@ -263,7 +263,7 @@ pub fn minimal_reconstructed_dag_units_up_to(
             .into_iterator()
             .filter(|node_id| node_id != &inactive_node)
             .map(|node_id| {
-                random_reconstructed_unit_with_parents(node_id, &parents,  &keychains[node_id.0], r)
+                random_reconstructed_unit_with_parents(node_id, &parents, &keychains[node_id.0], r)
             })
             .collect();
         dag.push(units);

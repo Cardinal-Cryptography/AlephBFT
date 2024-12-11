@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use aleph_bft_rmc::NodeCount;
 use crate::{
     units::{ControlHash, FullUnit, HashFor, Unit, UnitCoord, UnitWithParents, WrappedUnit},
     Hasher, NodeMap, SessionId,
 };
+use aleph_bft_rmc::NodeCount;
+use std::collections::HashMap;
 
 mod dag;
 mod parents;
@@ -27,15 +27,15 @@ impl<U: Unit> ReconstructedUnit<U> {
         {
             true => {
                 let unit_round = unit.round();
-                let mut parents_with_rounds =  NodeMap::with_size(parents.size());
+                let mut parents_with_rounds = NodeMap::with_size(parents.size());
                 for (parent_index, hash) in parents.into_iter() {
                     parents_with_rounds.insert(parent_index, (hash, unit_round - 1));
                 }
                 Ok(ReconstructedUnit {
-                unit,
-                parents: parents_with_rounds,
+                    unit,
+                    parents: parents_with_rounds,
                 })
-            },
+            }
             false => Err(unit),
         }
     }
@@ -87,12 +87,18 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
     }
 
     fn direct_parents(&self) -> impl Iterator<Item = &HashFor<Self>> {
-        self.parents.values().filter_map(|(hash, parent_round)| {
-            match self.unit.coord().round() {
+        self.parents
+            .values()
+            .filter_map(|(hash, parent_round)| match self.unit.coord().round() {
                 0 => None,
-                unit_round => if unit_round - 1 == *parent_round { Some(hash) } else { None },
-            }
-        })
+                unit_round => {
+                    if unit_round - 1 == *parent_round {
+                        Some(hash)
+                    } else {
+                        None
+                    }
+                }
+            })
     }
 
     fn parent_for(&self, index: NodeIndex) -> Option<&HashFor<Self>> {

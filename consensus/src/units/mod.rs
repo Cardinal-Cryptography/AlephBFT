@@ -221,8 +221,6 @@ pub trait UnitWithParents: Unit {
     fn parents_size(&self) -> NodeCount;
 }
 
-
-
 impl<H: Hasher, D: Data> Unit for FullUnit<H, D> {
     type Hasher = H;
 
