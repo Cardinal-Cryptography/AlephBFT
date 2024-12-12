@@ -241,7 +241,7 @@ pub fn minimal_reconstructed_dag_units_up_to(
         .clone();
     let inactive_node = inactive_node_first_and_last_seen_unit.creator();
     for r in 1..=round {
-        let direct_parents: Vec<TestingDagUnit> = dag
+        let mut parents: Vec<TestingDagUnit> = dag
             .last()
             .expect("previous round present")
             .clone()
@@ -250,7 +250,6 @@ pub fn minimal_reconstructed_dag_units_up_to(
             .choose_multiple(&mut rng, threshold)
             .into_iter()
             .collect();
-        let mut parents = direct_parents.clone();
         if r == round {
             let ancestor_unit = dag
                 .first()
