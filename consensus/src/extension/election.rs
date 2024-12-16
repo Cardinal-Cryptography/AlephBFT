@@ -64,11 +64,10 @@ impl<U: UnitWithParents> CandidateElection<U> {
     fn vote_from_parents(
         &mut self,
         parents: Vec<HashFor<U>>,
-        parents_size: NodeCount,
+        threshold: NodeCount,
         relative_round: Round,
     ) -> Result<bool, CandidateOutcome<U::Hasher>> {
         use CandidateOutcome::*;
-        let threshold = parents_size.consensus_threshold();
         // Gather parents' votes.
         let (votes_for, votes_against) = self.parent_votes(parents)?;
         assert!(votes_for + votes_against >= threshold);
@@ -103,13 +102,16 @@ impl<U: UnitWithParents> CandidateElection<U> {
             return Ok(());
         }
         let relative_round = voter.round() - self.round;
-        let direct_parents = voter.direct_parents().cloned().collect::<Vec<_>>();
+        let direct_parents = voter.direct_parents().cloned().collect();
         let vote = match relative_round {
             0 => unreachable!("just checked that voter and election rounds are not equal"),
             // Direct descendands vote for, all other units of that round against.
             1 => voter.parent_for(self.candidate_creator) == Some(&self.candidate_hash),
             // Otherwise we compute the vote based on the parents' votes.
-            _ => self.vote_from_parents(direct_parents, voter.parents_size(), relative_round)?,
+            _ => {
+                let threshold = voter.node_count().consensus_threshold();
+                self.vote_from_parents(direct_parents, threshold, relative_round)?
+            },
         };
         self.votes.insert(voter.hash(), vote);
         Ok(())

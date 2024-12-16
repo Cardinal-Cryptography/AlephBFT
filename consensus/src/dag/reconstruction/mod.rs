@@ -29,7 +29,8 @@ impl<U: Unit> ReconstructedUnit<U> {
                 let unit_round = unit.round();
                 let mut parents_with_rounds = NodeMap::with_size(parents.size());
                 for (parent_index, hash) in parents.into_iter() {
-                    parents_with_rounds.insert(parent_index, (hash, unit_round - 1));
+                    // we cannot have here round 0 units
+                    parents_with_rounds.insert(parent_index, (hash, unit_round.saturating_sub(1)));
                 }
                 Ok(ReconstructedUnit {
                     unit,
@@ -90,7 +91,9 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
         self.parents
             .values()
             .filter_map(|(hash, parent_round)| match self.unit.coord().round() {
+                // round 0 units cannot have non-empty parents
                 0 => None,
+                
                 unit_round => {
                     if unit_round - 1 == *parent_round {
                         Some(hash)
@@ -105,7 +108,7 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
         self.parents.get(index).map(|(hash, _)| hash)
     }
 
-    fn parents_size(&self) -> NodeCount {
+    fn node_count(&self) -> NodeCount {
         self.parents.size()
     }
 }
