@@ -147,7 +147,7 @@ impl DagFeeder {
             .parent_hashes()
             .into_iter()
             .collect();
-        
+
         assert_eq!(parents.into_iter().collect::<HashSet<_>>(), expected_hashes);
         self.result.push(unit.clone());
         self.store.insert(unit);

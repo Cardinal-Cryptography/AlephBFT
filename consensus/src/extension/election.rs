@@ -111,7 +111,7 @@ impl<U: UnitWithParents> CandidateElection<U> {
             _ => {
                 let threshold = voter.node_count().consensus_threshold();
                 self.vote_from_parents(direct_parents, threshold, relative_round)?
-            },
+            }
         };
         self.votes.insert(voter.hash(), vote);
         Ok(())

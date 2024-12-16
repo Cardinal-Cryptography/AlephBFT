@@ -93,7 +93,7 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
             .filter_map(|(hash, parent_round)| match self.unit.coord().round() {
                 // round 0 units cannot have non-empty parents
                 0 => None,
-                
+
                 unit_round => {
                     if unit_round - 1 == *parent_round {
                         Some(hash)
