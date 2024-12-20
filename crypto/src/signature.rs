@@ -55,7 +55,7 @@ pub trait MultiKeychain: Keychain {
         signature: &Self::Signature,
         index: NodeIndex,
     ) -> Self::PartialMultisignature;
-    /// Checks if enough signatures have beed added.
+    /// Checks if enough signatures have been added.
     fn is_complete(&self, msg: &[u8], partial: &Self::PartialMultisignature) -> bool;
 }
 
