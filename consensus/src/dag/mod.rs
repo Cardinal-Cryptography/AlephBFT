@@ -643,7 +643,7 @@ mod test {
         assert!(alerts.is_empty());
         assert!(requests.is_empty());
         assert_eq!(reconstructed_units.len(), 1);
-        let confused_unit = parent_requests.pop().expect("we chacked it's not empty");
+        let confused_unit = parent_requests.pop().expect("we checked it's not empty");
         let parents = units
             .get(3)
             .expect("we have round 3 units")
