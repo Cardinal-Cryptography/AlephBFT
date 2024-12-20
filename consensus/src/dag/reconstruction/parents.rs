@@ -51,7 +51,7 @@ impl<U: Unit> ReconstructingUnit<U> {
             Reconstructing(unit, mut parents) => {
                 parents.insert(parent_id, parent_hash);
                 match parents.item_count() == unit.control_hash().parents().count() {
-                    // We have enought parents, just need to check the control hash matches.
+                    // We have enough parents, just need to check the control hash matches.
                     true => match ReconstructedUnit::with_parents(unit, parents) {
                         Ok(unit) => Reconstructed(unit),
                         // If the control hash doesn't match we want to get an explicit list of parents.
