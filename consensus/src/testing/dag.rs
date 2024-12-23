@@ -139,7 +139,7 @@ impl DagFeeder {
 
     fn on_reconstructed_unit(&mut self, unit: ReconstructedUnit) {
         let h = unit.hash();
-        let parents = unit.parents().cloned().collect::<Vec<_>>();
+        let parents: HashSet<_> = unit.parents().cloned().collect();
         let expected_hashes: HashSet<_> = self
             .units_map
             .get(&h)
@@ -148,7 +148,7 @@ impl DagFeeder {
             .into_iter()
             .collect();
 
-        assert_eq!(parents.into_iter().collect::<HashSet<_>>(), expected_hashes);
+        assert_eq!(parents, expected_hashes);
         self.result.push(unit.clone());
         self.store.insert(unit);
     }

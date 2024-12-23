@@ -102,7 +102,6 @@ impl<U: UnitWithParents> CandidateElection<U> {
             return Ok(());
         }
         let relative_round = voter.round() - self.round;
-        let direct_parents = voter.direct_parents().cloned().collect();
         let vote = match relative_round {
             0 => unreachable!("just checked that voter and election rounds are not equal"),
             // Direct descendands vote for, all other units of that round against.
@@ -110,6 +109,7 @@ impl<U: UnitWithParents> CandidateElection<U> {
             // Otherwise we compute the vote based on the parents' votes.
             _ => {
                 let threshold = voter.node_count().consensus_threshold();
+                let direct_parents = voter.direct_parents().cloned().collect();
                 self.vote_from_parents(direct_parents, threshold, relative_round)?
             }
         };
