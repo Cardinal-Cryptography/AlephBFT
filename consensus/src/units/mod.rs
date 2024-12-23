@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::{
-    Data, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, NodeMap, NodeSubset, Round,
+    Data, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, NodeMap, Round,
     SessionId, Signable, Signed, UncheckedSigned,
 };
 use codec::{Decode, Encode};
@@ -56,15 +56,19 @@ impl Display for UnitCoord {
 /// parents
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct ControlHash<H: Hasher> {
-    pub(crate) parents_mask: NodeSubset,
+    pub(crate) parents_round_lookup: NodeMap<(H::Hash, Round)>,
     pub(crate) combined_hash: H::Hash,
 }
 
 impl<H: Hasher> ControlHash<H> {
-    pub(crate) fn new(parent_map: &NodeMap<H::Hash>) -> Self {
+    pub(crate) fn new(parents_round_lookup: &NodeMap<(H::Hash, Round)>) -> Self {
+        let mut parents_hashes = NodeMap::with_size(parents_round_lookup.size());
+        for (parent_index, &(hash, _)) in parents_round_lookup.iter() {
+            parents_hashes.insert(parent_index, hash);
+        }
         ControlHash {
-            parents_mask: parent_map.to_subset(),
-            combined_hash: Self::combine_hashes(parent_map),
+            parents_round_lookup: parents_round_lookup.clone(),
+            combined_hash: Self::combine_hashes(&parents_hashes),
         }
     }
 
@@ -72,8 +76,8 @@ impl<H: Hasher> ControlHash<H> {
         parent_map.using_encoded(H::hash)
     }
 
-    pub(crate) fn parents(&self) -> impl Iterator<Item = NodeIndex> + '_ {
-        self.parents_mask.elements()
+    pub(crate) fn parents(&self) -> impl Iterator<Item = (NodeIndex, &(H::Hash, Round))> + '_ {
+        self.parents_round_lookup.iter()
     }
 
     pub(crate) fn n_parents(&self) -> NodeCount {
@@ -81,7 +85,7 @@ impl<H: Hasher> ControlHash<H> {
     }
 
     pub(crate) fn n_members(&self) -> NodeCount {
-        NodeCount(self.parents_mask.size())
+        self.parents_round_lookup.size()
     }
 }
 
@@ -295,7 +299,7 @@ pub mod tests {
 
     #[test]
     fn test_control_hash_codec() {
-        let ch = ControlHash::<Hasher64>::new(&vec![Some([0; 8]), None, Some([1; 8])].into());
+        let ch = ControlHash::<Hasher64>::new(&vec![Some(([0; 8], 2)), None, Some(([1; 8], 2))].into());
         let encoded = ch.encode();
         let decoded =
             ControlHash::decode(&mut encoded.as_slice()).expect("should decode correctly");

@@ -46,10 +46,11 @@ mod tests {
         member::UnitMessage,
         network::NetworkDataInner::{Alert, Units},
         units::{ControlHash, FullUnit, PreUnit, UncheckedSignedUnit, UnitCoord},
-        Hasher, NodeIndex, NodeSubset, Round, Signed,
+        Hasher, NodeIndex, Round, Signed,
     };
     use aleph_bft_mock::{Data, Hasher64, Keychain, PartialMultisignature, Signature};
     use codec::{Decode, Encode};
+    use aleph_bft_types::NodeMap;
 
     fn test_unchecked_unit(
         creator: NodeIndex,
@@ -57,7 +58,7 @@ mod tests {
         data: Data,
     ) -> UncheckedSignedUnit<Hasher64, Data, Signature> {
         let control_hash = ControlHash {
-            parents_mask: NodeSubset::with_size(7.into()),
+            parents_round_lookup: NodeMap::with_size(7.into()),
             combined_hash: 0.using_encoded(Hasher64::hash),
         };
         let pu = PreUnit::new(creator, round, control_hash);

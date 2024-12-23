@@ -32,7 +32,7 @@ impl<U: Unit> ReconstructingUnit<U> {
         let coords = unit
             .control_hash()
             .parents()
-            .map(|parent_id| UnitCoord::new(round - 1, parent_id))
+            .map(|(parent_index, &(_, parent_round))| UnitCoord::new(parent_round, parent_index))
             .collect();
         (
             ReconstructingUnit::Reconstructing(unit, NodeMap::with_size(n_members)),
@@ -51,7 +51,7 @@ impl<U: Unit> ReconstructingUnit<U> {
             Reconstructing(unit, mut parents) => {
                 parents.insert(parent_id, parent_hash);
                 match parents.item_count() == unit.control_hash().parents().count() {
-                    // We have enought parents, just need to check the control hash matches.
+                    // We have enough parents, just need to check the control hash matches.
                     true => match ReconstructedUnit::with_parents(unit, parents) {
                         Ok(unit) => Reconstructed(unit),
                         // If the control hash doesn't match we want to get an explicit list of parents.
@@ -85,8 +85,8 @@ impl<U: Unit> ReconstructingUnit<U> {
             return Err(self);
         }
         let mut parents_map = NodeMap::with_size(control_hash.n_members());
-        for parent_id in control_hash.parents() {
-            match parents.get(&UnitCoord::new(self.as_unit().round() - 1, parent_id)) {
+        for (parent_id, &(_, parent_round)) in control_hash.parents() {
+            match parents.get(&UnitCoord::new(parent_round, parent_id)) {
                 Some(parent_hash) => parents_map.insert(parent_id, *parent_hash),
                 // The parents were inconsistent with the control hash.
                 None => return Err(self),
