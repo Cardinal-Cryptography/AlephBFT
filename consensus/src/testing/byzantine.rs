@@ -108,8 +108,10 @@ impl<'a> MaliciousMember<'a> {
         if let Some(parents) = self.pick_parents(round) {
             debug!(target: "malicious-member", "Creating a legit unit for round {}.", round);
             let mut node_with_parents = NodeMap::with_size(parents.size());
-            for (node_index, &hash) in parents.iter() {
-                node_with_parents.insert(node_index, (hash, round));
+            if round > 0 {
+                for (node_index, &hash) in parents.iter() {
+                    node_with_parents.insert(node_index, (hash, round - 1));
+                }
             }
             let control_hash = ControlHash::<Hasher64>::new(&node_with_parents);
             let new_preunit = PreUnit::<Hasher64>::new(self.node_ix, round, control_hash);
