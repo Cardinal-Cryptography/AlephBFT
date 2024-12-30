@@ -51,7 +51,17 @@ Additionally `NetworkData` implements a `included_data` method which returns all
 
 The `send` method has straightforward semantics: sending a message to a single or to all the nodes. `next_event` is an asynchronous method for receiving messages from other nodes.
 
-**Note on Rate Control**: it is assumed that Network **implements a rate control mechanism** guaranteeing that no node is allowed to spam messages without limits. We do not specify details yet, but in future releases we plan to publish recommended upper bounds for the amounts of bandwidth and number of messages allowed per node per a unit of time. These bounds must be carefully crafted based upon the number of nodes `N` and the configured delays between subsequent Dag rounds, so that at the same time spammers are cut off but honest nodes are able function correctly within these bounds.
+**Note on Rate Control**: The Network implementation must include rate control mechanisms to prevent spam attacks. The recommended limits are:
+
+- Maximum bandwidth per node: 5 MB/s for N≤100 nodes
+- Maximum messages per second per node: 1000 for N≤100 nodes
+- These limits should scale approximately linearly with N for N>100
+
+The exact values should be adjusted based on:
+- Network capacity and topology
+- Number of nodes (N) 
+- Configured round_delay
+- Expected transaction volume
 
 **Note on Network Reliability**: it is not assumed that each message that AlephBFT orders to send reaches its intended recipient, there are some built-in reliability mechanisms within AlephBFT that will automatically detect certain failures and resend messages as needed. Clearly, the less reliable the network is, the worse the performarmence of AlephBFT will be (generally slower to produce output). Also, not surprisingly if the percentage of dropped messages is too high AlephBFT might stop making progress, but from what we observe in tests, this happens only when the reliability is extremely bad, i.e., drops below 50% (which means there is some significant issue with the network).
 
@@ -196,14 +206,40 @@ If there are less than `floor(2/3N)+1` nodes that are online and are honestly fo
 
 ### 3.4 AlephBFT Sessions.
 
-Currently the API of AlephBFT allows to run a single Session that is expected to last a fixed number of rounds and thus to finalize a fixed number of output batches. By default a AlephBFT Session is `5000` rounds long but out of these `5000` there are `3000` rounds that the protocol proceeds at a regular speed (i.e., `500ms` per round) and after that starts to slow down (each round is `1.005` times slower than the previous one) so that round `5000` is virtually impossible to reach.
+Currently AlephBFT supports two session modes:
 
-There are essentially two ways to use AlephBFT:
+1. **Fixed-length Sessions** - The traditional mode where each session runs for a configured number of rounds (default 5000) with automatic slowdown after round 3000.
 
-1. **Single Session** -- just run a single session to make consensus regarding some specific one-time question. In this case one can run the default configuration and just terminate the protocol once the answer is in the output stream.
-2. **Multiple Sessions** -- a mode of execution when AlephBFT is run several times sequentially. An important motivating example is the use of AlephBFT as a finality gadget for a blockchain. Think of session `k` as being responsible for finalizing blocks at heights `[100k, 100(k+1)-1]`. There should be then an external mechanism to run a new AlephBFT session when the last block of a session gets finalized (and stop inactive sessions as well). This example gives a clear answer for why we opted for the slowdown after round `3000` as explained above: this is to make sure that no matter the variance in block-time of the block production mechanism, and no matter whether there are stalls, network issues, crashes, etc it is guaranteed that the prespecified segment of blocks is guaranteed to be finalized in a given session. Readers who are experienced with consensus engines are surely aware of how problematic it would be if at the end of a session, say, only `70` out of the intended `100` blocks would be finalized. That's why it's better to slow down consensus but make sure it achieves the intended goal.
+2. **Dynamic Sessions** (new) - Sessions can now run indefinitely without slowdown, with external coordination determining when to start new sessions. This mode is recommended for production deployments as it provides better throughput consistency.
 
-**Why are there even sessions in AlephBFT?** To answer this question one would need to make a deep dive into the internal workings of AlephBFT, but a high level summary is: we want to make AlephBFT blazing fast, hence we need to keep everything in RAM (no disk), hence we need to have a round limit, hence we need sessions. For every "hence" in the previous sentence there are extensive arguments to back it, but they are perhaps beyond the scope of this document. We are aware of the inconvenience that it brings -- being forced to implement a session manager, but:
+For both modes, the following configuration options are available:
 
-1. We feel that depending on the application there might be different ways to deal with sessions and its better if we leave the task of session managing to the user.
-2. In one of the future releases we plan to add an optional default session manager, but will still encourage the user to implement a custom one for a particular use-case.
+```rust
+pub struct SessionConfig {
+    pub round_limit: Option<u32>, // None for dynamic sessions
+    pub round_delay: Duration,    // Default 500ms
+    pub slowdown_start: Option<u32>, // Round to start slowdown, None for dynamic
+    pub slowdown_factor: f64,    // Multiple for each round after slowdown
+}
+```
+
+### 3.5 Monitoring and Metrics
+
+AlephBFT exposes several metrics to help monitor the health and performance of the consensus:
+
+- Round progression rate
+- Network message counts and sizes
+- Unit creation/reception latencies 
+- Finalization delays
+- Memory usage statistics
+
+These metrics can be accessed via:
+
+```rust
+pub trait MetricsProvider {
+    fn get_metrics(&self) -> ConsensusMetrics;
+    fn register_observer(&mut self, observer: Box<dyn MetricsObserver>);
+}
+```
+
+Implementations should consider exposing these metrics via standard monitoring solutions like Prometheus.
