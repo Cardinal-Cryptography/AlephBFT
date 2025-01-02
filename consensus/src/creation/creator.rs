@@ -86,7 +86,7 @@ impl<H: Hasher> Creator<H> {
     pub fn create_unit(&self, round: Round) -> Result<PreUnit<H>> {
         let parents = match round.checked_sub(1) {
             None => NodeMap::with_size(self.n_members),
-            Some(prev_round) =>  {
+            Some(prev_round) => {
                 let parents = self
                     .round_collectors
                     .get(usize::from(prev_round))
@@ -101,7 +101,7 @@ impl<H: Hasher> Creator<H> {
                 parents_with_rounds
             }
         };
-        
+
         Ok(PreUnit::new(
             self.node_id,
             round,

@@ -138,7 +138,11 @@ impl<K: Keychain> Validator<K> {
                     return Err(ValidationError::NotEnoughParents(pre_unit.clone()));
                 }
                 let control_hash = &pre_unit.control_hash();
-                if control_hash.parents_round_lookup.get(pre_unit.creator()).is_none() {
+                if control_hash
+                    .parents_round_lookup
+                    .get(pre_unit.creator())
+                    .is_none()
+                {
                     return Err(ValidationError::NotDescendantOfPreviousUnit(
                         pre_unit.clone(),
                     ));

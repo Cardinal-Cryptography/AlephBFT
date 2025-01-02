@@ -1,8 +1,8 @@
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
 use crate::{
-    Data, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, NodeMap, Round,
-    SessionId, Signable, Signed, UncheckedSigned,
+    Data, Hasher, Index, MultiKeychain, NodeCount, NodeIndex, NodeMap, Round, SessionId, Signable,
+    Signed, UncheckedSigned,
 };
 use codec::{Decode, Encode};
 use derivative::Derivative;
@@ -299,7 +299,8 @@ pub mod tests {
 
     #[test]
     fn test_control_hash_codec() {
-        let ch = ControlHash::<Hasher64>::new(&vec![Some(([0; 8], 2)), None, Some(([1; 8], 2))].into());
+        let ch =
+            ControlHash::<Hasher64>::new(&vec![Some(([0; 8], 2)), None, Some(([1; 8], 2))].into());
         let encoded = ch.encode();
         let decoded =
             ControlHash::decode(&mut encoded.as_slice()).expect("should decode correctly");

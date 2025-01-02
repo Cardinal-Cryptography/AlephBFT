@@ -135,7 +135,10 @@ fn random_initial_reconstructed_units(
         .collect()
 }
 
-fn parent_map<U: Unit<Hasher = Hasher64>>(parents: &Vec<U>, parent_round: Round) -> NodeMap<(Hash64, Round)> {
+fn parent_map<U: Unit<Hasher = Hasher64>>(
+    parents: &Vec<U>,
+    parent_round: Round,
+) -> NodeMap<(Hash64, Round)> {
     let n_members = parents
         .last()
         .expect("there are parents")

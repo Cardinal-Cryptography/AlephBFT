@@ -53,7 +53,11 @@ impl UnitWithParents {
     }
 
     fn parent_hashes(&self) -> Vec<Hash64> {
-        self.parent_hashes.values().map(|(hash, _)| hash).cloned().collect()
+        self.parent_hashes
+            .values()
+            .map(|(hash, _)| hash)
+            .cloned()
+            .collect()
     }
 }
 
