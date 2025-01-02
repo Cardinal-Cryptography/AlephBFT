@@ -110,6 +110,7 @@ impl<U: UnitWithParents> CandidateElection<U> {
             // Otherwise we compute the vote based on the parents' votes.
             _ => {
                 let threshold = voter.node_count().consensus_threshold();
+                let direct_parents = voter.direct_parents().cloned().collect();
                 self.vote_from_parents(direct_parents, threshold, relative_round)?
             }
         };
