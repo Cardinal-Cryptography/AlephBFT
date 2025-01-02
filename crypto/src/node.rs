@@ -142,7 +142,7 @@ impl<T> NodeMap<T> {
             .enumerate()
             .filter_map(|(idx, maybe_value)| Some((NodeIndex(idx), maybe_value?)))
     }
-    
+
     pub fn values(&self) -> impl Iterator<Item = &T> {
         self.iter().map(|(_, value)| value)
     }
