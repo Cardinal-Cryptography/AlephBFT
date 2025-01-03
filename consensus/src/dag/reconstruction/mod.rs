@@ -21,20 +21,14 @@ pub struct ReconstructedUnit<U: Unit> {
 
 impl<U: Unit> ReconstructedUnit<U> {
     /// Returns a reconstructed unit if the parents agree with the hash, errors out otherwise.
-    pub fn with_parents(unit: U, parents: NodeMap<HashFor<U>>) -> Result<Self, U> {
+    pub fn with_parents(unit: U, parents: NodeMap<(HashFor<U>, Round)>) -> Result<Self, U> {
         match unit.control_hash().combined_hash
             == ControlHash::<U::Hasher>::combine_hashes(&parents)
         {
             true => {
-                let unit_round = unit.round();
-                let mut parents_with_rounds = NodeMap::with_size(parents.size());
-                for (parent_index, hash) in parents.into_iter() {
-                    // we cannot have here round 0 units
-                    parents_with_rounds.insert(parent_index, (hash, unit_round.saturating_sub(1)));
-                }
                 Ok(ReconstructedUnit {
                     unit,
-                    parents: parents_with_rounds,
+                    parents,
                 })
             }
             false => Err(unit),

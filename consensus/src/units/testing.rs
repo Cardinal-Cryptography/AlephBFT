@@ -151,19 +151,6 @@ fn parent_map<U: Unit<Hasher = Hasher64>>(
     result
 }
 
-fn parent_map_only_hashes<U: Unit<Hasher = Hasher64>>(parents: &Vec<U>) -> NodeMap<Hash64> {
-    let n_members = parents
-        .last()
-        .expect("there are parents")
-        .control_hash()
-        .n_members();
-    let mut result = NodeMap::with_size(n_members);
-    for parent in parents {
-        result.insert(parent.creator(), parent.hash());
-    }
-    result
-}
-
 pub fn random_unit_with_parents<U: Unit<Hasher = Hasher64>>(
     creator: NodeIndex,
     parents: &Vec<U>,
@@ -182,9 +169,10 @@ pub fn random_reconstructed_unit_with_parents<U: Unit<Hasher = Hasher64>>(
     keychain: &Keychain,
     round: Round,
 ) -> DagUnit {
+    assert!(round > 0);
     ReconstructedUnit::with_parents(
         full_unit_to_signed_unit(random_unit_with_parents(creator, parents, round), keychain),
-        parent_map_only_hashes(parents),
+        parent_map(parents, round - 1),
     )
     .expect("correct parents")
 }
