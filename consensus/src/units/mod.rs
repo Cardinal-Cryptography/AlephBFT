@@ -70,7 +70,7 @@ impl<H: Hasher> ControlHash<H> {
 
     /// Calculate parent control hash, which includes all parent hashes into account.
     pub(crate) fn combine_hashes(parent_map: &NodeMap<(H::Hash, Round)>) -> H::Hash {
-        // we include parent rounds with calculating hash but this is okay - we cannot 
+        // we include parent rounds with calculating hash but this is okay - we cannot
         // have two units with the same hash but different rounds
         parent_map.using_encoded(H::hash)
     }
