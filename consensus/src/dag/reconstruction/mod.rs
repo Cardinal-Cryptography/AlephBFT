@@ -25,12 +25,7 @@ impl<U: Unit> ReconstructedUnit<U> {
         match unit.control_hash().combined_hash
             == ControlHash::<U::Hasher>::combine_hashes(&parents)
         {
-            true => {
-                Ok(ReconstructedUnit {
-                    unit,
-                    parents,
-                })
-            }
+            true => Ok(ReconstructedUnit { unit, parents }),
             false => Err(unit),
         }
     }

@@ -121,8 +121,8 @@ mod test {
         Hasher, NodeCount, NodeIndex, NodeMap,
     };
     use aleph_bft_mock::Hasher64;
-    use std::collections::HashSet;
     use aleph_bft_types::Round;
+    use std::collections::HashSet;
 
     fn full_parents_to_map(
         parents: Vec<<Hasher64 as Hasher>::Hash>,

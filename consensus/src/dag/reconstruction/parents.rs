@@ -3,8 +3,8 @@ use crate::{
     units::{ControlHash, HashFor, Unit, UnitCoord},
     NodeIndex, NodeMap,
 };
-use std::collections::{hash_map::Entry, HashMap};
 use aleph_bft_types::Round;
+use std::collections::{hash_map::Entry, HashMap};
 
 /// A unit in the process of reconstructing its parents.
 #[derive(Debug, PartialEq, Eq, Clone)]
