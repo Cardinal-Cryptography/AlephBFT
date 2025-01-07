@@ -93,12 +93,12 @@ impl<H: Hasher> Creator<H> {
                     .ok_or(ConstraintError::NotEnoughParents)?
                     .prospective_parents(self.node_id)?
                     .clone();
-                let mut parents_with_rounds = NodeMap::with_size(parents.size());
+                let mut parents_with_rounds_and_hashes = NodeMap::with_size(parents.size());
                 for (parent_index, hash) in parents.into_iter() {
                     // we cannot have here round 0 units
-                    parents_with_rounds.insert(parent_index, (hash, prev_round));
+                    parents_with_rounds_and_hashes.insert(parent_index, (hash, prev_round));
                 }
-                parents_with_rounds
+                parents_with_rounds_and_hashes
             }
         };
 
