@@ -61,21 +61,19 @@ pub struct ControlHash<H: Hasher> {
 }
 
 impl<H: Hasher> ControlHash<H> {
-    pub(crate) fn new(parents_round_lookup: &NodeMap<(H::Hash, Round)>) -> Self {
-        let mut parents_round_map = NodeMap::with_size(parents_round_lookup.size());
-        for (parent_index, (_, parent_round)) in parents_round_lookup.iter() {
-            parents_round_map.insert(parent_index, *parent_round);
+    pub(crate) fn new(parents_with_rounds_and_hashes: &NodeMap<(H::Hash, Round)>) -> Self {
+        let mut parents_with_rounds = NodeMap::with_size(parents_with_rounds_and_hashes.size());
+        for (parent_index, (_, parent_round)) in parents_with_rounds_and_hashes.iter() {
+            parents_with_rounds.insert(parent_index, *parent_round);
         }
         ControlHash {
-            parents: parents_round_map,
-            combined_hash: Self::create_control_hash(parents_round_lookup),
+            parents: parents_with_rounds,
+            combined_hash: Self::create_control_hash(parents_with_rounds_and_hashes),
         }
     }
 
-    /// Calculate parent control hash, which includes all parent hashes into account.
+    /// Calculate parent control hash, which includes all parent hashes and their rounds into account.
     pub(crate) fn create_control_hash(parent_map: &NodeMap<(H::Hash, Round)>) -> H::Hash {
-        // we include parent rounds with calculating hash but this is okay - we cannot
-        // have two units with the same hash but different rounds
         parent_map.using_encoded(H::hash)
     }
 
