@@ -111,10 +111,10 @@ impl<H: Hasher, D: Data, S: Signature, R: AsyncRead> BackupLoader<H, D, S, R> {
                 ));
             }
 
-            let parent_ids = &full_unit.as_pre_unit().control_hash().parents_round_lookup;
+            let parent_ids = &full_unit.as_pre_unit().control_hash().parents;
 
             // Sanity check: verify that all unit's parents appeared in backup before it.
-            for (parent_id, (_, round)) in parent_ids.iter() {
+            for (parent_id, round) in parent_ids.iter() {
                 let parent = UnitCoord::new(*round, parent_id);
                 if !already_loaded_coords.contains(&parent) {
                     return Err(LoaderError::InconsistentData(coord));

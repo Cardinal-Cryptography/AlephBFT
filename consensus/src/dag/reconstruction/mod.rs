@@ -23,7 +23,7 @@ impl<U: Unit> ReconstructedUnit<U> {
     /// Returns a reconstructed unit if the parents agree with the hash, errors out otherwise.
     pub fn with_parents(unit: U, parents: NodeMap<(HashFor<U>, Round)>) -> Result<Self, U> {
         match unit.control_hash().combined_hash
-            == ControlHash::<U::Hasher>::combine_hashes(&parents)
+            == ControlHash::<U::Hasher>::create_control_hash(&parents)
         {
             true => Ok(ReconstructedUnit { unit, parents }),
             false => Err(unit),

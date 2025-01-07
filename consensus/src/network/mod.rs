@@ -58,7 +58,7 @@ mod tests {
         data: Data,
     ) -> UncheckedSignedUnit<Hasher64, Data, Signature> {
         let control_hash = ControlHash {
-            parents_round_lookup: NodeMap::with_size(7.into()),
+            parents: NodeMap::with_size(7.into()),
             combined_hash: 0.using_encoded(Hasher64::hash),
         };
         let pu = PreUnit::new(creator, round, control_hash);

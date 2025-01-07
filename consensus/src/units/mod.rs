@@ -56,27 +56,33 @@ impl Display for UnitCoord {
 /// parents
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Decode, Encode)]
 pub struct ControlHash<H: Hasher> {
-    pub(crate) parents_round_lookup: NodeMap<(H::Hash, Round)>,
+    pub(crate) parents: NodeMap<Round>,
     pub(crate) combined_hash: H::Hash,
 }
 
 impl<H: Hasher> ControlHash<H> {
     pub(crate) fn new(parents_round_lookup: &NodeMap<(H::Hash, Round)>) -> Self {
+        let mut parents_round_map = NodeMap::with_size(parents_round_lookup.size());
+        for (parent_index, (_, parent_round)) in parents_round_lookup.iter() {
+            parents_round_map.insert(parent_index, *parent_round);
+        }
         ControlHash {
-            parents_round_lookup: parents_round_lookup.clone(),
-            combined_hash: Self::combine_hashes(parents_round_lookup),
+            parents: parents_round_map,
+            combined_hash: Self::create_control_hash(parents_round_lookup),
         }
     }
 
     /// Calculate parent control hash, which includes all parent hashes into account.
-    pub(crate) fn combine_hashes(parent_map: &NodeMap<(H::Hash, Round)>) -> H::Hash {
+    pub(crate) fn create_control_hash(parent_map: &NodeMap<(H::Hash, Round)>) -> H::Hash {
         // we include parent rounds with calculating hash but this is okay - we cannot
         // have two units with the same hash but different rounds
         parent_map.using_encoded(H::hash)
     }
 
-    pub(crate) fn parents(&self) -> impl Iterator<Item = (NodeIndex, &(H::Hash, Round))> + '_ {
-        self.parents_round_lookup.iter()
+    pub(crate) fn parents(&self) -> impl Iterator<Item = UnitCoord> + '_ {
+        self.parents
+            .iter()
+            .map(|(node_index, &round)| UnitCoord::new(round, node_index))
     }
 
     pub(crate) fn n_parents(&self) -> NodeCount {
@@ -84,7 +90,7 @@ impl<H: Hasher> ControlHash<H> {
     }
 
     pub(crate) fn n_members(&self) -> NodeCount {
-        self.parents_round_lookup.size()
+        self.parents.size()
     }
 }
 

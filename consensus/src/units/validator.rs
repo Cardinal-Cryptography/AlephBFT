@@ -126,7 +126,7 @@ impl<K: Keychain> Validator<K> {
                     return Err(ValidationError::RoundZeroWithParents(pre_unit.clone()));
                 }
                 if pre_unit.control_hash().combined_hash
-                    != ControlHash::<H>::combine_hashes(&NodeMap::with_size(n_members))
+                    != ControlHash::<H>::create_control_hash(&NodeMap::with_size(n_members))
                 {
                     return Err(ValidationError::RoundZeroBadControlHash(pre_unit.clone()));
                 }
@@ -138,11 +138,7 @@ impl<K: Keychain> Validator<K> {
                     return Err(ValidationError::NotEnoughParents(pre_unit.clone()));
                 }
                 let control_hash = &pre_unit.control_hash();
-                if control_hash
-                    .parents_round_lookup
-                    .get(pre_unit.creator())
-                    .is_none()
-                {
+                if control_hash.parents.get(pre_unit.creator()).is_none() {
                     return Err(ValidationError::NotDescendantOfPreviousUnit(
                         pre_unit.clone(),
                     ));

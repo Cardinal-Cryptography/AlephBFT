@@ -30,11 +30,7 @@ impl<U: Unit> ReconstructingUnit<U> {
             round != 0,
             "We should never try to reconstruct parents of a unit of round 0."
         );
-        let coords = unit
-            .control_hash()
-            .parents()
-            .map(|(parent_index, &(_, parent_round))| UnitCoord::new(parent_round, parent_index))
-            .collect();
+        let coords = unit.control_hash().parents().collect();
         (
             ReconstructingUnit::Reconstructing(unit, NodeMap::with_size(n_members)),
             coords,
@@ -78,18 +74,20 @@ impl<U: Unit> ReconstructingUnit<U> {
         }
     }
 
-    fn with_parents_from_network(
+    fn with_parents(
         self,
-        parents_from_network: HashMap<UnitCoord, HashFor<U>>,
+        parents: HashMap<UnitCoord, HashFor<U>>,
     ) -> Result<ReconstructedUnit<U>, Self> {
         let control_hash = self.control_hash().clone();
-        if parents_from_network.len() != control_hash.parents().count() {
+        if parents.len() != control_hash.parents().count() {
             return Err(self);
         }
         let mut parents_map = NodeMap::with_size(control_hash.n_members());
-        for (parent_id, &(_, parent_round)) in control_hash.parents() {
-            match parents_from_network.get(&UnitCoord::new(parent_round, parent_id)) {
-                Some(parent_hash) => parents_map.insert(parent_id, (*parent_hash, parent_round)),
+        for parent_coord in control_hash.parents() {
+            match parents.get(&parent_coord) {
+                Some(parent_hash) => {
+                    parents_map.insert(parent_coord.creator(), (*parent_hash, parent_coord.round()))
+                }
                 // The parents were inconsistent with the control hash.
                 None => return Err(self),
             }
@@ -206,7 +204,7 @@ impl<U: Unit> Reconstruction<U> {
     ) -> ReconstructionResult<U> {
         // If we don't have the unit, just ignore this response.
         match self.reconstructing_units.remove(&unit_hash) {
-            Some(unit) => match unit.with_parents_from_network(parents) {
+            Some(unit) => match unit.with_parents(parents) {
                 Ok(unit) => ReconstructionResult::reconstructed(unit),
                 Err(unit) => {
                     self.reconstructing_units.insert(unit_hash, unit);
