@@ -135,10 +135,7 @@ fn random_initial_reconstructed_units(
         .collect()
 }
 
-fn parent_map<U: Unit<Hasher = Hasher64>>(
-    parents: &Vec<U>,
-    parent_round: Round,
-) -> NodeMap<(Hash64, Round)> {
+fn parent_map<U: Unit<Hasher = Hasher64>>(parents: &Vec<U>) -> NodeMap<(Hash64, Round)> {
     let n_members = parents
         .last()
         .expect("there are parents")
@@ -146,7 +143,7 @@ fn parent_map<U: Unit<Hasher = Hasher64>>(
         .n_members();
     let mut result = NodeMap::with_size(n_members);
     for parent in parents {
-        result.insert(parent.creator(), (parent.hash(), parent_round));
+        result.insert(parent.creator(), (parent.hash(), parent.round()));
     }
     result
 }
@@ -158,7 +155,7 @@ pub fn random_unit_with_parents<U: Unit<Hasher = Hasher64>>(
 ) -> FullUnit {
     let representative_parent = parents.last().expect("there are parents");
     let session_id = representative_parent.session_id();
-    let parent_map = parent_map(parents, round - 1);
+    let parent_map = parent_map(parents);
     let control_hash = ControlHash::new(&parent_map);
     preunit_to_full_unit(PreUnit::new(creator, round, control_hash), session_id)
 }
@@ -172,7 +169,7 @@ pub fn random_reconstructed_unit_with_parents<U: Unit<Hasher = Hasher64>>(
     assert!(round > 0);
     ReconstructedUnit::with_parents(
         full_unit_to_signed_unit(random_unit_with_parents(creator, parents, round), keychain),
-        parent_map(parents, round - 1),
+        parent_map(parents),
     )
     .expect("correct parents")
 }
