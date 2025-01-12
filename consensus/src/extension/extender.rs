@@ -100,7 +100,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     // TODO(A0-4559) Uncomment
     fn given_minimal_dag_with_orphaned_node_when_producing_batches_have_correct_length() {
         let mut extender = Extender::new();
