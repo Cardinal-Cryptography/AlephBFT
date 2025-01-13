@@ -96,7 +96,8 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
     fn parent_for(&self, index: NodeIndex) -> Option<&HashFor<Self>> {
         self.parents.get(index).map(|(hash, _)| hash)
     }
-
+    
+    #[cfg(test)]
     fn parent_round(&self, index: NodeIndex) -> Option<Round> {
         self.parents.get(index).map(|(_, round)| *round)
     }

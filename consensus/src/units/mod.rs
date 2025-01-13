@@ -226,6 +226,7 @@ pub trait UnitWithParents: Unit {
     fn direct_parents(&self) -> impl Iterator<Item = &HashFor<Self>>;
     fn parent_for(&self, index: NodeIndex) -> Option<&HashFor<Self>>;
 
+    #[cfg(test)]
     fn parent_round(&self, index: NodeIndex) -> Option<Round>;
     fn node_count(&self) -> NodeCount;
 }
