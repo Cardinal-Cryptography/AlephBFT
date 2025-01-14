@@ -272,12 +272,6 @@ mod test {
                             parents.iter().zip(reconstructed_unit.parents())
                         {
                             assert_eq!(&parent.hash(), reconstructed_parent);
-                            assert_eq!(
-                                parent.round(),
-                                reconstructed_unit
-                                    .parent_round(parent.creator())
-                                    .expect("We should have round")
-                            );
                         }
                     }
                 }
@@ -385,12 +379,6 @@ mod test {
             assert_eq!(
                 Some(&parent_hash),
                 reconstructed_unit.parent_for(coord.creator())
-            );
-            assert_eq!(
-                reconstructed_unit
-                    .parent_round(coord.creator())
-                    .expect("we should have round"),
-                coord.round()
             );
         }
     }

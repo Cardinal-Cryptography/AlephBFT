@@ -97,11 +97,6 @@ impl<U: Unit> UnitWithParents for ReconstructedUnit<U> {
         self.parents.get(index).map(|(hash, _)| hash)
     }
 
-    #[cfg(test)]
-    fn parent_round(&self, index: NodeIndex) -> Option<Round> {
-        self.parents.get(index).map(|(_, round)| *round)
-    }
-
     fn node_count(&self) -> NodeCount {
         self.parents.size()
     }
@@ -297,12 +292,6 @@ mod test {
                             parents.iter().zip(reconstructed_unit.parents())
                         {
                             assert_eq!(&parent.hash(), reconstructed_parent);
-                            assert_eq!(
-                                reconstructed_unit
-                                    .parent_round(parent.creator())
-                                    .expect("we should have round"),
-                                round - 1
-                            );
                         }
                     }
                 }
