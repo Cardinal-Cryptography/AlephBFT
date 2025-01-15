@@ -57,10 +57,7 @@ mod tests {
         round: Round,
         data: Data,
     ) -> UncheckedSignedUnit<Hasher64, Data, Signature> {
-        let control_hash = ControlHash {
-            parents: NodeMap::with_size(7.into()),
-            combined_hash: 0.using_encoded(Hasher64::hash),
-        };
+        let control_hash = ControlHash::new(&NodeMap::with_size(7.into()));
         let pu = PreUnit::new(creator, round, control_hash);
         let signable = FullUnit::new(pu, Some(data), 0);
         Signed::sign(signable, &Keychain::new(0.into(), creator)).into_unchecked()

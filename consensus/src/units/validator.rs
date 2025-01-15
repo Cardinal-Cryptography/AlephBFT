@@ -33,7 +33,7 @@ impl<H: Hasher, D: Data, S: Signature> Display for ValidationError<H, D, S> {
             ),
             ParentValidationFailed(pu, control_hash_error) => write!(
                 f,
-                "parent validation failed for nit: {:?}. Internal error: {:?}",
+                "parent validation failed for unit: {:?}. Internal error: {}",
                 pu, control_hash_error
             ),
         }
@@ -102,9 +102,10 @@ impl<K: Keychain> Validator<K> {
             return Err(ValidationError::WrongNumberOfMembers(pre_unit.clone()));
         }
         let unit_coord = UnitCoord::new(pre_unit.round(), pre_unit.creator());
-        pre_unit.control_hash.validate(unit_coord).map_err(|e| {
-            ValidationError::<H, D, K::Signature>::ParentValidationFailed(pre_unit.clone(), e)
-        })?;
+        pre_unit
+            .control_hash
+            .validate(unit_coord)
+            .map_err(|e| ValidationError::ParentValidationFailed(pre_unit.clone(), e))?;
         Ok(su)
     }
 }
@@ -112,15 +113,16 @@ impl<K: Keychain> Validator<K> {
 #[cfg(test)]
 mod tests {
     use super::{ValidationError::*, Validator as GenericValidator};
-    use crate::units::ControlHashError;
     use crate::{
         units::{
             full_unit_to_unchecked_signed_unit, preunit_to_unchecked_signed_unit,
             random_full_parent_units_up_to, random_unit_with_parents, PreUnit,
+            {ControlHash, ControlHashError},
         },
         NodeCount, NodeIndex,
     };
     use aleph_bft_mock::Keychain;
+    use codec::{Decode, Encode};
 
     type Validator = GenericValidator<Keychain>;
 
@@ -152,7 +154,12 @@ mod tests {
             .as_pre_unit()
             .clone();
         let mut control_hash = preunit.control_hash().clone();
-        control_hash.combined_hash = [0, 1, 0, 1, 0, 1, 0, 1];
+        let encoded = control_hash.encode();
+        // first 8 bytes is encoded NodeMap of size 7
+        let mut borked_control_hash_bytes = encoded[0..=7].to_vec();
+        borked_control_hash_bytes.extend([0u8, 1u8, 0u8, 1u8, 0u8, 1u8, 0u8, 1u8]);
+        control_hash = ControlHash::decode(&mut borked_control_hash_bytes.as_slice())
+            .expect("should decode correctly");
         let preunit = PreUnit::new(preunit.creator(), preunit.round(), control_hash);
         let unchecked_unit =
             preunit_to_unchecked_signed_unit(preunit.clone(), session_id, &keychain);
