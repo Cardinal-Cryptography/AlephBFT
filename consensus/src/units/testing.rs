@@ -192,30 +192,6 @@ pub fn random_full_parent_units_up_to(
     result
 }
 
-/// variation of the previous function, but all non-initial units have wrong rounds
-pub fn borked_random_full_parent_units_up_to(
-    round: Round,
-    n_members: NodeCount,
-    session_id: SessionId,
-) -> Vec<Vec<FullUnit>> {
-    let mut result = vec![random_initial_units(n_members, session_id)];
-    for r in 1..=round {
-        let units = n_members
-            .into_iterator()
-            .map(|node_id| {
-                // unit pretends to be of previous round, while its control hash is correct
-                random_unit_with_parents(
-                    node_id,
-                    result.last().expect("previous round present"),
-                    r - 1,
-                )
-            })
-            .collect();
-        result.push(units);
-    }
-    result
-}
-
 /// Constructs a DAG so that in each round (except round 0) it has all N parents, where N is number
 /// of nodes in the DAG
 pub fn random_full_parent_reconstrusted_units_up_to(

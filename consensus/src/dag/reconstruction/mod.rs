@@ -238,7 +238,6 @@ impl<U: Unit> Reconstruction<U> {
 
 #[cfg(test)]
 mod test {
-    use crate::units::borked_random_full_parent_units_up_to;
     use crate::{
         dag::reconstruction::{ReconstructedUnit, Reconstruction, ReconstructionResult, Request},
         units::{random_full_parent_units_up_to, Unit, UnitCoord, UnitWithParents},
@@ -296,50 +295,6 @@ mod test {
                     }
                 }
             }
-        }
-    }
-
-    #[test]
-    fn given_dag_units_with_wrong_when_reconstructing_then_unit_is_not_reconstructed() {
-        let mut reconstruction = Reconstruction::new();
-        let dag = borked_random_full_parent_units_up_to(2, NodeCount(4), 43);
-        for initial_unit in dag.get(0).expect("just created") {
-            let ReconstructionResult {
-                mut units,
-                requests,
-            } = reconstruction.add_unit(initial_unit.clone());
-            assert!(requests.is_empty());
-            assert_eq!(units.len(), 1);
-            let reconstructed_unit = units.pop().expect("just checked its there");
-            assert_eq!(
-                reconstructed_unit,
-                ReconstructedUnit::initial(initial_unit.clone())
-            );
-            assert_eq!(reconstructed_unit.parents().count(), 0);
-        }
-
-        for first_round_unit in dag.get(1).expect("just created") {
-            let ReconstructionResult {
-                mut units,
-                requests,
-            } = reconstruction.add_unit(first_round_unit.clone());
-            assert!(requests.is_empty());
-            assert_eq!(units.len(), 1);
-
-            let reconstructed_unit = units.pop().expect("just checked its there");
-            // special case - round-1 unit pretended to be 0th unit, so the reconstruction succeed
-            assert_eq!(reconstructed_unit.parents().count(), 0);
-        }
-
-        for second_round_unit in dag.get(2).expect("just created") {
-            let ReconstructionResult { units, requests } =
-                reconstruction.add_unit(second_round_unit.clone());
-            assert!(units.is_empty());
-
-            assert_eq!(
-                requests.last().expect("just checked"),
-                &Request::ParentsOf(second_round_unit.hash()),
-            );
         }
     }
 

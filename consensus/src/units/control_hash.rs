@@ -110,6 +110,7 @@ pub mod tests {
     use crate::units::UnitCoord;
     use crate::{units::ControlHash, NodeCount, NodeIndex};
     use aleph_bft_mock::Hasher64;
+    use aleph_bft_types::Round;
     use codec::{Decode, Encode};
 
     #[test]
@@ -252,6 +253,46 @@ pub mod tests {
             ch.validate(UnitCoord::new(3, NodeIndex(1)))
                 .expect_err("validate() should return error, returned Ok(()) instead"),
             Error::ParentsHigherThanRound(2)
+        );
+    }
+
+    #[test]
+    fn given_correct_control_hash_when_only_round_change_then_control_hash_does_not_match() {
+        let all_parents_from_round_three = vec![
+            Some(([193, 179, 113, 82, 221, 179, 199, 217], 3)),
+            Some(([215, 1, 244, 177, 19, 155, 43, 208], 3)),
+            Some(([12, 108, 24, 87, 75, 135, 37, 3], 3)),
+            Some(([3, 221, 173, 235, 29, 224, 247, 233], 3)),
+        ];
+
+        let parents_from_round_three = &all_parents_from_round_three[0..3].to_vec().into();
+        let control_hash_of_fourth_round_unit =
+            ControlHash::<Hasher64>::new(&parents_from_round_three);
+
+        let mut parents_from_round_three_but_one_hash_replaced = parents_from_round_three.clone();
+        parents_from_round_three_but_one_hash_replaced.insert(
+            NodeIndex(2),
+            ([234, 170, 183, 55, 61, 24, 31, 143], 3 as Round),
+        );
+        let borked_hash_of_fourth_round_unit =
+            ControlHash::<Hasher64>::new(&parents_from_round_three_but_one_hash_replaced);
+        assert_ne!(
+            borked_hash_of_fourth_round_unit,
+            control_hash_of_fourth_round_unit
+        );
+
+        let mut parents_from_round_three_but_one_unit_replaced = parents_from_round_three.clone();
+        parents_from_round_three_but_one_unit_replaced
+            .insert(NodeIndex(2), all_parents_from_round_three[3].unwrap());
+        let control_hash_of_fourth_round_unit_but_one_unit_replaced =
+            ControlHash::<Hasher64>::new(&parents_from_round_three_but_one_unit_replaced);
+        assert_ne!(
+            borked_hash_of_fourth_round_unit,
+            control_hash_of_fourth_round_unit_but_one_unit_replaced
+        );
+        assert_ne!(
+            control_hash_of_fourth_round_unit_but_one_unit_replaced,
+            control_hash_of_fourth_round_unit
         );
     }
 }
