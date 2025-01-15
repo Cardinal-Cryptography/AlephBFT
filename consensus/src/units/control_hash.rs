@@ -372,7 +372,7 @@ pub mod tests {
     #[test]
     fn given_correct_control_hash_when_only_single_property_change_then_control_hash_does_not_match(
     ) {
-        let all_parents_from_round_three = vec![
+        let all_parents_from_round_three = [
             Some(([193, 179, 113, 82, 221, 179, 199, 217], 3)),
             Some(([215, 1, 244, 177, 19, 155, 43, 208], 3)),
             Some(([12, 108, 24, 87, 75, 135, 37, 3], 3)),
@@ -381,7 +381,7 @@ pub mod tests {
 
         let parents_from_round_three = &all_parents_from_round_three[0..3].to_vec().into();
         let control_hash_of_fourth_round_unit =
-            ControlHash::<Hasher64>::new(&parents_from_round_three);
+            ControlHash::<Hasher64>::new(parents_from_round_three);
 
         let mut parents_from_round_three_but_one_hash_replaced = parents_from_round_three.clone();
         parents_from_round_three_but_one_hash_replaced.insert(
