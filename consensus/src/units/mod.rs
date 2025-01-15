@@ -14,7 +14,7 @@ mod store;
 mod testing;
 mod validator;
 
-pub use control_hash::ControlHash;
+pub use control_hash::{ControlHash, Error as ControlHashError};
 pub(crate) use store::*;
 #[cfg(test)]
 pub use testing::{
@@ -68,10 +68,6 @@ impl<H: Hasher> PreUnit<H> {
             coord: UnitCoord::new(round, creator),
             control_hash,
         }
-    }
-
-    pub(crate) fn n_parents(&self) -> NodeCount {
-        self.control_hash.n_parents()
     }
 
     pub(crate) fn n_members(&self) -> NodeCount {

@@ -1,12 +1,64 @@
 use crate::{units::UnitCoord, Hasher, NodeCount, NodeIndex, NodeMap, Round};
 use codec::{Decode, Encode};
+use std::fmt::{Display, Formatter, Result as FmtResult};
+use std::hash::Hash;
 
-#[derive(Debug, PartialEq)]
-pub enum Error {
+#[derive(Eq, Debug, PartialEq)]
+pub enum Error<H: Hasher> {
+    RoundZeroWithSomeParents(NodeCount),
+    RoundZeroBadControlHash(H::Hash, H::Hash),
     NotDescendantOfPreviousUnit(NodeIndex),
     DescendantOfPreviousUnitButWrongRound(Round),
     NotEnoughParentsForRound(Round),
     ParentsHigherThanRound(Round),
+}
+
+impl<H: Hasher> Display for Error<H> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Error::RoundZeroWithSomeParents(node_count) => {
+                write!(
+                    f,
+                    "zero round unit with non-empty parents count: {:?}",
+                    node_count
+                )
+            }
+            Error::RoundZeroBadControlHash(current_hash, expected_hash) => {
+                write!(
+                    f,
+                    "zero round unit with wrong control hash: {:?}, expected: {:?}",
+                    current_hash, expected_hash
+                )
+            }
+            Error::NotDescendantOfPreviousUnit(node_index) => {
+                write!(
+                    f,
+                    "non-zero round unit is not descendant of its creator's previous unit, creator index: {:?}",
+                    node_index)
+            }
+            Error::DescendantOfPreviousUnitButWrongRound(round) => {
+                write!(
+                f,
+                "non-zero round unit is descendant of its creator's previous unit, but has wrong round {:?}",
+                round
+            )
+            }
+            Error::NotEnoughParentsForRound(round) => {
+                write!(
+                    f,
+                    "non-zero round unit has not enough parents from the round {:?}",
+                    round
+                )
+            }
+            Error::ParentsHigherThanRound(round) => {
+                write!(
+                    f,
+                    "non-zero round unit has parents higher than round {:?}",
+                    round
+                )
+            }
+        }
+    }
 }
 
 /// Combined hashes of the parents of a unit together with the set of indices of creators of the
@@ -42,48 +94,63 @@ impl<H: Hasher> ControlHash<H> {
             .map(|(node_index, &round)| UnitCoord::new(round, node_index))
     }
 
-    /// Returns number of non-empty parents
-    pub(crate) fn n_parents(&self) -> NodeCount {
-        NodeCount(self.parents().count())
-    }
-
     /// Returns number of all members in abft consensus
     pub(crate) fn n_members(&self) -> NodeCount {
         self.parents.size()
     }
 
-    /// Validate
-    pub fn validate(&self, unit_coord: UnitCoord) -> Result<(), Error> {
-        assert!(unit_coord.round > 0, "Round must be greater than 0");
+    pub fn validate(&self, unit_coord: UnitCoord) -> Result<(), Error<H>> {
+        match unit_coord.round {
+            0 => self.validate_initial_round(),
+            _ => self.validate_non_initial_round(unit_coord),
+        }
+    }
 
-        self.unit_creator_is_descendant_of_previous_unit(unit_coord)?;
-        self.previous_round_have_enough_parents(unit_coord)?;
-        self.check_if_parents_greater_than_previous_round(unit_coord)?;
+    fn validate_initial_round(&self) -> Result<(), Error<H>> {
+        let parents_count = self.parents().count();
+        if parents_count > 0 {
+            return Err(Error::RoundZeroWithSomeParents(NodeCount(parents_count)));
+        }
+        let recalculated_control_hash =
+            ControlHash::<H>::create_control_hash(&NodeMap::with_size(self.n_members()));
+        if self.combined_hash != recalculated_control_hash {
+            return Err(Error::RoundZeroBadControlHash(
+                self.combined_hash,
+                recalculated_control_hash,
+            ));
+        }
 
         Ok(())
     }
 
-    fn check_if_parents_greater_than_previous_round(
-        &self,
-        unit_coord: UnitCoord,
-    ) -> Result<(), Error> {
+    fn validate_non_initial_round(&self, unit_coord: UnitCoord) -> Result<(), Error<H>> {
+        assert!(unit_coord.round > 0, "Round must be greater than 0");
+
+        self.unit_creator_is_descendant_of_previous_unit(unit_coord)?;
+        self.previous_round_have_enough_parents(unit_coord.round)?;
+        self.check_if_parents_greater_than_previous_round(unit_coord.round)?;
+
+        Ok(())
+    }
+
+    fn check_if_parents_greater_than_previous_round(&self, round: Round) -> Result<(), Error<H>> {
         let parents_greater_than_previous_round = self
             .parents()
-            .filter(|&parent| parent.round > unit_coord.round - 1)
+            .filter(|&parent| parent.round > round - 1)
             .count();
         if parents_greater_than_previous_round > 0 {
-            return Err(Error::ParentsHigherThanRound(unit_coord.round - 1));
+            return Err(Error::ParentsHigherThanRound(round - 1));
         }
         Ok(())
     }
 
-    fn previous_round_have_enough_parents(&self, unit_coord: UnitCoord) -> Result<(), Error> {
+    fn previous_round_have_enough_parents(&self, round: Round) -> Result<(), Error<H>> {
         let previous_round_parents = self
             .parents()
-            .filter(|&parent| parent.round == unit_coord.round - 1)
+            .filter(|&parent| parent.round == round - 1)
             .count();
         if previous_round_parents < self.n_members().consensus_threshold().0 {
-            return Err(Error::NotEnoughParentsForRound(unit_coord.round - 1));
+            return Err(Error::NotEnoughParentsForRound(round - 1));
         }
         Ok(())
     }
@@ -91,7 +158,7 @@ impl<H: Hasher> ControlHash<H> {
     fn unit_creator_is_descendant_of_previous_unit(
         &self,
         unit_coord: UnitCoord,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<H>> {
         match self.parents.get(unit_coord.creator) {
             None => return Err(Error::NotDescendantOfPreviousUnit(unit_coord.creator)),
             Some(&parent_round) => {
@@ -110,7 +177,7 @@ pub mod tests {
     use crate::units::UnitCoord;
     use crate::{units::ControlHash, NodeCount, NodeIndex};
     use aleph_bft_mock::Hasher64;
-    use aleph_bft_types::Round;
+    use aleph_bft_types::{NodeMap, Round};
     use codec::{Decode, Encode};
 
     #[test]
@@ -141,7 +208,7 @@ pub mod tests {
             [119, 216, 234, 178, 169, 143, 117, 127]
         );
 
-        assert_eq!(ch.n_parents(), NodeCount(6));
+        assert_eq!(ch.parents().count(), 6);
         assert_eq!(ch.n_members(), NodeCount(7));
 
         let parents: Vec<_> = ch.parents().collect();
@@ -157,7 +224,52 @@ pub mod tests {
     }
 
     #[test]
-    fn given_control_hash_when_validate_with_correct_unit_coord_then_validate_is_ok() {
+    fn given_initial_round_when_validate_with_non_empty_parents_then_validate_returns_err() {
+        let parent_map = vec![
+            Some(([0; 8], 2)),
+            None,
+            Some(([2; 8], 2)),
+            Some(([3; 8], 2)),
+            Some(([4; 8], 2)),
+            Some(([5; 8], 2)),
+            Some(([5; 8], 1)),
+        ]
+        .into();
+        let ch = ControlHash::<Hasher64>::new(&parent_map);
+        assert_eq!(
+            ch.validate(UnitCoord::new(0, NodeIndex(1)))
+                .expect_err("validate() should return error, returned Ok(()) instead"),
+            Error::RoundZeroWithSomeParents(NodeCount(parent_map.item_count()))
+        );
+    }
+
+    #[test]
+    fn given_initial_round_when_validate_with_different_node_count_then_validate_returns_err() {
+        // Correct control hash for initial unit with count = 4 is
+        // [16, 0, 0, 0, 0, 129, 99, 217, 65, 183, 158, 24, 201];
+        // First 5 bytes is vec![None;4] scale encoded - 0x16 is Compact(4) , followed by 4 null bytes
+        // Then 8 bytes is Hasher64 representation of that NodeMap
+        // In this test, we change random byte to mimic situation e.g. attacker using different
+        // hash algorithm, just trying to send us garbage. Decode still work, as 8 random bytes is
+        // is valid generic Hasher64 representation, but validation should not work
+
+        let borked_ch_bytes: Vec<u8> = vec![16, 0, 0, 0, 0, 129, 100, 217, 65, 183, 158, 24, 201];
+        let borked_ch = ControlHash::<Hasher64>::decode(&mut borked_ch_bytes.as_slice())
+            .expect("should decode correctly");
+
+        assert_eq!(
+            borked_ch
+                .validate(UnitCoord::new(0, NodeIndex(4)))
+                .expect_err("validate() should return error, returned Ok(()) instead"),
+            Error::RoundZeroBadControlHash(
+                borked_ch.combined_hash,
+                ControlHash::<Hasher64>::create_control_hash(&NodeMap::with_size(NodeCount(4)))
+            )
+        );
+    }
+
+    #[test]
+    fn given_non_initial_round_when_validate_with_correct_unit_coord_then_validate_is_ok() {
         let parent_map = vec![
             Some(([0; 8], 2)),
             None,
@@ -174,7 +286,7 @@ pub mod tests {
 
     #[test]
     #[should_panic(expected = "Round must be greater than 0")]
-    fn given_control_hash_when_validate_called_for_initial_unit_then_validate_panics() {
+    fn given_initial_round_when_validate_called_for_initial_unit_then_function_panics() {
         let parent_map = vec![
             Some(([0; 8], 2)),
             None,
@@ -183,10 +295,11 @@ pub mod tests {
         ]
         .into();
         let ch = ControlHash::<Hasher64>::new(&parent_map);
-        let _ = ch.validate(UnitCoord::new(0, NodeIndex(1)));
+        let _ = ch.validate_non_initial_round(UnitCoord::new(0, NodeIndex(1)));
     }
     #[test]
-    fn given_control_hash_when_creator_parent_does_not_exist_then_err_is_returned_from_validate() {
+    fn given_non_initial_round_when_creator_parent_does_not_exist_then_err_is_returned_from_validate(
+    ) {
         let parent_map = vec![
             Some(([0; 8], 2)),
             None,
@@ -203,7 +316,7 @@ pub mod tests {
     }
 
     #[test]
-    fn given_control_hash_when_creator_parent_exists_but_has_wrong_round_then_err_is_returned_from_validate(
+    fn given_non_initial_round_hash_when_creator_parent_exists_but_has_wrong_round_then_err_is_returned_from_validate(
     ) {
         let parent_map = vec![
             Some(([0; 8], 2)),
@@ -221,7 +334,7 @@ pub mod tests {
     }
 
     #[test]
-    fn given_control_hash_when_there_are_not_enough_previous_round_parents_then_err_is_returned_from_validate(
+    fn given_non_initial_round_when_there_are_not_enough_previous_round_parents_then_err_is_returned_from_validate(
     ) {
         let parent_map = vec![
             None,
@@ -239,7 +352,7 @@ pub mod tests {
     }
 
     #[test]
-    fn given_control_hash_when_there_are_parents_from_greater_rounds_then_err_is_returned_from_validate(
+    fn given_non_initial_round_when_there_are_parents_from_greater_rounds_then_err_is_returned_from_validate(
     ) {
         let parent_map = vec![
             Some(([0; 8], 2)),
@@ -257,7 +370,8 @@ pub mod tests {
     }
 
     #[test]
-    fn given_correct_control_hash_when_only_round_change_then_control_hash_does_not_match() {
+    fn given_correct_control_hash_when_only_single_property_change_then_control_hash_does_not_match(
+    ) {
         let all_parents_from_round_three = vec![
             Some(([193, 179, 113, 82, 221, 179, 199, 217], 3)),
             Some(([215, 1, 244, 177, 19, 155, 43, 208], 3)),
