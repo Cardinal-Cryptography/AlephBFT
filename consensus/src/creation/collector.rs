@@ -165,6 +165,30 @@ mod tests {
     }
 
     #[test]
+    fn initial_ignores_future_rounds() {
+        let n_members = NodeCount(4);
+        let mut units_collector = UnitsCollector::new_initial(n_members);
+        let units = random_full_parent_units_up_to(2, n_members, 43);
+        for round_units in &units {
+            for unit in round_units {
+                units_collector.add_unit(unit);
+            }
+        }
+
+        let parents = units_collector
+            .prospective_parents(NodeIndex(0))
+            .expect("we should be able to retrieve parents");
+        assert_eq!(parents.item_count(), 4);
+
+        let new_units: Vec<_> = units[0]
+            .iter()
+            .map(|unit| (unit.hash(), unit.round()))
+            .collect();
+        let selected_parents: Vec<_> = parents.values().cloned().collect();
+        assert_eq!(new_units, selected_parents);
+    }
+
+    #[test]
     fn following_fails_without_parents() {
         let n_members = NodeCount(4);
         let initial_units_collector = UnitsCollector::<Hasher64>::new_initial(n_members);

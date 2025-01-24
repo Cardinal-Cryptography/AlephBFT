@@ -244,7 +244,7 @@ mod tests {
                 .control_hash()
                 .parents()
                 .nth(5)
-                .expect("there is a fourth parent")
+                .expect("there is a sixth parent")
                 .round(),
             round - 2
         );
@@ -272,9 +272,37 @@ mod tests {
                 .control_hash()
                 .parents()
                 .nth(5)
-                .expect("there is a fourth parent")
+                .expect("there is a sixth parent")
                 .round(),
             round - 2
+        );
+    }
+
+    #[test]
+    fn creates_old_unit_with_best_parents() {
+        let n_members = NodeCount(7);
+        let mut creator = Creator::new(NodeIndex(0), n_members);
+        let units = random_full_parent_units_up_to(2, n_members, 43);
+        for round_units in &units {
+            for unit in round_units.iter().take(5) {
+                creator.add_unit(unit);
+            }
+        }
+        creator.add_unit(&units[0][5]);
+        let round = 1;
+        let preunit = creator
+            .create_unit(round)
+            .expect("Creation should succeed.");
+        assert_eq!(preunit.round(), round);
+        for coord in preunit.control_hash().parents().take(5) {
+            assert_eq!(coord.round(), round - 1);
+        }
+        assert!(
+            preunit
+                .control_hash()
+                .parents()
+                .nth(5)
+                .is_some()
         );
     }
 }
