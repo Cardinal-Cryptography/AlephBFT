@@ -297,12 +297,6 @@ mod tests {
         for coord in preunit.control_hash().parents().take(5) {
             assert_eq!(coord.round(), round - 1);
         }
-        assert!(
-            preunit
-                .control_hash()
-                .parents()
-                .nth(5)
-                .is_some()
-        );
+        assert!(preunit.control_hash().parents().nth(5).is_some());
     }
 }
