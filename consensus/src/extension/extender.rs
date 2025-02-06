@@ -122,7 +122,10 @@ mod test {
             assert!(batch.len() == threshold.0 || batch.len() == n_members.0);
             if batch.len() == n_members.0 {
                 // the batch that should have ancient unit
-                assert!(batch.iter().find(|&unit| unit.parents().count() == 0).is_some());
+                assert!(batch
+                    .iter()
+                    .find(|&unit| unit.parents().count() == 0)
+                    .is_some());
             }
         }
     }
