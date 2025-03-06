@@ -12,6 +12,6 @@ Contains traits that need to be implemented by the user.
 [crate-image]: https://img.shields.io/crates/v/aleph-bft-types.svg
 [crate-link]: https://crates.io/crates/aleph-bft-types
 [docs-image]: https://docs.rs/aleph-bft-types/badge.svg
-[docs-link]: https://docs.rs/aleph-bft-types
+[docs-link]: https://docs.rs/aleph-bft-types/latest/aleph_bft_types/
 [license-image]: https://img.shields.io/badge/license-Apache2.0-blue.svg
 [license-link]: https://github.com/Cardinal-Cryptography/AlephBFT/blob/main/LICENSE
