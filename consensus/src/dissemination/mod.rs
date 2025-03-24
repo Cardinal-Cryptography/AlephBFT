@@ -83,7 +83,7 @@ pub enum DisseminationResponse<H: Hasher, D: Data, S: Signature> {
     NewestUnit(UncheckedSigned<NewestUnitResponse<H, D, S>, S>),
 }
 
-/// A message that has to be passed between committe members for consensus to work.
+/// A message that has to be passed between committee members for consensus to work.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum DisseminationMessage<H: Hasher, D: Data, S: Signature> {
     /// Unit, either broadcast or in response to a coord request.

@@ -1,6 +1,6 @@
 use crate::{dag::Request, runway::Salt, units::UncheckedSignedUnit, Data, Hasher, Signature};
 
-/// Repeatable task, either requesting or broadcasting a unit.
+/// Task that needs to be performed to ensure successful unit dissemination, either requesting or broadcasting a unit.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub enum DisseminationTask<H: Hasher, D: Data, S: Signature> {
     /// Perform a request.

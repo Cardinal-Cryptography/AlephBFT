@@ -27,14 +27,12 @@ impl<H: Hasher, D: Data, S: Signature> UnitMessage<H, D, S> {
         use UnitMessage::*;
         match self {
             Unit(uu) => uu.as_signable().included_data(),
-            CoordRequest(_, _) => Vec::new(),
-            ParentsRequest(_, _) => Vec::new(),
             ParentsResponse(_, units) => units
                 .iter()
                 .flat_map(|uu| uu.as_signable().included_data())
                 .collect(),
-            NewestRequest(_, _) => Vec::new(),
             NewestResponse(response) => response.as_signable().included_data(),
+            NewestRequest(_, _) | CoordRequest(_, _) | ParentsRequest(_, _) => Vec::new(),
         }
     }
 }
