@@ -196,9 +196,9 @@ impl<'a, MK: Keychain> Collection<'a, MK> {
 
     fn missing_responders(&self) -> Vec<Recipient> {
         self.collected_starting_rounds
-            .size()
-            .into_iterator()
-            .filter(|node_id| self.collected_starting_rounds.get(*node_id).is_none())
+            .to_subset()
+            .complement()
+            .elements()
             .map(Recipient::Node)
             .collect()
     }
