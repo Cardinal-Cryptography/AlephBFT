@@ -1,5 +1,5 @@
 use crate::{
-    creation::{run, IO},
+    creation::{run, Creator, IO},
     testing::{gen_config, gen_delay_config},
     units::{SignedUnit as GenericSignedUnit, Unit as GenericUnit},
     NodeCount, Receiver, Round, Sender, Terminator,
@@ -77,6 +77,7 @@ fn setup_test(n_members: NodeCount) -> TestSetup {
             data_provider: DataProvider::new(),
         };
         let config = gen_config(node_ix, n_members, gen_delay_config());
+        let creator = Creator::new(node_ix, n_members);
         let (starting_round_for_consensus, starting_round) = oneshot::channel();
 
         units_for_creators.push(parents_for_creator);
@@ -87,6 +88,7 @@ fn setup_test(n_members: NodeCount) -> TestSetup {
 
         let handle = tokio::spawn(async move {
             run(
+                creator,
                 config,
                 io,
                 keychain,

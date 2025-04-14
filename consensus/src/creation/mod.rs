@@ -109,6 +109,7 @@ async fn keep_processing_units_until<U: Unit>(
 /// We refer to the documentation https://cardinal-cryptography.github.io/AlephBFT/internals.html
 /// Section 5.1 for a discussion of this component.
 pub async fn run<U: Unit, MK: MultiKeychain, DP: DataProvider>(
+    creator: Creator<U::Hasher>,
     conf: Config,
     mut io: IO<U, MK, DP>,
     keychain: MK,
@@ -116,7 +117,7 @@ pub async fn run<U: Unit, MK: MultiKeychain, DP: DataProvider>(
     mut terminator: Terminator,
 ) {
     futures::select! {
-        _ = read_starting_round_and_run_creator(conf, &mut io, keychain, &mut starting_round).fuse() =>
+        _ = read_starting_round_and_run_creator(creator, conf, &mut io, keychain, &mut starting_round).fuse() =>
             debug!(target: LOG_TARGET, "Creator is about to finish."),
         _ = terminator.get_exit().fuse() =>
             debug!(target: LOG_TARGET, "Received an exit signal."),
@@ -126,6 +127,7 @@ pub async fn run<U: Unit, MK: MultiKeychain, DP: DataProvider>(
 }
 
 async fn read_starting_round_and_run_creator<U: Unit, MK: MultiKeychain, DP: DataProvider>(
+    creator: Creator<U::Hasher>,
     conf: Config,
     io: &mut IO<U, MK, DP>,
     keychain: MK,
@@ -144,7 +146,7 @@ async fn read_starting_round_and_run_creator<U: Unit, MK: MultiKeychain, DP: Dat
         }
     };
 
-    if let Err(err) = run_creator(conf, io, keychain, starting_round).await {
+    if let Err(err) = run_creator(creator, conf, io, keychain, starting_round).await {
         match err {
             CreatorError::OutChannelClosed(e) => {
                 warn!(target: LOG_TARGET, "Notification send error: {}. Exiting.", e)
@@ -157,17 +159,15 @@ async fn read_starting_round_and_run_creator<U: Unit, MK: MultiKeychain, DP: Dat
 }
 
 async fn run_creator<U: Unit, MK: MultiKeychain, DP: DataProvider>(
+    mut creator: Creator<U::Hasher>,
     conf: Config,
     io: &mut IO<U, MK, DP>,
     keychain: MK,
     starting_round: Round,
 ) -> anyhow::Result<(), CreatorError> {
-    let node_id = conf.node_ix();
-    let n_members = conf.n_members();
     let create_delay = conf.delay_config().unit_creation_delay.clone();
     let max_round = conf.max_round();
     let session_id = conf.session_id();
-    let mut creator = Creator::new(node_id, n_members);
     let packer = Packer::new(keychain, session_id);
     let incoming_parents = &mut io.incoming_parents;
     let outgoing_units = &io.outgoing_units;

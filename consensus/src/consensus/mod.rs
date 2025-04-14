@@ -6,7 +6,8 @@ use crate::{
         handler::Consensus,
         service::{Service, IO as ConsensusIO},
     },
-    creation, handle_task_termination,
+    creation::{run as run_creation, Creator, IO as CreationIO},
+    handle_task_termination,
     interface::LocalIO,
     network::{Hub as NetworkHub, NetworkData},
     units::Validator,
@@ -97,14 +98,16 @@ pub async fn run_session<
     let (starting_round_for_creator, starting_round_from_collection) = oneshot::channel();
 
     debug!(target: LOG_TARGET, "Spawning creator.");
+    let creator = Creator::new(index, config.n_members());
     let creator_terminator = terminator.add_offspring_connection("creator");
     let creator_config = config.clone();
     let creator_keychain = keychain.clone();
     let creator_handle = spawn_handle
         .spawn_essential("consensus/creator", async move {
-            creation::run(
+            run_creation(
+                creator,
                 creator_config,
-                creation::IO {
+                CreationIO {
                     outgoing_units: new_units_for_service,
                     incoming_parents: parents_from_service,
                     data_provider,
