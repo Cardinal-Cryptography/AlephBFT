@@ -1,6 +1,6 @@
 use crate::{
     alerts::{Handler as AlertHandler, Service as AlertService, IO as AlertIO},
-    backup::{BackupLoader, BackupSaver},
+    backup::{BackupLoader, BackupSaver, SaverService},
     collection::initial_unit_collection,
     consensus::{
         handler::Consensus,
@@ -132,13 +132,11 @@ pub async fn run_session<
     let (backup_units_for_service, backup_units_from_saver) = mpsc::unbounded();
 
     debug!(target: LOG_TARGET, "Spawning backup saver.");
+    let saver = BackupSaver::new(unit_saver);
     let backup_saver_terminator = terminator.add_offspring_connection("backup-saver");
     let backup_saver_handle = spawn_handle.spawn_essential("consensus/backup_saver", {
-        let mut backup_saver = BackupSaver::new(
-            backup_units_from_service,
-            backup_units_for_service,
-            unit_saver,
-        );
+        let mut backup_saver =
+            SaverService::new(backup_units_from_service, backup_units_for_service, saver);
         async move {
             backup_saver.run(backup_saver_terminator).await;
         }

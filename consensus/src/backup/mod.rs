@@ -1,5 +1,5 @@
 pub use loader::BackupLoader;
-pub use saver::BackupSaver;
+pub use saver::{BackupSaver, SaverService};
 
 mod loader;
 mod saver;

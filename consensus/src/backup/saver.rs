@@ -1,4 +1,4 @@
-use std::pin::Pin;
+use std::{marker::PhantomData, pin::Pin};
 
 use crate::{
     dag::DagUnit,
@@ -11,34 +11,55 @@ use log::{debug, error};
 
 const LOG_TARGET: &str = "AlephBFT-backup-saver";
 
-/// Component responsible for saving units into backup.
-/// It waits for items to appear on its receivers, and writes them to backup.
-/// It announces a successful write through an appropriate response sender.
-pub struct BackupSaver<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> {
-    units_from_consensus: Receiver<DagUnit<H, D, MK>>,
-    responses_for_consensus: Sender<DagUnit<H, D, MK>>,
+/// A saver for arbitrary encodeable items.
+pub struct BackupSaver<W: AsyncWrite, D: Encode> {
     backup: Pin<Box<W>>,
+    _phantom: PhantomData<D>,
 }
 
-impl<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> BackupSaver<H, D, MK, W> {
-    pub fn new(
-        units_from_consensus: Receiver<DagUnit<H, D, MK>>,
-        responses_for_consensus: Sender<DagUnit<H, D, MK>>,
-        backup: W,
-    ) -> BackupSaver<H, D, MK, W> {
+impl<W: AsyncWrite, D: Encode> BackupSaver<W, D> {
+    /// A new backup saver using the given writer.
+    pub fn new(backup: W) -> Self {
         BackupSaver {
-            units_from_consensus,
-            responses_for_consensus,
             backup: Box::pin(backup),
+            _phantom: PhantomData,
         }
     }
 
-    pub async fn save_unit(&mut self, unit: &DagUnit<H, D, MK>) -> Result<(), std::io::Error> {
-        let unit: UncheckedSignedUnit<_, _, _> = unit.clone().unpack().into();
-        self.backup.write_all(&unit.encode()).await?;
+    /// Save a single item.
+    pub async fn save_item(&mut self, item: D) -> Result<(), std::io::Error> {
+        self.backup.write_all(&item.encode()).await?;
         self.backup.flush().await
     }
+}
 
+/// Component responsible for saving units into backup.
+/// It waits for items to appear on its receivers, and writes them to backup.
+/// It announces a successful write through an appropriate response sender.
+pub struct SaverService<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> {
+    units_from_consensus: Receiver<DagUnit<H, D, MK>>,
+    responses_for_consensus: Sender<DagUnit<H, D, MK>>,
+    saver: BackupSaver<W, UncheckedSignedUnit<H, D, MK::Signature>>,
+}
+
+impl<H: Hasher, D: Data, MK: MultiKeychain, W: AsyncWrite> SaverService<H, D, MK, W> {
+    pub fn new(
+        units_from_consensus: Receiver<DagUnit<H, D, MK>>,
+        responses_for_consensus: Sender<DagUnit<H, D, MK>>,
+        saver: BackupSaver<W, UncheckedSignedUnit<H, D, MK::Signature>>,
+    ) -> Self {
+        SaverService {
+            units_from_consensus,
+            responses_for_consensus,
+            saver,
+        }
+    }
+
+    async fn save_unit(&mut self, unit: &DagUnit<H, D, MK>) -> Result<(), std::io::Error> {
+        self.saver.save_item(unit.clone().unpack().into()).await
+    }
+
+    /// Run the saving service.
     pub async fn run(&mut self, mut terminator: Terminator) {
         let mut terminator_exit = false;
         loop {
@@ -85,14 +106,14 @@ mod tests {
     use aleph_bft_mock::{Data, Hasher64, Keychain, Saver};
 
     use crate::{
-        backup::BackupSaver,
+        backup::{BackupSaver, SaverService},
         dag::ReconstructedUnit,
         units::{creator_set, preunit_to_signed_unit, TestingSignedUnit},
         NodeCount, Terminator,
     };
 
     type TestUnit = ReconstructedUnit<TestingSignedUnit>;
-    type TestBackupSaver = BackupSaver<Hasher64, Data, Keychain, Saver>;
+    type TestSaverService = SaverService<Hasher64, Data, Keychain, Saver>;
     struct PrepareSaverResponse<F: futures::Future> {
         task: F,
         units_for_saver: mpsc::UnboundedSender<TestUnit>,
@@ -107,8 +128,11 @@ mod tests {
         let backup = Saver::new();
 
         let task = {
-            let mut saver: TestBackupSaver =
-                BackupSaver::new(units_from_consensus, units_for_consensus, backup);
+            let mut saver: TestSaverService = SaverService::new(
+                units_from_consensus,
+                units_for_consensus,
+                BackupSaver::new(backup),
+            );
 
             async move {
                 saver.run(Terminator::create_root(exit_rx, "saver")).await;
