@@ -44,6 +44,11 @@ impl<H: Hasher> Status<H> {
             (3..) => format!("behind by {rounds_behind} rounds"),
         }
     }
+
+    /// How many units are fully in the dag.
+    pub fn units_in_dag(&self) -> usize {
+        self.store_status.size()
+    }
 }
 
 impl<H: Hasher> Display for Status<H> {

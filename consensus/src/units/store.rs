@@ -19,6 +19,11 @@ impl UnitStoreStatus {
     pub fn top_round(&self) -> Round {
         self.top_row.values().max().cloned().unwrap_or(0)
     }
+
+    /// How many units are in the store.
+    pub fn size(&self) -> usize {
+        self.size
+    }
 }
 
 impl Display for UnitStoreStatus {

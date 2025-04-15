@@ -204,18 +204,10 @@ where
         info!(target: LOG_TARGET, "Consensus status report: {}.", self.handler.status());
     }
 
-    pub async fn run(
-        mut self,
-        data_from_backup: Vec<UncheckedSignedUnit<UFH::Hasher, UFH::Data, MK::Signature>>,
-        mut terminator: Terminator,
-    ) {
+    pub async fn run(mut self, mut terminator: Terminator) {
         let status_ticker_delay = Duration::from_secs(10);
         let mut status_ticker = Delay::new(status_ticker_delay).fuse();
         let mut task_ticker = Delay::new(self.handler.next_tick()).fuse();
-
-        for unit in data_from_backup {
-            self.on_unit_received(unit);
-        }
 
         debug!(target: LOG_TARGET, "Consensus started.");
         loop {

@@ -1,11 +1,8 @@
 use crate::{
     alerts::{Handler as AlertHandler, Service as AlertService, IO as AlertIO},
-    backup::{BackupLoader, BackupSaver, SaverService},
+    backup::{BackupLoader, BackupResult, BackupSaver, SaverService},
     collection::initial_unit_collection,
-    consensus::{
-        handler::Consensus,
-        service::{Service, IO as ConsensusIO},
-    },
+    consensus::service::{Service, IO as ConsensusIO},
     creation::{run as run_creation, Creator, IO as CreationIO},
     handle_task_termination,
     interface::LocalIO,
@@ -22,6 +19,8 @@ use log::{debug, error, info};
 
 mod handler;
 mod service;
+
+pub use handler::{Consensus, ConsensusResult};
 
 const LOG_TARGET: &str = "AlephBFT-consensus";
 
@@ -50,24 +49,36 @@ pub async fn run_session<
     let index = keychain.index();
     let session_id = config.session_id();
     let (data_provider, finalization_handler, unit_saver, unit_loader) = local_io.into_components();
+    let validator = Validator::new(session_id, keychain.clone(), config.max_round());
+    let consensus = Consensus::new(
+        keychain.clone(),
+        validator.clone(),
+        finalization_handler,
+        config.delay_config().clone(),
+    );
+    let creator = Creator::new(index, config.n_members());
+    let saver = BackupSaver::new(unit_saver);
 
-    info!(target: LOG_TARGET, "Loading units from backup.");
-    let (loaded_units, loaded_starting_round) =
-        match BackupLoader::new(unit_loader, index, session_id)
-            .load_backup()
-            .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                error!(target: LOG_TARGET, "Error loading units from backup: {}.", e);
-                return;
-            }
-        };
+    info!(target: LOG_TARGET, "Loading state from backup.");
+    let BackupResult {
+        consensus,
+        creator,
+        saver,
+        starting_round,
+    } = match BackupLoader::new(unit_loader, consensus, creator, saver)
+        .load_backup()
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            error!(target: LOG_TARGET, "Error loading units from backup: {}.", e);
+            return;
+        }
+    };
     info!(
         target: LOG_TARGET,
-        "Loaded {:?} units from backup. Able to continue from round: {:?}.",
-        loaded_units.len(),
-        loaded_starting_round,
+        "Loaded backup. Able to continue from round: {:?}.",
+        starting_round,
     );
 
     let (alert_messages_for_alerter, alert_messages_from_network) = mpsc::unbounded();
@@ -98,7 +109,6 @@ pub async fn run_session<
     let (starting_round_for_creator, starting_round_from_collection) = oneshot::channel();
 
     debug!(target: LOG_TARGET, "Spawning creator.");
-    let creator = Creator::new(index, config.n_members());
     let creator_terminator = terminator.add_offspring_connection("creator");
     let creator_config = config.clone();
     let creator_keychain = keychain.clone();
@@ -135,7 +145,6 @@ pub async fn run_session<
     let (backup_units_for_service, backup_units_from_saver) = mpsc::unbounded();
 
     debug!(target: LOG_TARGET, "Spawning backup saver.");
-    let saver = BackupSaver::new(unit_saver);
     let backup_saver_terminator = terminator.add_offspring_connection("backup-saver");
     let backup_saver_handle = spawn_handle.spawn_essential("consensus/backup_saver", {
         let mut backup_saver =
@@ -171,7 +180,6 @@ pub async fn run_session<
         .fuse();
     debug!(target: LOG_TARGET, "Alerter spawned.");
 
-    let validator = Validator::new(session_id, keychain.clone(), config.max_round());
     let (responses_for_collection, responses_from_service) = mpsc::unbounded();
 
     debug!(target: LOG_TARGET, "Spawning initial unit collection.");
@@ -180,7 +188,7 @@ pub async fn run_session<
         &validator,
         unit_messages_for_network.clone(),
         starting_round_for_creator,
-        loaded_starting_round,
+        starting_round,
         responses_from_service,
         config.delay_config().newest_request_delay.clone(),
     ) {
@@ -191,12 +199,6 @@ pub async fn run_session<
     debug!(target: LOG_TARGET, "Initial unit collection spawned.");
 
     debug!(target: LOG_TARGET, "Spawning consensus service.");
-    let consensus = Consensus::new(
-        keychain.clone(),
-        validator.clone(),
-        finalization_handler,
-        config.delay_config().clone(),
-    );
     let service_handle = spawn_handle
         .spawn_essential("consensus/service", {
             let consensus_io = ConsensusIO {
@@ -213,7 +215,7 @@ pub async fn run_session<
             let service_terminator = terminator.add_offspring_connection("service");
             let service = Service::new(consensus, consensus_io);
 
-            async move { service.run(loaded_units, service_terminator).await }
+            async move { service.run(service_terminator).await }
         })
         .fuse();
     pin_mut!(service_handle);

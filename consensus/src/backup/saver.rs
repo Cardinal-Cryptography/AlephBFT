@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, pin::Pin};
 
 use crate::{
+    backup::LOG_TARGET,
     dag::DagUnit,
     units::{UncheckedSignedUnit, WrappedUnit},
     Data, Hasher, MultiKeychain, Receiver, Sender, Terminator,
@@ -8,8 +9,6 @@ use crate::{
 use codec::Encode;
 use futures::{AsyncWrite, AsyncWriteExt, FutureExt, StreamExt};
 use log::{debug, error};
-
-const LOG_TARGET: &str = "AlephBFT-backup-saver";
 
 /// A saver for arbitrary encodeable items.
 pub struct BackupSaver<W: AsyncWrite, D: Encode> {
